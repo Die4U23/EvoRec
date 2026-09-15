@@ -1,0 +1,20 @@
+{
+  "stage": "M0-framework",
+  "date": "2026-09-14",
+  "python": "3.12.6",
+  "platform": "Windows",
+  "tests": 23,
+  "failures": 0,
+  "errors": 0,
+  "local_document_links_checked": 13,
+  "contract_exports_match": 4,
+  "api_validation": "in-process ASGI",
+  "unverified": [
+    "PostgreSQL execution",
+    "GPU/model training",
+    "frontend",
+    "Docker/Linux deployment",
+    "network load",
+    "recommendation quality"
+  ]
+}

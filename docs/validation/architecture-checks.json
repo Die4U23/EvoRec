@@ -1,0 +1,53 @@
+{
+  "checked_at": "2026-09-15T02:03:29.596097+00:00",
+  "stage": "M0 architecture",
+  "environment": {
+    "os": "Windows",
+    "python": "3.12.6"
+  },
+  "tests": {
+    "tests": 55,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "report": "architecture-tests.xml",
+    "run_at": "2026-09-15T09:52:10.835577+08:00"
+  },
+  "dependency_check": {
+    "command": ".venv/Scripts/python.exe -m pip check",
+    "result": "No broken requirements found.",
+    "executed_on": "2026-09-15"
+  },
+  "exported_contracts_match_code": [
+    "openapi.json",
+    "catalog-import.schema.json",
+    "feedback.schema.json",
+    "recommendation.schema.json"
+  ],
+  "documentation": {
+    "files_checked": 13,
+    "local_links_checked": 48,
+    "missing_links": 0,
+    "code_fences_balanced": true
+  },
+  "verified_scope": [
+    "input contracts",
+    "in-process ASGI status endpoints",
+    "immutable snapshots and request binding",
+    "legal deterministic Top-K",
+    "application failure paths with test adapters",
+    "cooperative timeout cleanup",
+    "static import boundaries"
+  ],
+  "not_verified": [
+    "PostgreSQL transactions or migrations",
+    "model training or real inference",
+    "interprocess cancellation",
+    "publication/downlisting/rollback execution",
+    "GPU behavior",
+    "frontend",
+    "network load and PRD performance targets",
+    "Linux deployment",
+    "rendered Mermaid diagrams"
+  ]
+}

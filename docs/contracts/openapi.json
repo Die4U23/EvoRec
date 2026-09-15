@@ -1,0 +1,208 @@
+{
+  "components": {
+    "schemas": {
+      "Capabilities": {
+        "properties": {
+          "catalog_publication": {
+            "const": false,
+            "default": false,
+            "title": "Catalog Publication",
+            "type": "boolean"
+          },
+          "frontend": {
+            "const": false,
+            "default": false,
+            "title": "Frontend",
+            "type": "boolean"
+          },
+          "health_checks": {
+            "const": true,
+            "default": true,
+            "title": "Health Checks",
+            "type": "boolean"
+          },
+          "input_contracts": {
+            "const": true,
+            "default": true,
+            "title": "Input Contracts",
+            "type": "boolean"
+          },
+          "model_training": {
+            "const": false,
+            "default": false,
+            "title": "Model Training",
+            "type": "boolean"
+          },
+          "persistence": {
+            "const": false,
+            "default": false,
+            "title": "Persistence",
+            "type": "boolean"
+          },
+          "recommendations": {
+            "const": false,
+            "default": false,
+            "title": "Recommendations",
+            "type": "boolean"
+          }
+        },
+        "title": "Capabilities",
+        "type": "object"
+      },
+      "Liveness": {
+        "properties": {
+          "component": {
+            "const": "api",
+            "default": "api",
+            "title": "Component",
+            "type": "string"
+          },
+          "status": {
+            "const": "alive",
+            "default": "alive",
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "default": "0.0.1",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "title": "Liveness",
+        "type": "object"
+      },
+      "Readiness": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ready",
+          "blockers"
+        ],
+        "title": "Readiness",
+        "type": "object"
+      },
+      "SystemInfo": {
+        "properties": {
+          "capabilities": {
+            "$ref": "#/components/schemas/Capabilities"
+          },
+          "name": {
+            "const": "EvoRec",
+            "default": "EvoRec",
+            "title": "Name",
+            "type": "string"
+          },
+          "phase": {
+            "const": "M0-framework",
+            "default": "M0-framework",
+            "title": "Phase",
+            "type": "string"
+          },
+          "version": {
+            "default": "0.0.1",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capabilities"
+        ],
+        "title": "SystemInfo",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "M0 工程框架。仅提供运行状态接口；业务接口见设计文档，尚未注册。存活检查通过不代表推荐业务就绪。",
+    "title": "EvoRec Framework API",
+    "version": "0.0.1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/system": {
+      "get": {
+        "operationId": "system_api_v1_system_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "System",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/health/live": {
+      "get": {
+        "operationId": "live_health_live_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Liveness"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Live",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "ready_health_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            },
+            "description": "Business dependencies unavailable"
+          }
+        },
+        "summary": "Ready",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  }
+}

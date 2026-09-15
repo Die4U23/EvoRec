@@ -1,0 +1,25 @@
+{
+  "schema_version": "0.1",
+  "status": "template",
+  "dataset": {
+    "source": "Amazon Reviews 2023",
+    "category": "Video_Games",
+    "snapshot_path": null,
+    "checksum": null,
+    "train_end_utc": null,
+    "validation_end_utc": null,
+    "test_end_utc": null,
+    "availability_protocol": "must_be_defined_before_running"
+  },
+  "method": "popular",
+  "seeds": [17, 29, 43],
+  "evaluation": {
+    "ndcg_k": 10,
+    "recall_k": 20,
+    "candidate_k": 200,
+    "candidate_universe": "available_at_request_time",
+    "tuning_split": "validation"
+  },
+  "hardware": null,
+  "results": null
+}

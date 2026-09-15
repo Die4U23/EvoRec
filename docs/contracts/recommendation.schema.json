@@ -1,0 +1,51 @@
+{
+  "$defs": {
+    "Strategy": {
+      "enum": [
+        "popular",
+        "dense",
+        "generative",
+        "hybrid",
+        "adaptive"
+      ],
+      "title": "Strategy",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "expected_history_version": {
+      "minimum": 0,
+      "title": "Expected History Version",
+      "type": "integer"
+    },
+    "k": {
+      "default": 10,
+      "maximum": 50,
+      "minimum": 1,
+      "title": "K",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "session_id": {
+      "format": "uuid",
+      "title": "Session Id",
+      "type": "string"
+    },
+    "strategy": {
+      "$ref": "#/$defs/Strategy",
+      "default": "popular"
+    }
+  },
+  "required": [
+    "session_id",
+    "expected_history_version"
+  ],
+  "title": "RecommendationInput",
+  "type": "object"
+}
