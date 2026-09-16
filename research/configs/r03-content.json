@@ -1,0 +1,60 @@
+{
+  "schema_version": "0.3",
+  "stage": "R03-content",
+  "dataset_path": "datasets/video_games_r03.csv",
+  "metadata_path": "datasets/video_games_r03.metadata.json",
+  "train_end_ms": 1628643414042,
+  "validation_end_ms": 1658002729837,
+  "positive_rating_min": 4,
+  "history_limit": 50,
+  "candidate_k": 200,
+  "sample": {
+    "seed": "evorec-r02-v1",
+    "denominator": 20,
+    "bucket": 1,
+    "exclude_r01": true
+  },
+  "content": {
+    "fields": [
+      "title",
+      "categories"
+    ],
+    "access_assumption": "static-2023-metadata-at-item-availability; historical content timestamps unavailable",
+    "max_features": 20000,
+    "min_df": 2,
+    "dimensions": 128,
+    "svd_seed": 17,
+    "history_decay": 0.8
+  },
+  "seeds": [
+    17,
+    29,
+    43
+  ],
+  "batch_size": 256,
+  "evaluation_batch_size": 128,
+  "max_epochs": 12,
+  "patience": 3,
+  "trials": [
+    {
+      "name": "content-tower",
+      "hidden": 128,
+      "learning_rate": 0.001,
+      "temperature": 0.1
+    },
+    {
+      "name": "content-tower-low-lr",
+      "hidden": 128,
+      "learning_rate": 0.0003,
+      "temperature": 0.1
+    }
+  ],
+  "fusion_alphas": [
+    0.25,
+    0.5
+  ],
+  "rrf_constant": 60,
+  "selection_metric": "validation/all_positive_events/ndcg@10",
+  "test_policy": "new user hash bucket excluding R01 and R02; test evaluated after validation-only choices; items and calendar overlap earlier research",
+  "report_directory": "docs/experiments/r03-content"
+}

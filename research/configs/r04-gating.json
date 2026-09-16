@@ -1,0 +1,82 @@
+{
+  "schema_version": "0.4",
+  "stage": "R04-gating",
+  "dataset_path": "datasets/video_games_r04.csv",
+  "metadata_path": "datasets/video_games_r03.metadata.json",
+  "train_end_ms": 1628643414042,
+  "validation_end_ms": 1658002729837,
+  "positive_rating_min": 4,
+  "history_limit": 50,
+  "candidate_k": 200,
+  "sample": {
+    "seed": "evorec-r02-v1",
+    "denominator": 20,
+    "bucket": 2,
+    "exclude_r01": true
+  },
+  "content": {
+    "fields": [
+      "title",
+      "categories"
+    ],
+    "access_assumption": "static-2023-metadata-at-item-availability; historical content timestamps unavailable",
+    "max_features": 20000,
+    "min_df": 2,
+    "dimensions": 128,
+    "svd_seed": 17,
+    "history_decay": 0.8
+  },
+  "frozen_run": "artifacts/runs/r03-content-20260915",
+  "seeds": [
+    17,
+    29,
+    43
+  ],
+  "fusion_alpha": 0.5,
+  "rrf_constant": 60,
+  "evaluation_batch_size": 128,
+  "gate": {
+    "min_history": 2,
+    "min_coherence": 0.6,
+    "top_n": 20,
+    "positions": [
+      10,
+      20
+    ]
+  },
+  "policies": [
+    {
+      "name": "fixed",
+      "quota": 0,
+      "gated": false
+    },
+    {
+      "name": "reserve-1",
+      "quota": 1,
+      "gated": false
+    },
+    {
+      "name": "reserve-2",
+      "quota": 2,
+      "gated": false
+    },
+    {
+      "name": "gated-1",
+      "quota": 1,
+      "gated": true
+    },
+    {
+      "name": "gated-2",
+      "quota": 2,
+      "gated": true
+    }
+  ],
+  "selection": {
+    "seed": 17,
+    "metric": "validation/model_cold_available/recall@20",
+    "ndcg_min_ratio": 0.97,
+    "tie_break": "higher overall NDCG, then fewer reserved slots, then declaration order"
+  },
+  "test_policy": "new user bucket; freeze R03 models and encoder; model-cold is relative to R03 training items; select policy on validation seed 17 only",
+  "report_directory": "docs/experiments/r04-gating"
+}

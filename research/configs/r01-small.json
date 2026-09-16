@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "stage": "R01-feasibility",
+  "dataset_path": "datasets/video_games_r01.csv",
+  "train_end_ms": 1628643414042,
+  "validation_end_ms": 1658002729837,
+  "positive_rating_min": 4,
+  "history_limit": 20,
+  "itemcf_max_user_items": 100,
+  "itemcf_neighbors": 100,
+  "candidate_k": 200,
+  "cutoff_source": "https://amazon-reviews-2023.github.io/data_processing/0core.html#absolute-timestamp-splitting",
+  "evaluation_scope": "prefix_sample_prequential_feasibility_not_final_benchmark"
+}

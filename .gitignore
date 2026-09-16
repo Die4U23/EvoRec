@@ -14,3 +14,4 @@ artifacts/**
 datasets/**
 !datasets/README.md
 tmp/
+.venv-research/

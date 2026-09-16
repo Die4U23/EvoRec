@@ -1,0 +1,40 @@
+{
+  "schema_version": "0.2",
+  "stage": "R02-R03-training",
+  "dataset_path": "datasets/video_games_r02.csv",
+  "train_end_ms": 1628643414042,
+  "validation_end_ms": 1658002729837,
+  "positive_rating_min": 4,
+  "history_limit": 50,
+  "candidate_k": 200,
+  "seeds": [
+    17,
+    29,
+    43
+  ],
+  "selection_metric": "validation/all_positive_events/ndcg@10",
+  "max_epochs": 12,
+  "patience": 3,
+  "batch_size": 256,
+  "evaluation_batch_size": 256,
+  "trials": [
+    {
+      "name": "sasrec64",
+      "hidden": 64,
+      "heads": 2,
+      "layers": 2,
+      "dropout": 0.2,
+      "learning_rate": 0.001
+    },
+    {
+      "name": "sasrec64-low-lr",
+      "hidden": 64,
+      "heads": 2,
+      "layers": 2,
+      "dropout": 0.2,
+      "learning_rate": 0.0003
+    }
+  ],
+  "test_policy": "one final evaluation after validation-only configuration selection; no tuning from test",
+  "development_users": "all users in R01 prefix are excluded from the new sample"
+}

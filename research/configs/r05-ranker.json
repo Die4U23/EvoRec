@@ -1,0 +1,90 @@
+{
+  "schema_version": "0.5",
+  "stage": "R05-ranker",
+  "dataset_path": "datasets/video_games_r05.csv",
+  "metadata_path": "datasets/video_games_r03.metadata.json",
+  "training_run": "artifacts/runs/r03-content-20260915",
+  "train_end_ms": 1628643414042,
+  "validation_end_ms": 1658002729837,
+  "positive_rating_min": 4,
+  "history_limit": 50,
+  "candidate_k": 200,
+  "sample": {
+    "seed": "evorec-r02-v1",
+    "denominator": 20,
+    "bucket": 3,
+    "exclude_r01": true
+  },
+  "content": {
+    "fields": [
+      "title",
+      "categories"
+    ],
+    "access_assumption": "static-2023-metadata-at-item-availability; historical content timestamps unavailable",
+    "max_features": 20000,
+    "min_df": 2,
+    "dimensions": 128,
+    "svd_seed": 17,
+    "history_decay": 0.8
+  },
+  "encoder_fit_end_ms": 1483228800000,
+  "folds": [
+    {
+      "name": "2017-2019",
+      "start_ms": 1483228800000,
+      "end_ms": 1577836800000
+    },
+    {
+      "name": "2020-2021",
+      "start_ms": 1577836800000,
+      "end_ms": 1628643414042
+    }
+  ],
+  "max_training_queries_per_fold": 12000,
+  "pool_k": 400,
+  "retrieval_k": 200,
+  "fusion_alpha": 0.5,
+  "rrf_constant": 60,
+  "seeds": [
+    17,
+    29,
+    43
+  ],
+  "trials": [
+    {
+      "name": "ListMLP",
+      "cold_weight": 1
+    },
+    {
+      "name": "ColdListMLP",
+      "cold_weight": 4
+    }
+  ],
+  "learning_rate": 0.001,
+  "weight_decay": 0.001,
+  "max_epochs": 15,
+  "patience": 4,
+  "batch_size": 64,
+  "evaluation_batch_size": 128,
+  "model": {
+    "hidden": 128,
+    "bottleneck": 64,
+    "base_scale": 8,
+    "residual_scale": 4
+  },
+  "selection": {
+    "seed": 17,
+    "epoch_metric": "validation/all_positive_events/ndcg@10",
+    "ndcg_min_ratio": 0.97,
+    "method_metric": "validation/model_cold_available/recall@20",
+    "tie_break": "higher overall NDCG, then fixed baseline, then declaration order"
+  },
+  "report_directory": "docs/experiments/r05-ranker",
+  "limits": [
+    "fixed content encoder fitted before 2017; static metadata historical version assumption remains",
+    "unobserved candidates are contrastive negatives, not observed dislikes",
+    "training excludes candidate misses without injecting targets; all evaluation positives remain in denominator",
+    "test users disjoint from R01-R04; items and calendar overlap",
+    "R03 reference has a different encoder and candidate pipeline"
+  ]
+}
