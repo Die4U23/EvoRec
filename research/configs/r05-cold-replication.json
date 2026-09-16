@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "stage": "R05-cold-replication",
+  "source_run": "artifacts/runs/r05-ranker-20260916",
+  "source_series_sha256": "ae8fcb98a5d26269529123c80ca924be02c553dbbb4b3f442d7d63f5e52dbab6",
+  "source_protocol_id": "2624e6561e71af4b",
+  "setting": {
+    "name": "ColdListMLP",
+    "cold_weight": 4
+  },
+  "seeds": [
+    17,
+    29,
+    43
+  ],
+  "replay_seed": 17,
+  "report_directory": "docs/experiments/r05-cold-replication",
+  "bootstrap": {
+    "replicates": 10000,
+    "seed": 20260916,
+    "confidence": 0.95,
+    "unit": "user",
+    "estimator": "request-weighted mean paired difference",
+    "interval": "percentile",
+    "cohorts": [
+      "all_positive_events",
+      "history_present",
+      "model_cold_available"
+    ],
+    "metrics": [
+      "ndcg@10",
+      "recall@20"
+    ],
+    "baselines": [
+      "RRF",
+      "CF-blend"
+    ],
+    "include_fixed_seed_metric_mean": true,
+    "simultaneous_intervals": false
+  },
+  "limits": [
+    "R05 test was already inspected; fixed-configuration replication and posthoc inference, not a fresh sealed test",
+    "query sampling intervals condition on these checkpoints; seed SD is reported separately",
+    "no hyperparameter changes, model reselection, or best-test-seed selection",
+    "user resampling does not model shared item or time shocks"
+  ]
+}
