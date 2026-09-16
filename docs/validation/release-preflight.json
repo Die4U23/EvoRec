@@ -1,0 +1,52 @@
+{
+  "status": "passed",
+  "scope": "current worktree static release preflight, before commits",
+  "candidate_files": 164,
+  "candidate_bytes": 5791953,
+  "largest_files": [
+    {
+      "path": "docs/blog/assets/evorec/cold-reservation-flow.png",
+      "bytes": 220207
+    },
+    {
+      "path": "docs/blog/assets/evorec/content-tower-architecture.png",
+      "bytes": 213266
+    },
+    {
+      "path": "docs/blog/assets/evorec/r03-learning-curves.png",
+      "bytes": 203611
+    },
+    {
+      "path": "docs/experiments/r03-content/figures/learning-curves.png",
+      "bytes": 203611
+    },
+    {
+      "path": "docs/blog/assets/evorec/r05/learning-curves.png",
+      "bytes": 197674
+    }
+  ],
+  "python_files_parsed": 61,
+  "markdown_files_checked": 30,
+  "local_links_checked": 241,
+  "credential_pattern_matches": [],
+  "excluded_data_and_model_paths": true,
+  "original_guidance_sha256": "00052b8a4154bce56d4249d3b9128b7113ffb8324a753a2bffef86b0abd81216",
+  "notes": [
+    "credential scan covers selected common token formats, not a complete secrets audit",
+    "historical failed test artifacts remain as historical records; current regression results are separate",
+    "R06 is planned, not implemented or trained"
+  ],
+  "subsequent_staging_checks": {
+    "generated_evidence_blobs_byte_identical": 100,
+    "evidence_commit": "3b3a413730c12f1a8bf3cd90640c5a56db49166a",
+    "staged_whitespace_check": "passed after generated-file attribute rules",
+    "current_regression": {
+      "service_passed": 96,
+      "service_skipped": 3,
+      "research_passed": 28,
+      "research_skipped": 0,
+      "overlapping_gating_tests": 8
+    },
+    "original_guidance_hash_scope": "local supplied bytes; Markdown uses normal Git line-ending normalization"
+  }
+}

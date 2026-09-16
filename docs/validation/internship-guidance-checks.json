@@ -1,0 +1,165 @@
+{
+  "status": "passed",
+  "scope": "posthoc guidance fact check; no new training or model selection",
+  "script_sha256": "6e1a269e94cd78820904d68e16bc9dd2061a25da45d184c9536882712e4de416",
+  "protocol_id": "2624e6561e71af4b",
+  "inputs_sha256": {
+    "series.json": "ae8fcb98a5d26269529123c80ca924be02c553dbbb4b3f442d7d63f5e52dbab6",
+    "test-CF-blend.jsonl.gz": "cebd0f70c2db72fd8ea98664b764d16b62630aa1fefcf0fcbe171a5c70bced2f",
+    "test-RRF.jsonl.gz": "87ee40928a84fc625dafdb5b3eb0461fe57be2d73e0ce777a2c4bf86f25cfe72",
+    "test-ListMLP-s17.jsonl.gz": "a96a661aceb91d9a7c8122d4fd7526fdcac25c97032aaf008f0e646e648c2076",
+    "test-ColdListMLP-s17.jsonl.gz": "84e8ccec4c4e68f6cacf50695e8dbf33c82168132885b424d725dc3bafc80fdf"
+  },
+  "sample_sha256": "0d2920eaab82b4522e7ad94634596f1e1d872fe915d5f78325d1b144bafffaab",
+  "sample_statistics": {
+    "input_rows": 223805,
+    "deduplicated_rows": 223805,
+    "duplicates_removed": 0,
+    "users": 136953,
+    "items": 43686,
+    "first_timestamp_ms": 926505479000,
+    "last_timestamp_ms": 1694348410107
+  },
+  "users_with_exactly_one_deduplicated_interaction": 100463,
+  "single_interaction_user_fraction": 0.7335582280052281,
+  "test_users": 9499,
+  "test_users_with_multiple_positive_events": 1656,
+  "maximum_test_positive_events_per_user": 39,
+  "test_results": {
+    "CF-blend": {
+      "all_positive_events": {
+        "n": 12720,
+        "ndcg@10": 0.007188086040882449,
+        "hits@20": 356,
+        "recall@20": 0.0279874213836478
+      },
+      "history_present": {
+        "n": 5214,
+        "ndcg@10": 0.0052912866479284445,
+        "hits@20": 126,
+        "recall@20": 0.024165707710011506
+      },
+      "cold_user": {
+        "n": 7506,
+        "ndcg@10": 0.008505686898178237,
+        "hits@20": 230,
+        "recall@20": 0.03064215294431122
+      },
+      "model_cold_available": {
+        "n": 7088,
+        "ndcg@10": 0.0,
+        "hits@20": 0,
+        "recall@20": 0.0
+      }
+    },
+    "RRF": {
+      "all_positive_events": {
+        "n": 12720,
+        "ndcg@10": 0.006536741003757807,
+        "hits@20": 320,
+        "recall@20": 0.025157232704402517
+      },
+      "history_present": {
+        "n": 5214,
+        "ndcg@10": 0.0037022745895806414,
+        "hits@20": 90,
+        "recall@20": 0.01726121979286536
+      },
+      "cold_user": {
+        "n": 7506,
+        "ndcg@10": 0.008505686898178237,
+        "hits@20": 230,
+        "recall@20": 0.03064215294431122
+      },
+      "model_cold_available": {
+        "n": 7088,
+        "ndcg@10": 0.0002520998511824796,
+        "hits@20": 6,
+        "recall@20": 0.0008465011286681715
+      }
+    },
+    "ListMLP-s17": {
+      "all_positive_events": {
+        "n": 12720,
+        "ndcg@10": 0.00942592905255628,
+        "hits@20": 394,
+        "recall@20": 0.030974842767295598
+      },
+      "history_present": {
+        "n": 5214,
+        "ndcg@10": 0.01075069652681052,
+        "hits@20": 164,
+        "recall@20": 0.03145377828922133
+      },
+      "cold_user": {
+        "n": 7506,
+        "ndcg@10": 0.008505686898178237,
+        "hits@20": 230,
+        "recall@20": 0.03064215294431122
+      },
+      "model_cold_available": {
+        "n": 7088,
+        "ndcg@10": 0.00018809924345255754,
+        "hits@20": 11,
+        "recall@20": 0.0015519187358916478
+      }
+    },
+    "ColdListMLP-s17": {
+      "all_positive_events": {
+        "n": 12720,
+        "ndcg@10": 0.009118981019380185,
+        "hits@20": 380,
+        "recall@20": 0.029874213836477988
+      },
+      "history_present": {
+        "n": 5214,
+        "ndcg@10": 0.01000187048500002,
+        "hits@20": 150,
+        "recall@20": 0.028768699654775604
+      },
+      "cold_user": {
+        "n": 7506,
+        "ndcg@10": 0.008505686898178237,
+        "hits@20": 230,
+        "recall@20": 0.03064215294431122
+      },
+      "model_cold_available": {
+        "n": 7088,
+        "ndcg@10": 0.0012730487117088866,
+        "hits@20": 26,
+        "recall@20": 0.003668171557562077
+      }
+    }
+  },
+  "relative_ndcg_change_vs_cf": {
+    "RRF": {
+      "all_positive_events": -0.09061452985121465,
+      "history_present": -0.3003073097485479
+    },
+    "ListMLP-s17": {
+      "all_positive_events": 0.3113266868184428,
+      "history_present": 1.0317736010426595
+    },
+    "ColdListMLP-s17": {
+      "all_positive_events": 0.26862435528953243,
+      "history_present": 0.89025300470459
+    }
+  },
+  "identical_no_history_recommendations_for_four_methods": true,
+  "test_pool_diagnostics": {
+    "queries": 12720,
+    "target_in_pool": 1434,
+    "pool_recall": 0.11273584905660378,
+    "cold_available_targets": 7088,
+    "cold_targets_in_pool": 127,
+    "cold_pool_recall": 0.0179176072234763,
+    "has_content_history": 5214,
+    "mean_pool_candidates": 281.6982704402516
+  },
+  "limits": [
+    "this recheck trusts saved per-query metrics; the independent ranker audit reconstructs ranks",
+    "four R05 methods only; no claim that all past methods have identical fallbacks",
+    "query-weighted metrics; user clusters should be retained in uncertainty estimation",
+    "no bootstrap confidence intervals calculated by this script"
+  ]
+}

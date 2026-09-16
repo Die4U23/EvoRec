@@ -1,8 +1,39 @@
 # EvoRec
 
-动态商品库推荐研究与演示系统。
+面向动态商品库冷启动问题的推荐研究项目：从统计与内容召回，到候选融合、神经排序和失败诊断。
 
-**当前版本：M0 工程框架与分层架构。** 已建立项目文档、数据契约、最小 API，以及可独立检查的推荐应用用例。推荐模型、业务数据库、商品发布、前端页面和性能优化按后续里程碑接入。当前不会返回模拟推荐结果或虚构实验指标。
+**已完成：M0 状态服务 + R01–R05 离线实验。** R05 排序器完成 4 次 GPU 训练、35 轮及独立审计；在线推荐服务尚未接入。
+
+[最新实验报告](docs/experiments/r05-ranker/report.html) · [模型原理与运行](research/R05-ranker-guide.md) · [持续博客](docs/blog/evorec-project-log.md) · [实习指导评审与后续路线](docs/reviews/2026-09-16-internship-roadmap.md)
+
+## 当前结果
+
+R05 在同一批测试请求上比较如下；完整实验规则和数据边界见[正式报告](docs/experiments/r05-ranker/report.md)。
+
+| 方法 | 全部请求 NDCG@10（12,720） | 有历史请求 NDCG@10（5,214） | 冷目标 Top20 命中 / 7,088 |
+| --- | ---: | ---: | ---: |
+| CF-blend | 0.007188 | 0.005291 | 0 |
+| RRF | 0.006537 | 0.003702 | 6 |
+| ListMLP-s17 | 0.009426 | 0.010751 | 11 |
+| **ColdListMLP-s17（验证规则所选）** | **0.009119** | **0.010002** | **26** |
+
+- **排序收益：** 冷加权模型相对 CF-blend 的整体 NDCG 观测差值为 +26.9%；相对同候选池 RRF 为 +39.5%。CF-blend 是完整路径对照，RRF 是固定候选池的排序对照。
+- **人群差异：** 7,506 个无正反馈历史请求使用相同回退列表。全部请求指标保留为原实验主口径，有历史分组用于补充解释。
+- **主要瓶颈：** 只有 127 / 7,088 个冷目标进入候选并集（1.79%）；下一步重点是候选覆盖与排序适配。
+
+以上为离线观测结果，冷加权目前只有 seed 17，尚无显著性结论。普通 ListMLP 的三种子 NDCG 为 0.009546 ± 0.000315，标准差不属于冷加权模型。静态商品元数据缺少历史版本；各轮用户样本不同，跨轮数字不直接解释为提升。[本次指标复核](docs/validation/internship-guidance-checks.json)
+
+## 研究过程
+
+| 阶段 | 研究问题与结果 | 证据 |
+| --- | --- | --- |
+| R01 | 跑通时间回放与统计基线 | [报告](docs/experiments/r01-feasibility-report.md) |
+| R02 | SASRec-style 未超过 CF-blend，保留负结果 | [报告与训练曲线](docs/experiments/training-report.html) |
+| R03 | 内容路径打通冷商品入口，融合改善整体排序但损失部分冷命中 | [报告](docs/experiments/r03-content/report.html) |
+| R04 | 冷商品保留和规则门控未获验证集支持，定位落选环节 | [报告](docs/experiments/r04-gating/report.html)、[失败定位](docs/experiments/r04-gating/error-analysis.md) |
+| R05 | 滚动模拟冷商品训练与残差 listwise 排序 | [报告](docs/experiments/r05-ranker/report.html)、[逐请求审计](docs/validation/ranker-checks.json) |
+
+公开仓库包含代码、配置、汇总报告和图表。原始数据、模型及用户级轨迹留在本地忽略目录；首次复现需按[研究说明](research/README.md)准备数据与训练。当前研究环境复用了系统包，尚无干净环境或 Linux 复建证据。
 
 ## 从这里开始
 
@@ -11,7 +42,7 @@
 | 完整项目如何推进 | [项目框架与交付路线](docs/01-project-framework.md) |
 | 模块怎样连接 | [系统架构](docs/02-architecture.md)、[架构决策](docs/architecture/decisions.md) |
 | 数据与接口如何约定 | [数据设计](docs/03-data-design.md)、[接口约定](docs/04-api-contract.md) |
-| 算法怎样研究和评价 | [研究协议](docs/05-research-protocol.md) |
+| 算法怎样研究和评价 | [研究协议](docs/05-research-protocol.md)、[R01 实验报告](docs/experiments/r01-feasibility-report.md) |
 | 任务依赖与需求覆盖 | [交付计划](docs/06-delivery-plan.md) |
 | 怎样证明可以发布 | [验证与发布](docs/07-validation-release.md) |
 | 当前完成到哪里 | [进度与验证记录](docs/STATUS.md) |
@@ -31,7 +62,8 @@ src/evorec/bootstrap.py 依赖组装入口
 src/evorec/contracts.py 共享输入契约
 tests/                契约、应用用例、服务与分层边界检查
 db/                   PostgreSQL 设计草案，尚未应用
-research/             算法研究模块边界与实验配置模板
+src/evorec/research/   数据采样、统计基线、GPU 序列训练、时间评价与持续报告
+research/             实验配置与运行说明
 web/                  前端页面与状态规划，尚未实现
 cpp/                  C++ 性能扩展的接入条件
 ops/                  开发运行与部署边界说明
@@ -69,4 +101,6 @@ python -m venv .venv
 
 ## 下一项工作
 
-执行交付计划中的 **R01 数据与基线可行性验证**：确定一个数据子集、时间协议与可运行基线，记录样本数、资源使用和结果，再进入推荐闭环开发。
+R05 已实现并训练候选内排序。下一项研究优先复验冷加权模型的种子波动，并提升冷商品候选覆盖；新的调参或方法选择需登记新留出协议，已查看的测试结果保留为阶段证据。
+
+实验运行入口见 [研究工作区](research/README.md)；本机测试临时目录权限的处理方式也记录在该页。
