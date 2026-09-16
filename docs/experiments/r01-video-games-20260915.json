@@ -1,0 +1,454 @@
+{
+  "schema_version": "0.1",
+  "status": "completed",
+  "stage": "R01-feasibility",
+  "started_at": "2026-09-15T02:37:33.232740+00:00",
+  "configuration": {
+    "schema_version": "0.1",
+    "stage": "R01-feasibility",
+    "dataset_path": "datasets/video_games_r01.csv",
+    "train_end_ms": 1628643414042,
+    "validation_end_ms": 1658002729837,
+    "positive_rating_min": 4,
+    "history_limit": 20,
+    "itemcf_max_user_items": 100,
+    "itemcf_neighbors": 100,
+    "candidate_k": 200,
+    "cutoff_source": "https://amazon-reviews-2023.github.io/data_processing/0core.html#absolute-timestamp-splitting",
+    "evaluation_scope": "prefix_sample_prequential_feasibility_not_final_benchmark"
+  },
+  "data_provenance": {
+    "status": "completed_prefix_sample",
+    "created_at": "2026-09-15T02:27:00.916459+00:00",
+    "source_url": "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_2023/benchmark/0core/rating_only/Video_Games.csv.gz",
+    "resolved_url": "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_2023/benchmark/0core/rating_only/Video_Games.csv.gz",
+    "source_documentation": "https://amazon-reviews-2023.github.io/data_processing/0core.html",
+    "source_headers": {
+      "ETag": "\"6d7b13b-62bd8da0d8cfa\"",
+      "Last-Modified": "Thu, 16 Jan 2025 20:43:51 GMT",
+      "Content-Length": "114798907"
+    },
+    "sampling": "first_N_rows_in_source_order_not_random_not_representative",
+    "requested_rows": 50000,
+    "rows": 50000,
+    "compressed_bytes_read": 1179674,
+    "max_compressed_bytes": 16777216,
+    "elapsed_seconds": 2.7689861000003475,
+    "sample_sha256": "8e1d1148390e75b3381714c7a28136bff7280f29759ab744227c223b6552bca3",
+    "full_source_downloaded": false,
+    "full_gzip_crc_verified": false,
+    "limitations": [
+      "prefix order may bias users, items and times",
+      "sample can truncate a user's history",
+      "first observation in this sample is not real item listing time",
+      "partial gzip reading cannot verify the full archive CRC",
+      "source terms and redistribution permissions require review before redistributing data"
+    ]
+  },
+  "environment": {
+    "python": "3.12.6",
+    "os": "Windows-11-10.0.26200-SP0",
+    "logical_processors": 12,
+    "compute": "CPU",
+    "third_party_research_dependencies": []
+  },
+  "code": {
+    "git_base_commit": "3e1cde0b640c2b613fbd04f360b9588998dd0d06",
+    "working_tree_dirty": true,
+    "source_sha256": {
+      "__init__.py": "1c6825b36a5c1d097a10d1ed268f22e148e9efe16e82998b1feb3006e043d078",
+      "baselines.py": "ba83384655e0a61a1f4323cd5f79984a3e912b967931a00eb766dc05f346ed79",
+      "data.py": "1fc50e8989451d2d5431de6ba44e0f1f562e1d1e4382ca1e0910dded3efd5ddf",
+      "download.py": "46ea0d53c36f611952cf060cb0808f8bfddb9639aa22dc2a44f7cb24bc0f438d",
+      "evaluation.py": "7b6e20d6e35d71ff997ba54f1102117cafbd91286be3d909a73957a67f0f932e",
+      "runner.py": "b2ac0fe6533149ec55cf0833b9b21131cc9da614c4bad1572249c8c67f325705"
+    },
+    "config_sha256": "3869db56f5b1741d83e6b83338405431f468a51743cdc96f6614f01e416e4d86"
+  },
+  "protocol": {
+    "fit": "training positives only; models frozen through validation and test",
+    "positive_event": "rating >= configured threshold; review is an implicit-interest proxy, not a click",
+    "catalog": "items first observed strictly before request timestamp in this sample",
+    "history": "earlier positives only, rolling window; all earlier reviews excluded from candidates",
+    "timestamp_ties": "evaluate complete equal-timestamp batch before applying any event in it",
+    "unavailable_targets": "retained as misses in all_positive_events; conditional cohort also reported",
+    "model_cold": "no training-period interaction, regardless of rating",
+    "itemcf": "binary cosine on capped positive user baskets, summed over recent positive history; popularity fills remaining candidates",
+    "coverage": "top-10 unique recommendations divided by union of available catalog over evaluated request times",
+    "latency": "rank function only, excludes file IO, HTTP, database and GPU; not an online SLA"
+  },
+  "finished_at": "2026-09-15T02:37:36.414015+00:00",
+  "data_statistics": {
+    "input_rows": 50000,
+    "deduplicated_rows": 50000,
+    "duplicates_removed": 0,
+    "users": 20375,
+    "items": 18508,
+    "first_timestamp_ms": 942693576000,
+    "last_timestamp_ms": 1679180982098
+  },
+  "fits": {
+    "popular": {
+      "wall_seconds": 0.03326920000017708,
+      "positive_user_item_pairs": 34451,
+      "scored_items": 13096
+    },
+    "itemcf": {
+      "wall_seconds": 0.27034139999977924,
+      "positive_user_item_pairs": 34451,
+      "scored_items": 13096,
+      "users_truncated": 1,
+      "max_user_items": 100,
+      "neighbors_per_item": 100,
+      "retained_neighbor_edges": 204753
+    }
+  },
+  "diagnostics": {
+    "train": {
+      "events": 43623,
+      "non_positive_events": 9172,
+      "positive_events": 34451
+    },
+    "validation": {
+      "events": 3472,
+      "positive_events": 2635,
+      "target_unavailable_at_request": 1112,
+      "model_cold_available": 370,
+      "cold_user_events": 1025,
+      "non_positive_events": 837
+    },
+    "test": {
+      "events": 2905,
+      "positive_events": 2291,
+      "target_unavailable_at_request": 1101,
+      "model_cold_available": 537,
+      "cold_user_events": 802,
+      "non_positive_events": 614
+    }
+  },
+  "metrics": {
+    "validation": {
+      "popular": {
+        "all_positive_events": {
+          "n": 2635,
+          "ndcg@10": 0.007211893684641087,
+          "recall@20": 0.022011385199240986,
+          "candidate_recall@200": 0.07817836812144212,
+          "catalog_coverage@10": 0.0009334889148191366,
+          "coverage_catalog_items": 17140,
+          "unique_recommended_items@10": 16,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 0.0,
+          "mean_popularity_fill": 0.0,
+          "ranking_latency_ms_p50": 0.01720000000204891,
+          "ranking_latency_ms_p95": 0.03699999979289714
+        },
+        "available_target": {
+          "n": 1523,
+          "ndcg@10": 0.012477570491811729,
+          "recall@20": 0.03808273145108339,
+          "candidate_recall@200": 0.13525935653315824,
+          "catalog_coverage@10": 0.0009334889148191366,
+          "coverage_catalog_items": 17140,
+          "unique_recommended_items@10": 16,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 0.0,
+          "mean_popularity_fill": 0.0,
+          "ranking_latency_ms_p50": 0.01700000029813964,
+          "ranking_latency_ms_p95": 0.03590000051190145
+        },
+        "history_present": {
+          "n": 1610,
+          "ndcg@10": 0.006777817741831885,
+          "recall@20": 0.020496894409937887,
+          "candidate_recall@200": 0.07267080745341616,
+          "catalog_coverage@10": 0.0009334889148191366,
+          "coverage_catalog_items": 17140,
+          "unique_recommended_items@10": 16,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 0.0,
+          "mean_popularity_fill": 0.0,
+          "ranking_latency_ms_p50": 0.017700000171316788,
+          "ranking_latency_ms_p95": 0.03769999966607429
+        },
+        "cold_user": {
+          "n": 1025,
+          "ndcg@10": 0.007893710531395046,
+          "recall@20": 0.024390243902439025,
+          "candidate_recall@200": 0.08682926829268292,
+          "catalog_coverage@10": 0.0006417736289381563,
+          "coverage_catalog_items": 17140,
+          "unique_recommended_items@10": 11,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 0.0,
+          "mean_popularity_fill": 0.0,
+          "ranking_latency_ms_p50": 0.01609999981155852,
+          "ranking_latency_ms_p95": 0.035200000638724305
+        },
+        "model_cold_available": {
+          "n": 370,
+          "ndcg@10": 0.0,
+          "recall@20": 0.0,
+          "candidate_recall@200": 0.0,
+          "catalog_coverage@10": 0.0007587696258682076,
+          "coverage_catalog_items": 17133,
+          "unique_recommended_items@10": 13,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 0.0,
+          "mean_popularity_fill": 0.0,
+          "ranking_latency_ms_p50": 0.01739999970595818,
+          "ranking_latency_ms_p95": 0.04739999985758914
+        }
+      },
+      "itemcf": {
+        "all_positive_events": {
+          "n": 2635,
+          "ndcg@10": 0.004197079630670759,
+          "recall@20": 0.01555977229601518,
+          "candidate_recall@200": 0.07400379506641366,
+          "catalog_coverage@10": 0.20192532088681447,
+          "coverage_catalog_items": 17140,
+          "unique_recommended_items@10": 3461,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 59.33548387096774,
+          "mean_popularity_fill": 140.66451612903225,
+          "ranking_latency_ms_p50": 0.03749999996216502,
+          "ranking_latency_ms_p95": 0.4063000005771755
+        },
+        "available_target": {
+          "n": 1523,
+          "ndcg@10": 0.007261526478540676,
+          "recall@20": 0.026920551543007223,
+          "candidate_recall@200": 0.12803676953381485,
+          "catalog_coverage@10": 0.16306884480746792,
+          "coverage_catalog_items": 17140,
+          "unique_recommended_items@10": 2795,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 55.12934996717006,
+          "mean_popularity_fill": 144.87065003282993,
+          "ranking_latency_ms_p50": 0.03539999943313887,
+          "ranking_latency_ms_p95": 0.3831000003629015
+        },
+        "history_present": {
+          "n": 1610,
+          "ndcg@10": 0.001843634492010884,
+          "recall@20": 0.009937888198757764,
+          "candidate_recall@200": 0.06583850931677018,
+          "catalog_coverage@10": 0.20192532088681447,
+          "coverage_catalog_items": 17140,
+          "unique_recommended_items@10": 3461,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 97.11118012422361,
+          "mean_popularity_fill": 102.88881987577639,
+          "ranking_latency_ms_p50": 0.07959999948070617,
+          "ranking_latency_ms_p95": 0.4764000004797708
+        },
+        "cold_user": {
+          "n": 1025,
+          "ndcg@10": 0.007893710531395046,
+          "recall@20": 0.024390243902439025,
+          "candidate_recall@200": 0.08682926829268292,
+          "catalog_coverage@10": 0.0006417736289381563,
+          "coverage_catalog_items": 17140,
+          "unique_recommended_items@10": 11,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 0.0,
+          "mean_popularity_fill": 200.0,
+          "ranking_latency_ms_p50": 0.02550000044720946,
+          "ranking_latency_ms_p95": 0.04220000027999049
+        },
+        "model_cold_available": {
+          "n": 370,
+          "ndcg@10": 0.0,
+          "recall@20": 0.0,
+          "candidate_recall@200": 0.0,
+          "catalog_coverage@10": 0.06566275608474872,
+          "coverage_catalog_items": 17133,
+          "unique_recommended_items@10": 1125,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 69.06486486486486,
+          "mean_popularity_fill": 130.93513513513514,
+          "ranking_latency_ms_p50": 0.04220000027999049,
+          "ranking_latency_ms_p95": 0.4326999996919767
+        }
+      }
+    },
+    "test": {
+      "popular": {
+        "all_positive_events": {
+          "n": 2291,
+          "ndcg@10": 0.00738817108771669,
+          "recall@20": 0.017023134002618942,
+          "candidate_recall@200": 0.05499781754692274,
+          "catalog_coverage@10": 0.0008644910309055544,
+          "coverage_catalog_items": 18508,
+          "unique_recommended_items@10": 16,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 0.0,
+          "mean_popularity_fill": 0.0,
+          "ranking_latency_ms_p50": 0.017100000150094274,
+          "ranking_latency_ms_p95": 0.03459999970800709
+        },
+        "available_target": {
+          "n": 1190,
+          "ndcg@10": 0.014223781480637762,
+          "recall@20": 0.03277310924369748,
+          "candidate_recall@200": 0.10588235294117647,
+          "catalog_coverage@10": 0.0008644910309055544,
+          "coverage_catalog_items": 18508,
+          "unique_recommended_items@10": 16,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 0.0,
+          "mean_popularity_fill": 0.0,
+          "ranking_latency_ms_p50": 0.01669999983278103,
+          "ranking_latency_ms_p95": 0.0349000001733657
+        },
+        "history_present": {
+          "n": 1489,
+          "ndcg@10": 0.007201670613064525,
+          "recall@20": 0.014103425117528543,
+          "candidate_recall@200": 0.041638683680322364,
+          "catalog_coverage@10": 0.0008645844590943478,
+          "coverage_catalog_items": 18506,
+          "unique_recommended_items@10": 16,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 0.0,
+          "mean_popularity_fill": 0.0,
+          "ranking_latency_ms_p50": 0.017500000467407517,
+          "ranking_latency_ms_p95": 0.03600000036385609
+        },
+        "cold_user": {
+          "n": 802,
+          "ndcg@10": 0.007734429450256668,
+          "recall@20": 0.022443890274314215,
+          "candidate_recall@200": 0.0798004987531172,
+          "catalog_coverage@10": 0.0005943375837475686,
+          "coverage_catalog_items": 18508,
+          "unique_recommended_items@10": 11,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 0.0,
+          "mean_popularity_fill": 0.0,
+          "ranking_latency_ms_p50": 0.015999999959603883,
+          "ranking_latency_ms_p95": 0.030900000638212077
+        },
+        "model_cold_available": {
+          "n": 537,
+          "ndcg@10": 0.0,
+          "recall@20": 0.0,
+          "candidate_recall@200": 0.0,
+          "catalog_coverage@10": 0.0008104603414739572,
+          "coverage_catalog_items": 18508,
+          "unique_recommended_items@10": 15,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 0.0,
+          "mean_popularity_fill": 0.0,
+          "ranking_latency_ms_p50": 0.01669999983278103,
+          "ranking_latency_ms_p95": 0.03199999991920777
+        }
+      },
+      "itemcf": {
+        "all_positive_events": {
+          "n": 2291,
+          "ndcg@10": 0.004635890841492241,
+          "recall@20": 0.012658227848101266,
+          "candidate_recall@200": 0.0528153644696639,
+          "catalog_coverage@10": 0.16425329587205534,
+          "coverage_catalog_items": 18508,
+          "unique_recommended_items@10": 3040,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 46.10606721955478,
+          "mean_popularity_fill": 153.89393278044523,
+          "ranking_latency_ms_p50": 0.03399999968678458,
+          "ranking_latency_ms_p95": 0.34810000033758115
+        },
+        "available_target": {
+          "n": 1190,
+          "ndcg@10": 0.008925063796519936,
+          "recall@20": 0.024369747899159664,
+          "candidate_recall@200": 0.10168067226890756,
+          "catalog_coverage@10": 0.12621569051221093,
+          "coverage_catalog_items": 18508,
+          "unique_recommended_items@10": 2336,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 45.25798319327731,
+          "mean_popularity_fill": 154.7420168067227,
+          "ranking_latency_ms_p50": 0.0334999995175167,
+          "ranking_latency_ms_p95": 0.31680000029155053
+        },
+        "history_present": {
+          "n": 1489,
+          "ndcg@10": 0.0029669667553746627,
+          "recall@20": 0.007387508394895903,
+          "candidate_recall@200": 0.038280725319006045,
+          "catalog_coverage@10": 0.16427104722792607,
+          "coverage_catalog_items": 18506,
+          "unique_recommended_items@10": 3040,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 70.9395567494963,
+          "mean_popularity_fill": 129.06044325050368,
+          "ranking_latency_ms_p50": 0.05409999994299142,
+          "ranking_latency_ms_p95": 0.42160000066360226
+        },
+        "cold_user": {
+          "n": 802,
+          "ndcg@10": 0.007734429450256668,
+          "recall@20": 0.022443890274314215,
+          "candidate_recall@200": 0.0798004987531172,
+          "catalog_coverage@10": 0.0005943375837475686,
+          "coverage_catalog_items": 18508,
+          "unique_recommended_items@10": 11,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 0.0,
+          "mean_popularity_fill": 200.0,
+          "ranking_latency_ms_p50": 0.025400000595254824,
+          "ranking_latency_ms_p95": 0.04290000015316764
+        },
+        "model_cold_available": {
+          "n": 537,
+          "ndcg@10": 0.0,
+          "recall@20": 0.0,
+          "candidate_recall@200": 0.0,
+          "catalog_coverage@10": 0.07261724659606657,
+          "coverage_catalog_items": 18508,
+          "unique_recommended_items@10": 1344,
+          "mean_candidates": 200.0,
+          "mean_personalized_candidates": 43.878957169459966,
+          "mean_popularity_fill": 156.12104283054003,
+          "ranking_latency_ms_p50": 0.03249999917898094,
+          "ranking_latency_ms_p95": 0.3645999995569582
+        }
+      }
+    }
+  },
+  "resources": {
+    "load_fit_evaluate_wall_seconds": 2.861140400000295,
+    "process_cpu_seconds": 2.828125,
+    "evaluation_wall_seconds_including_trace_io": 2.3616650000003574,
+    "process_peak_working_set_bytes": 90996736
+  },
+  "request_trace": {
+    "path_from_project_root": "artifacts/runs/r01-video-games-20260915-validated/requests.jsonl.gz",
+    "sha256": "17b5d0e839dfe7822cec841f285f7c3ab44746abd0bdc0c63e0c3a9bc61502f9",
+    "in_version_control": false
+  },
+  "limitations": [
+    "biased prefix sample, not an official benchmark or representative population",
+    "no metadata, dense retrieval, sequence model, generative model or GPU training",
+    "review ratings are proxies; no claims about production clicks or CTR",
+    "sample first observation is not item listing time",
+    "no tuning or multiple training seeds; these baselines are deterministic",
+    "ItemCF uses capped user baskets and capped neighbors",
+    "current timing is a single-process offline measurement"
+  ],
+  "original_run_directory_from_project_root": "artifacts/runs/r01-video-games-20260915-validated",
+  "hardware_observation": {
+    "observed_on": "2026-09-15",
+    "cpu": "12th Gen Intel Core i5-12450H",
+    "physical_memory_bytes": 16869351424,
+    "logical_processors": 12,
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "gpu_memory_mib": 8188,
+    "nvidia_driver": "555.99",
+    "gpu_used_for_this_run": false
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "status": "passed",
+  "checked_at": "2026-09-15T09:20:37.070587+00:00",
+  "markdown_documents": 26,
+  "local_links_checked": 117,
+  "broken_links": [],
+  "html_structure_and_resources": "passed",
+  "report_images": [
+    "figures/validation.png",
+    "figures/learning-curves.png",
+    "figures/test.png"
+  ],
+  "archived_and_published_metrics_match_completed_series": true,
+  "report_renderer_fingerprint": "passed",
+  "independent_audit_matches_series": true,
+  "python_syntax": "passed",
+  "git_diff_whitespace": "passed",
+  "data_model_and_environment_ignored": true,
+  "visual_checks": [
+    "learning curve labels and axes inspected",
+    "test comparison and seed error bars inspected"
+  ],
+  "limits": [
+    "HTML structure/resources checked; full browser layout was not tested"
+  ]
+}

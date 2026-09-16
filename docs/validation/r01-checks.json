@@ -1,0 +1,30 @@
+{
+  "checked_at": "2026-09-15T02:39:28.477459+00:00",
+  "tests": {
+    "tests": 79,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "sample_sha256": "8e1d1148390e75b3381714c7a28136bff7280f29759ab744227c223b6552bca3",
+  "request_trace_rows_checked": 9852,
+  "unique_queries_checked": 4926,
+  "independent_checks": [
+    "strict earlier-time histories",
+    "no same-time catalog leakage",
+    "no seen-item recommendations",
+    "candidate uniqueness and budget",
+    "model-cold cohort labels",
+    "metrics independently recomputed from request traces"
+  ],
+  "rerun_rankings_identical_ignoring_latency": true,
+  "test_environment_note": "default pytest temp/cache directories denied access; used a new project-local temp directory and disabled cache provider",
+  "not_verified": [
+    "population representativeness",
+    "upstream deduplication policy",
+    "neural baselines",
+    "GPU training",
+    "online SLA",
+    "real listing-time availability"
+  ]
+}

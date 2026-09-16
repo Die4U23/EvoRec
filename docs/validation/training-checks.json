@@ -1,0 +1,66 @@
+{
+  "status": "passed",
+  "checked_at": "2026-09-15T07:47:32.807628+00:00",
+  "protocol_id": "47e66889b76aaf36",
+  "series_sha256": "680774e7c3155233f33ef5664c6f5363cd97d78c7302232cbc01a230e709d2c0",
+  "audit_script_sha256": "66da4f61fad9f9eeee591c012c6016b135e83eca805cd7f2eccb862a401675da",
+  "test_queries": 12614,
+  "trace_records_checked": 100912,
+  "candidate_eligibility_checks": 20182400,
+  "checks": [
+    "sample/catalog/source/config fingerprints",
+    "independent strict-time query reconstruction",
+    "identical query order across methods",
+    "no seen/unavailable/duplicate candidates",
+    "independent per-request and all five cohort metrics/coverage",
+    "validation-only selection and best epochs",
+    "checkpoint hashes and recorded reload equality",
+    "three-seed mean and sample standard deviation"
+  ],
+  "traces": [
+    {
+      "name": "Popular",
+      "rows": 12614,
+      "sha256": "7b621a115d8ab9c4dbe39b3ffd861d9ebd74a4a4a965fcfb5cdd7c2f93d4ef88"
+    },
+    {
+      "name": "RecentPopular-365d",
+      "rows": 12614,
+      "sha256": "669050121b003bd46b8f4fa858f297a9c435f7964c5cc7d043473df02d2446a9"
+    },
+    {
+      "name": "ItemCF",
+      "rows": 12614,
+      "sha256": "c812632108b7b0057e69dea17b65987ea3de80d7b1e6bf335bfcd4ecba547869"
+    },
+    {
+      "name": "CF-blend-a0.25",
+      "rows": 12614,
+      "sha256": "bcbe5643872fcc375fb2f6c11ce8b93f3c0b4a150931cca3da801b37b778a943"
+    },
+    {
+      "name": "CF-blend-a0.5",
+      "rows": 12614,
+      "sha256": "8c848cc44541955414b548e375231037b8a41097534be4f36db95fb2f71e8f67"
+    },
+    {
+      "name": "sasrec64-low-lr-s17",
+      "rows": 12614,
+      "sha256": "d24ca360a4c49ce3c1a03aaab03f648696d5fce24a724d6414152a875e1e05ff"
+    },
+    {
+      "name": "sasrec64-low-lr-s29",
+      "rows": 12614,
+      "sha256": "876e11bb48b05168eeae121812522fc999bf5e5d32453a10e334e0030055c184"
+    },
+    {
+      "name": "sasrec64-low-lr-s43",
+      "rows": 12614,
+      "sha256": "4eb55cd25aaa1348f67b96a770d8310929188dfce48bab7c8f5493567829b388"
+    }
+  ],
+  "limits": [
+    "does not establish statistical significance or online performance",
+    "checkpoint inference equality was measured by the training run; this audit verifies its evidence and hashes"
+  ]
+}

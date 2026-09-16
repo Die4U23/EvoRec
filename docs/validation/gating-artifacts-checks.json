@@ -1,0 +1,32 @@
+{
+  "status": "passed",
+  "checked_at": "2026-09-16T07:23:14.107056+00:00",
+  "checker_sha256": "32f62ad88756bb0aec03e02e1803887c4d3cddafc8216ace5488febeda730ed9",
+  "markdown_documents": 39,
+  "local_links_checked": 241,
+  "python_files_parsed": 61,
+  "blog_image_embeds": 12,
+  "image_files_checked": 20,
+  "offline_html_pages": [
+    "docs/experiments/r04-gating/report.html",
+    "docs/blog/assets/evorec/index.html"
+  ],
+  "completed_series_archive_and_report_match": true,
+  "image_sources_and_generator_fingerprints": "passed",
+  "independent_audit_matches_series": true,
+  "tests": {
+    "gating-core-tests.xml": {
+      "passed": 96,
+      "skipped": 2
+    },
+    "gating-research-tests.xml": {
+      "passed": 19,
+      "skipped": 0
+    }
+  },
+  "git_diff_whitespace": "passed",
+  "limits": [
+    "HTML structure/resources checked; no full browser rendering asserted",
+    "research and service tests overlap on eight gating cases"
+  ]
+}

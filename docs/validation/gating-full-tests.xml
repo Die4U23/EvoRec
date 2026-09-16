@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="8.350" timestamp="2026-09-15T22:54:18.117413+08:00" hostname="DESKTOP-3LNIERE"><testcase classname="" name="tests.test_api" time="0.000"><error message="collection failure">ImportError while importing test module 'E:\codex\proj\tests\test_api.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Program Files\Python312\Lib\importlib\__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_api.py:5: in &lt;module&gt;
+    from evorec.api.app import create_app
+src\evorec\api\app.py:5: in &lt;module&gt;
+    from fastapi import FastAPI
+E   ModuleNotFoundError: No module named 'fastapi'</error></testcase></testsuite></testsuites>

@@ -1,0 +1,67 @@
+{
+  "status": "completed_posthoc_diagnosis",
+  "protocol_id": "e0b682ce2ecfbae6",
+  "series_sha256": "d857f78d3194b9c4e286600a9d1b653cd4ef441e1fa46a72c30d06d4c7636538",
+  "script_sha256": "431ae4d1344144f9bc963a704a2f36e23a218991368c5b420075cc94270432d4",
+  "scope": "R04 test; frozen seed 17; descriptive analysis after registered selection",
+  "counts": {
+    "cold_targets": 6996,
+    "has_history": 3138,
+    "has_represented_history": 3138,
+    "gate_eligible": 1466,
+    "raw_top200": 179,
+    "raw_top20": 48,
+    "fixed_top20": 7,
+    "reserve2_top20": 9,
+    "reserve2_gained_vs_fixed": 2,
+    "reserve2_lost_vs_fixed": 0,
+    "gated2_top20": 7,
+    "gated2_gained_vs_fixed": 0,
+    "gated2_lost_vs_fixed": 0
+  },
+  "mutually_exclusive_raw_rank_groups": {
+    "outside_raw_top200": 6817,
+    "raw_and_fixed_top20": 2,
+    "raw_rank_21_to_200": 131,
+    "raw_top20_but_fixed_miss": 46
+  },
+  "gate_groups": {
+    "eligible": {
+      "cold_targets": 1466,
+      "fixed_top20": 4,
+      "reserve2_top20": 4,
+      "gated2_top20": 4,
+      "raw_top20": 26
+    },
+    "ineligible": {
+      "cold_targets": 5530,
+      "fixed_top20": 3,
+      "reserve2_top20": 5,
+      "gated2_top20": 3,
+      "raw_top20": 22
+    }
+  },
+  "source_traces": {
+    "Content-SVD": {
+      "path_from_project_root": "artifacts/runs/r04-gating-20260915/test-Content-SVD.jsonl.gz",
+      "sha256": "a136c0c777ea9e72d66729d030420eb9e04c641e2f9a7b44af859034d4277a6f"
+    },
+    "fixed-s17": {
+      "path_from_project_root": "artifacts/runs/r04-gating-20260915/test-fixed-s17.jsonl.gz",
+      "sha256": "8546e0c22580f0ecd9190dca78ccf1a0b01eccbd3a9079b226f2d21a45c9e5df"
+    },
+    "reserve-2-s17": {
+      "path_from_project_root": "artifacts/runs/r04-gating-20260915/test-reserve-2-s17.jsonl.gz",
+      "sha256": "1620af2e5185a7a14cb529fc63558b8e3edb37f78ce11e0210850e30f50ed05c"
+    },
+    "gated-2-s17": {
+      "path_from_project_root": "artifacts/runs/r04-gating-20260915/test-gated-2-s17.jsonl.gz",
+      "sha256": "8e95b4c3acf7aa8d70eb1a11b828fd2edabdb41a1df884c7f35147042e7d01ea"
+    }
+  },
+  "limits": [
+    "labels used for diagnosis only; cannot feed test labels to a gate",
+    "test-aware diagnosis is not a new held-out experiment or causal proof",
+    "rank groups follow raw Content-SVD, not a strict multi-stage funnel"
+  ]
+}

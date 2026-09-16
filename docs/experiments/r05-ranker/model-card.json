@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "name": "EvoRec R05 ResidualListRanker",
+  "status": "trained_and_offline_audited",
+  "protocol_id": "2624e6561e71af4b",
+  "selected_validation_method": "ColdListMLP-s17",
+  "architecture": [
+    520,
+    128,
+    64,
+    1
+  ],
+  "parameters": 75009,
+  "scalar_features": [
+    "content_cosine",
+    "cf_rrf",
+    "content_rrf",
+    "prior_strength",
+    "model_cold",
+    "log_age",
+    "history_length",
+    "history_coherence"
+  ],
+  "feature_fingerprint": "a6cafc98cc683a4c65430e1bcb4df7db97b8cea00c8e5b3186c601fd49660c0b",
+  "training_examples": 3851,
+  "simulated_cold_examples": 564,
+  "checkpoints": [
+    {
+      "name": "ListMLP-s17",
+      "seed": 17,
+      "best_epoch": 3,
+      "path_from_project_root": "artifacts/runs/r05-ranker-20260916/ListMLP-s17/best.pt",
+      "sha256": "58a728f4e5a0ea182acb23913202e0d2af74bd0fa737662e9cf3b1eb43d0d9a0"
+    },
+    {
+      "name": "ColdListMLP-s17",
+      "seed": 17,
+      "best_epoch": 3,
+      "path_from_project_root": "artifacts/runs/r05-ranker-20260916/ColdListMLP-s17/best.pt",
+      "sha256": "62ad4c038bf3c8da1cd7195b7a3aff75c6e127db52435d7b1c93178a7c8c696b"
+    },
+    {
+      "name": "ListMLP-s29",
+      "seed": 29,
+      "best_epoch": 8,
+      "path_from_project_root": "artifacts/runs/r05-ranker-20260916/ListMLP-s29/best.pt",
+      "sha256": "ee586d3bf09c958116928db52e0ac2531ab95da96165990caca099a71447a871"
+    },
+    {
+      "name": "ListMLP-s43",
+      "seed": 43,
+      "best_epoch": 5,
+      "path_from_project_root": "artifacts/runs/r05-ranker-20260916/ListMLP-s43/best.pt",
+      "sha256": "5bdb7e0cc28a023bd8267ce6b15d2945bd281a0e6fa26fe8f17a84a9a4397a70"
+    }
+  ],
+  "evaluation_summary": {
+    "ndcg@10": {
+      "mean": 0.009546354991821625,
+      "sample_std": 0.0003151357559045769,
+      "seeds": [
+        17,
+        29,
+        43
+      ]
+    },
+    "recall@20": {
+      "mean": 0.031184486373165617,
+      "sample_std": 0.00024017692321571483,
+      "seeds": [
+        17,
+        29,
+        43
+      ]
+    },
+    "candidate_recall@200": {
+      "mean": 0.10513626834381552,
+      "sample_std": 0.000403427786120038,
+      "seeds": [
+        17,
+        29,
+        43
+      ]
+    },
+    "cold_recall@20": {
+      "mean": 0.0015519187358916478,
+      "sample_std": 0.0004232505643340859,
+      "seeds": [
+        17,
+        29,
+        43
+      ]
+    },
+    "cold_candidate_recall@200": {
+      "mean": 0.011756960120391272,
+      "sample_std": 0.0006959484850897642,
+      "seeds": [
+        17,
+        29,
+        43
+      ]
+    }
+  },
+  "summary_family": "ListMLP",
+  "source_series_sha256": "ae8fcb98a5d26269529123c80ca924be02c553dbbb4b3f442d7d63f5e52dbab6",
+  "limits": [
+    "selected ColdListMLP has only seed 17; reported seed SD belongs to ListMLP",
+    "offline candidate ranking only; no public serving endpoint",
+    "static metadata access assumption",
+    "requires the exact frozen encoder and feature schema",
+    "candidate misses excluded from training loss but retained in evaluation denominator"
+  ]
+}

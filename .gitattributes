@@ -12,3 +12,12 @@
 *.yaml text eol=lf
 *.ps1 text eol=crlf
 *.pdf binary
+
+# Preserve generated research evidence byte-for-byte, including recorded hashes.
+docs/experiments/** -text whitespace=cr-at-eol
+docs/blog/assets/** -text whitespace=cr-at-eol
+docs/validation/** -text whitespace=cr-at-eol
+# Matplotlib path data and captured test output can contain intentional whitespace.
+docs/experiments/**/*.svg whitespace=-blank-at-eol,cr-at-eol
+docs/blog/assets/**/*.svg whitespace=-blank-at-eol,cr-at-eol
+docs/validation/*.xml whitespace=-blank-at-eol,cr-at-eol

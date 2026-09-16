@@ -1,6 +1,6 @@
 # 研究协议草案
 
-本协议在可行性验证后锁定具体时间边界、样本规模和设备。配置模板 `research/configs/experiment.example.json` 标为 template，不包含伪造结果。
+本文保留完整研究路线；[R02 / R03 序列协议](experiments/r02-protocol.md) 与 [R03 内容辅助协议](experiments/r03-content-protocol.md) 分别记录已执行的样本和训练边界。已有 [序列实验](experiments/training-report.md) 以及 [内容双塔与融合实验](experiments/r03-content/report.md)，两者样本不同，分别报告。内容实验采用静态元数据假设，不能替代历史内容可见性验证。各轮测试均已查看，后续调参先登记新的评价窗口或独立留出协议。
 
 ## 1. 研究假设
 
@@ -44,4 +44,16 @@ H3：路由收益随用户历史、物品热度和商品库更新程度变化，
 
 运行清单包括运行 ID、代码版本及改动、完整配置、随机种子、依赖和设备、数据校验值、模型与索引标识、时间边界、原始结果和汇总指标。状态为 planned / running / completed / failed；只有 completed 且验证通过的结果进入正式看板。
 
-参考：[Amazon Reviews 2023](https://amazon-reviews-2023.github.io/main.html)、[TIGER](https://arxiv.org/abs/2305.05065)、[LIGER](https://github.com/facebookresearch/liger)。本文提出的具体实验尚未运行。
+参考：[Amazon Reviews 2023](https://amazon-reviews-2023.github.io/main.html)、[TIGER](https://arxiv.org/abs/2305.05065)、[LIGER](https://github.com/facebookresearch/liger)。R01 已完成流程验证，R02 样本已运行统计基线与首轮 SASRec-style CE 训练；内容路径已完成静态快照辅助实验，生成式与预算路由尚未运行。
+
+## R04 冻结模型下的策略验证
+
+[R04 预登记协议](experiments/r04-gating-protocol.md) 固定 R03 文本编码、神经检查点及协同训练统计，使用新用户样本研究冷商品保留与规则门控。查询历史来自新用户，模型冷集合来自冻结 R03 训练交互，二者不可混淆。
+
+R04 已完成：验证集五种策略的冷目标命中一致，因此保留原融合。最终报告包含全部预登记 seed 17 消融和选中策略三种子统计。新增的 [失败定位](experiments/r04-gating/error-analysis.md) 使用已查看测试标签，仅解释候选与排序损失，不参与选型或提供新的未见测试结论。
+
+## R05 时间滚动训练与新排序器
+
+[R05 登记协议](experiments/r05-ranker-protocol.md) 已执行：编码器提前到 2017 年冻结，两个模拟训练窗口各自使用过去统计；只对真实进入候选池的训练目标计算损失。新的 R05 用户只用于严格时间历史和留出评价。
+
+四次训练与测试已经完成。验证选中的冷加权模型目前只有一个种子；普通排序模型另有三种子结果。报告同时保留未召回训练目标、候选池覆盖、原融合基线及不同管线的 R03 参考，避免把模型学习、召回变化和跨样本差异混为一谈。

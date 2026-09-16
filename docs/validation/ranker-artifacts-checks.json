@@ -1,0 +1,35 @@
+{
+  "status": "passed",
+  "checked_at": "2026-09-16T07:23:17.613969+00:00",
+  "checker_sha256": "2d50cfe840c9ad877cac4de55e197908b811440942fbde6c975d2445aac20ae8",
+  "series_sha256": "ae8fcb98a5d26269529123c80ca924be02c553dbbb4b3f442d7d63f5e52dbab6",
+  "model_parameters": 75009,
+  "model_checkpoints_checked": 4,
+  "model_card": "docs/experiments/r05-ranker/model-card.json",
+  "report_and_archive_match": true,
+  "audit_matches": true,
+  "blog_image_files_checked": 4,
+  "html_structure_and_resources": [
+    "docs/experiments/r05-ranker/report.html",
+    "docs/blog/assets/evorec/r05/index.html"
+  ],
+  "tests": {
+    "ranker-core-tests.xml": {
+      "passed": 96,
+      "skipped": 3
+    },
+    "ranker-research-tests.xml": {
+      "passed": 28,
+      "skipped": 0
+    }
+  },
+  "data_and_models_ignored": true,
+  "visual_review": [
+    "learning curve axes/legends inspected",
+    "test comparison labels and values inspected"
+  ],
+  "limits": [
+    "HTML structure/resources verified; full browser layout was not tested",
+    "eight gating tests overlap across service and research suites"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "status": "passed",
+  "checked_at": "2026-09-15T08:19:33.716650+00:00",
+  "markdown_documents_checked": 23,
+  "local_document_links_checked": 92,
+  "missing_links": [],
+  "report_images": [
+    "figures/validation-comparison.png",
+    "figures/learning-curves.png",
+    "figures/test-comparison.png"
+  ],
+  "result_and_archive_equal_to_completed_series": true,
+  "tracked_changes_whitespace_check": "passed",
+  "python_syntax": "passed",
+  "data_environment_and_checkpoints_ignored": true,
+  "visual_checks": [
+    "learning curve labels and legend inspected",
+    "test comparison and three-seed SD inspected"
+  ],
+  "limits": [
+    "HTML structure and local resources checked; full browser layout was not tested"
+  ]
+}
