@@ -1,0 +1,32 @@
+{
+  "source_series_sha256": "dc8b5cb6ed231d7c576497a21bac632c6abcd74b31926a53ceb77e7905d406e4",
+  "source_analysis_sha256": "76d2340648829e788145f7ac67a3259bb111ef0d09314c13a8fa29a116eeefb8",
+  "source_results_sha256": "a56097096c38317b7b5bdf9bff96a0cccaa386b6114b1e53211d2ed886f04774",
+  "generator_sha256": "431c983e414052f0694ffe97bd709217e8c6f9c997d88ed6aabb16d61c5cb205",
+  "assets": [
+    {
+      "file": "coverage-and-ranking.png",
+      "sha256": "02b633e1a1c8dd98283534246478da7633f2a250fdd42ebae4b0ed8bd53456bc"
+    },
+    {
+      "file": "coverage-and-ranking.svg",
+      "sha256": "80c2bd608dc87514229ef78913bc0e418f9a50f5c9d85943408a05e52cc1741f"
+    },
+    {
+      "file": "learning-curves.png",
+      "sha256": "f09aa32eb37d07a4366f7718320befa4afc9b4ff8d235e2d363e50eda3df48dd"
+    },
+    {
+      "file": "learning-curves.svg",
+      "sha256": "96425fb305fce87f790f557ecd44facdd9154784f51e6c993db6fa6b7e0df1b6"
+    },
+    {
+      "file": "paired-intervals.png",
+      "sha256": "9c5863e51750f8704f3a28a6d9b83e273b0e88354323b61bae2be795de25fde5"
+    },
+    {
+      "file": "paired-intervals.svg",
+      "sha256": "1d609727fdf6aa35f128859e11479135d4b5bb172dcb5b2b15a507fd7be5faa8"
+    }
+  ]
+}
