@@ -1,0 +1,11 @@
+{
+  "status": "passed",
+  "scope": "Git index only",
+  "tracked_files": 210,
+  "local_links_checked": 201,
+  "python_files_parsed": 67,
+  "largest_file_bytes": 568813,
+  "no_tracked_local_materials_or_raw_artifacts": true,
+  "credential_scan": "common token and private-key signatures only; not an exhaustive secret audit",
+  "checker_sha256": "f539fe134a6b66e7b2939e9312cee57a4f73a57b105411d4b646af9aff64fd20"
+}

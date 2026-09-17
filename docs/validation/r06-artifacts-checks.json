@@ -1,0 +1,32 @@
+{
+  "status": "passed",
+  "branch": "codex/r06-multi-interest",
+  "training_commit": "bf73ce7b002d7fa9ca3c327dc291efea6b42c908",
+  "series_sha256": "dc8b5cb6ed231d7c576497a21bac632c6abcd74b31926a53ceb77e7905d406e4",
+  "analysis_sha256": "76d2340648829e788145f7ac67a3259bb111ef0d09314c13a8fa29a116eeefb8",
+  "checker_sha256": "5bb1b6543aceb562f61a1b908970222060e7b679b83297e6a62e7d614591f708",
+  "training_source_matches_snapshot_and_commit": true,
+  "original_R05_runs_unchanged": true,
+  "local_materials_preserved": 45,
+  "figure_files_checked": 6,
+  "html_structure_and_resources": "passed; no browser rendering claim",
+  "tests": {
+    "r06-core-tests.xml": {
+      "passed": 108,
+      "skipped": 6
+    },
+    "r06-implementation-tests.xml": {
+      "passed": 47,
+      "skipped": 0
+    },
+    "repository-hygiene-tests.xml": {
+      "passed": 12,
+      "skipped": 0
+    }
+  },
+  "test_overlap": "six protocol tests overlap across core and research; hygiene tests are also in core",
+  "audited_source_queries": 45382,
+  "audited_ranking_queries": 361425,
+  "audited_candidate_checks": 138921354,
+  "intervals_recomputed": 50
+}
