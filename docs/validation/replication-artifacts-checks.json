@@ -1,0 +1,58 @@
+{
+  "status": "passed",
+  "checker_sha256": "9b69409b40474295346bacf13008735700f1c96ec7dd2f77020ecea5a799a090",
+  "series_sha256": "c20f0aaeb4381287535745a9cf4cbfc3354c6047b3e88021e2364729f07c5966",
+  "analysis_sha256": "e60e265617f7ee5b81b0c49ad3e1f477e160ba30240a5a450fde89267d5a72c1",
+  "code_commit": "7f065e2c480d3c69d9c85f6772613ab44f22569b",
+  "experiment_paths_clean_at_start": true,
+  "unrelated_worktree_changes_at_start": [
+    "?? LICENSE"
+  ],
+  "source_and_archive_unchanged": true,
+  "source_files_match_training_commit_after_eol_normalization": true,
+  "identical_full_analysis_on_repeat": true,
+  "checkpoints": [
+    {
+      "seed": 17,
+      "best_epoch": 3,
+      "epochs": 7,
+      "sha256": "62ad4c038bf3c8da1cd7195b7a3aff75c6e127db52435d7b1c93178a7c8c696b"
+    },
+    {
+      "seed": 29,
+      "best_epoch": 8,
+      "epochs": 12,
+      "sha256": "98e5788215751bb7a0444ad32538305a2ed71bc04e4f34ff724ca6224002946a"
+    },
+    {
+      "seed": 43,
+      "best_epoch": 7,
+      "epochs": 11,
+      "sha256": "b0b604fe634d699b9b9ad7f815abd8fa41fdd3233d07c75faf78e3cc7ff86df6"
+    }
+  ],
+  "audited_queries": 111039,
+  "audited_candidate_checks": 22207800,
+  "confidence_intervals": 48,
+  "blog_image_files_checked": 4,
+  "markdown_local_links_checked": 272,
+  "tests": {
+    "replication-core-tests.xml": {
+      "passed": 96,
+      "skipped": 5
+    },
+    "replication-implementation-tests.xml": {
+      "passed": 18,
+      "skipped": 0
+    },
+    "replication-ranker-tests.xml": {
+      "passed": 9,
+      "skipped": 0
+    }
+  },
+  "limits": [
+    "historical R05 already inspected; not a fresh test",
+    "current model checkpoints are local ignored artifacts",
+    "provider attribution cannot be reconstructed from saved traces"
+  ]
+}

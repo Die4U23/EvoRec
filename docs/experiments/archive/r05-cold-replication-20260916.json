@@ -1,0 +1,967 @@
+{
+  "status": "completed",
+  "started_at": "2026-09-16T14:47:49.104756+00:00",
+  "configuration": {
+    "schema_version": "1.0",
+    "stage": "R05-cold-replication",
+    "source_run": "artifacts/runs/r05-ranker-20260916",
+    "source_series_sha256": "ae8fcb98a5d26269529123c80ca924be02c553dbbb4b3f442d7d63f5e52dbab6",
+    "source_protocol_id": "2624e6561e71af4b",
+    "setting": {
+      "name": "ColdListMLP",
+      "cold_weight": 4
+    },
+    "seeds": [
+      17,
+      29,
+      43
+    ],
+    "replay_seed": 17,
+    "report_directory": "docs/experiments/r05-cold-replication",
+    "bootstrap": {
+      "replicates": 10000,
+      "seed": 20260916,
+      "confidence": 0.95,
+      "unit": "user",
+      "estimator": "request-weighted mean paired difference",
+      "interval": "percentile",
+      "cohorts": [
+        "all_positive_events",
+        "history_present",
+        "model_cold_available"
+      ],
+      "metrics": [
+        "ndcg@10",
+        "recall@20"
+      ],
+      "baselines": [
+        "RRF",
+        "CF-blend"
+      ],
+      "include_fixed_seed_metric_mean": true,
+      "simultaneous_intervals": false
+    },
+    "limits": [
+      "R05 test was already inspected; fixed-configuration replication and posthoc inference, not a fresh sealed test",
+      "query sampling intervals condition on these checkpoints; seed SD is reported separately",
+      "no hyperparameter changes, model reselection, or best-test-seed selection",
+      "user resampling does not model shared item or time shocks"
+    ]
+  },
+  "source_configuration": {
+    "schema_version": "0.5",
+    "stage": "R05-ranker",
+    "dataset_path": "datasets/video_games_r05.csv",
+    "metadata_path": "datasets/video_games_r03.metadata.json",
+    "training_run": "artifacts/runs/r03-content-20260915",
+    "train_end_ms": 1628643414042,
+    "validation_end_ms": 1658002729837,
+    "positive_rating_min": 4,
+    "history_limit": 50,
+    "candidate_k": 200,
+    "sample": {
+      "seed": "evorec-r02-v1",
+      "denominator": 20,
+      "bucket": 3,
+      "exclude_r01": true
+    },
+    "content": {
+      "fields": [
+        "title",
+        "categories"
+      ],
+      "access_assumption": "static-2023-metadata-at-item-availability; historical content timestamps unavailable",
+      "max_features": 20000,
+      "min_df": 2,
+      "dimensions": 128,
+      "svd_seed": 17,
+      "history_decay": 0.8
+    },
+    "encoder_fit_end_ms": 1483228800000,
+    "folds": [
+      {
+        "name": "2017-2019",
+        "start_ms": 1483228800000,
+        "end_ms": 1577836800000
+      },
+      {
+        "name": "2020-2021",
+        "start_ms": 1577836800000,
+        "end_ms": 1628643414042
+      }
+    ],
+    "max_training_queries_per_fold": 12000,
+    "pool_k": 400,
+    "retrieval_k": 200,
+    "fusion_alpha": 0.5,
+    "rrf_constant": 60,
+    "seeds": [
+      17,
+      29,
+      43
+    ],
+    "trials": [
+      {
+        "name": "ListMLP",
+        "cold_weight": 1
+      },
+      {
+        "name": "ColdListMLP",
+        "cold_weight": 4
+      }
+    ],
+    "learning_rate": 0.001,
+    "weight_decay": 0.001,
+    "max_epochs": 15,
+    "patience": 4,
+    "batch_size": 64,
+    "evaluation_batch_size": 128,
+    "model": {
+      "hidden": 128,
+      "bottleneck": 64,
+      "base_scale": 8,
+      "residual_scale": 4
+    },
+    "selection": {
+      "seed": 17,
+      "epoch_metric": "validation/all_positive_events/ndcg@10",
+      "ndcg_min_ratio": 0.97,
+      "method_metric": "validation/model_cold_available/recall@20",
+      "tie_break": "higher overall NDCG, then fixed baseline, then declaration order"
+    },
+    "report_directory": "docs/experiments/r05-ranker",
+    "limits": [
+      "fixed content encoder fitted before 2017; static metadata historical version assumption remains",
+      "unobserved candidates are contrastive negatives, not observed dislikes",
+      "training excludes candidate misses without injecting targets; all evaluation positives remain in denominator",
+      "test users disjoint from R01-R04; items and calendar overlap",
+      "R03 reference has a different encoder and candidate pipeline"
+    ]
+  },
+  "protocol_id": "2624e6561e71af4b",
+  "replication_id": "6b62e8a852b43d38",
+  "source_inputs": {
+    "training_cache": {
+      "path_from_project_root": "artifacts/runs/r05-ranker-20260916/training-inputs.npz",
+      "sha256": "fc14e3f2604c8d83f757a222f564af94976bf5ace594848b8182d6bd47a6b64b"
+    },
+    "validation_cache": {
+      "path_from_project_root": "artifacts/runs/r05-ranker-20260916/validation-inputs.npz",
+      "sha256": "0976b28bfc2ab8b5da6522a5f7efc8ffb988ba1e30738bffb094ac05aaa7cfc7"
+    },
+    "test_cache": {
+      "path_from_project_root": "artifacts/runs/r05-ranker-20260916/test-inputs.npz",
+      "sha256": "fc76329627a2e6029e1e24d7a6a236292defc16ba06c4068263e3793554b977c"
+    }
+  },
+  "source_series_sha256": "ae8fcb98a5d26269529123c80ca924be02c553dbbb4b3f442d7d63f5e52dbab6",
+  "feature_fingerprint": "a6cafc98cc683a4c65430e1bcb4df7db97b8cea00c8e5b3186c601fd49660c0b",
+  "code": {
+    "git_base_commit": "7f065e2c480d3c69d9c85f6772613ab44f22569b",
+    "working_tree_dirty": true,
+    "experiment_paths_clean": true,
+    "unrelated_worktree_changes": [
+      "?? LICENSE"
+    ],
+    "source_sha256": {
+      "baselines.py": "ba83384655e0a61a1f4323cd5f79984a3e912b967931a00eb766dc05f346ed79",
+      "content.py": "9a159ada0f4ad7dec25092fc1312a45841ccec0b76d5487e4e08d313673e686e",
+      "content_data.py": "fd77b44136671e3964414ee73fca7f7bc2b3a197407d87fc8b36d35f8170ca9d",
+      "content_report.py": "0bfb8a6dcf3d5a74c9bf8c996f3aef114e007a165d582a4694c57a09743ea843",
+      "data.py": "1fc50e8989451d2d5431de6ba44e0f1f562e1d1e4382ca1e0910dded3efd5ddf",
+      "download.py": "46ea0d53c36f611952cf060cb0808f8bfddb9639aa22dc2a44f7cb24bc0f438d",
+      "evaluation.py": "7b6e20d6e35d71ff997ba54f1102117cafbd91286be3d909a73957a67f0f932e",
+      "gating.py": "2aa7d939dd4869cac381fd44b8259f83c88ada4cb6ad338ee627e78060fd48a5",
+      "gating_report.py": "ccd9c3a6575cc933801bbeea406a846302ca25cd3cca451219e426df7bbbeb28",
+      "neural.py": "245ab6db379b1a89057aed6ef6c323cd4e6ad4ea31770aa17e234e3f5f9f37c9",
+      "protocol.py": "065b9f010e48733b54b17ffaa7adc4663983c520ca6d6836972f2a21f0c6b669",
+      "ranker.py": "1bea3cb481aba8236b45cc79dfa569f2450850c624ce793e41da5057f05e3df8",
+      "ranker_data.py": "82245ee87887aa0081604e94d327db5cf635447da4f2c0435946943db225580d",
+      "ranker_report.py": "620e31791831f89732c4baa87bad5f333848ec2a262395a46f3a965c2f17890f",
+      "replicate_ranker.py": "38c5bba6f216171c279822fa05e719acb3511b72e0c02044451602b7ef0b19c4",
+      "replication_analysis.py": "320ae2dd2b6426705b6d49469729a3d2c645123d55ba341a63d0ce7adaf323ff",
+      "replication_report.py": "345fffca6e4e35264b8c42f6b481c6474b69ef69829a239dfacccdfd858f1a76",
+      "reporting.py": "266de663e37e8f1a0350cce914b1691ecd4dfc4d06f5707af58cd9c0e53b2925",
+      "runner.py": "b2ac0fe6533149ec55cf0833b9b21131cc9da614c4bad1572249c8c67f325705",
+      "run_gating.py": "faaa032fa5cbc0e9394523a92e0f87558c83b539e619ffd21e23e698fb550957",
+      "sample.py": "625e82dc95579cb3c87a8621ca79ab871d04bf23fe8783175ca54e5b21ef39d4",
+      "train.py": "b0f3c16d13ef94e503307187371d4db1219d91f66908dd06e0be2efc1c62bc4a",
+      "training_baselines.py": "5626e65a891512b6048fe57afcc095ca96c07c231ea25e9ba3a940cac4004127",
+      "train_content.py": "9addc1ca4e6a22b57e049c08c2d71847485f30f2f717f589ea5f4ca618b73d0f",
+      "train_ranker.py": "c2a3fa52371c12c148b454e70af243767d4525f74df2fbc1328262530d7bea53",
+      "uncertainty.py": "3fe48a7d0d7b678523ac053b92b8b09e17fc6f2740e3153b0ade988c2f758d76",
+      "__init__.py": "1c6825b36a5c1d097a10d1ed268f22e148e9efe16e82998b1feb3006e043d078"
+    }
+  },
+  "device": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "torch": "2.9.0+cu126",
+  "user_overlaps": {
+    "r01": 0,
+    "r02": 0,
+    "r03": 0,
+    "r04": 0
+  },
+  "training_examples": 3851,
+  "cold_training_examples": 564,
+  "trials": [
+    {
+      "name": "ColdListMLP-s17",
+      "seed": 17,
+      "setting": {
+        "name": "ColdListMLP",
+        "cold_weight": 4
+      },
+      "status": "completed",
+      "history": [
+        {
+          "epoch": 1,
+          "train_loss": 5.790812397656965,
+          "validation_ndcg@10": 0.010454329303030311,
+          "validation_cold_recall@20": 0.00099601593625498,
+          "wall_seconds": 8.569774099996721
+        },
+        {
+          "epoch": 2,
+          "train_loss": 5.452637671994191,
+          "validation_ndcg@10": 0.010403541806750736,
+          "validation_cold_recall@20": 0.006225099601593625,
+          "wall_seconds": 3.1103194000024814
+        },
+        {
+          "epoch": 3,
+          "train_loss": 5.366103646644676,
+          "validation_ndcg@10": 0.010960818870952044,
+          "validation_cold_recall@20": 0.0049800796812749,
+          "wall_seconds": 3.176314000003913
+        },
+        {
+          "epoch": 4,
+          "train_loss": 5.33057634851551,
+          "validation_ndcg@10": 0.010441360082800964,
+          "validation_cold_recall@20": 0.006474103585657371,
+          "wall_seconds": 5.574634500000684
+        },
+        {
+          "epoch": 5,
+          "train_loss": 5.307774262029987,
+          "validation_ndcg@10": 0.010459105834681893,
+          "validation_cold_recall@20": 0.005478087649402391,
+          "wall_seconds": 6.318698399998539
+        },
+        {
+          "epoch": 6,
+          "train_loss": 5.280436346252623,
+          "validation_ndcg@10": 0.010775011340002265,
+          "validation_cold_recall@20": 0.005727091633466136,
+          "wall_seconds": 6.711479599995073
+        },
+        {
+          "epoch": 7,
+          "train_loss": 5.254448397590132,
+          "validation_ndcg@10": 0.010658117774302771,
+          "validation_cold_recall@20": 0.005229083665338645,
+          "wall_seconds": 6.185026300001482
+        }
+      ],
+      "best_epoch": 3,
+      "best_validation": {
+        "cohorts": {
+          "all_positive_events": {
+            "n": 11573,
+            "ndcg@10": 0.010960818870952044,
+            "recall@20": 0.03853797632420289,
+            "candidate_recall@200": 0.1511276246435669,
+            "catalog_coverage@10": 0.04331322172054181,
+            "coverage_catalog_items": 125135,
+            "unique_recommended_items@10": 5420,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "available_target": {
+            "n": 11191,
+            "ndcg@10": 0.011334961736531857,
+            "recall@20": 0.03985345366812617,
+            "candidate_recall@200": 0.15628630149227057,
+            "catalog_coverage@10": 0.04242617972589603,
+            "coverage_catalog_items": 125135,
+            "unique_recommended_items@10": 5309,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "history_present": {
+            "n": 4207,
+            "ndcg@10": 0.014893471056499871,
+            "recall@20": 0.03779415260280485,
+            "candidate_recall@200": 0.13168528642738292,
+            "catalog_coverage@10": 0.04331322172054181,
+            "coverage_catalog_items": 125135,
+            "unique_recommended_items@10": 5420,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "cold_user": {
+            "n": 7366,
+            "ndcg@10": 0.00871473310600506,
+            "recall@20": 0.03896280206353516,
+            "candidate_recall@200": 0.1622318761878903,
+            "catalog_coverage@10": 8.790787254956805e-05,
+            "coverage_catalog_items": 125131,
+            "unique_recommended_items@10": 11,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "model_cold_available": {
+            "n": 4016,
+            "ndcg@10": 0.0023053191033283247,
+            "recall@20": 0.0049800796812749,
+            "candidate_recall@200": 0.017679282868525898,
+            "catalog_coverage@10": 0.023902949708705278,
+            "coverage_catalog_items": 125131,
+            "unique_recommended_items@10": 2991,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          }
+        },
+        "target_unavailable_events": 382
+      },
+      "wall_seconds": 46.53765740000381,
+      "checkpoint": {
+        "path_from_project_root": "artifacts/runs/r05-cold-replication-20260916/ColdListMLP-s17/best.pt",
+        "sha256": "62ad4c038bf3c8da1cd7195b7a3aff75c6e127db52435d7b1c93178a7c8c696b"
+      },
+      "gpu_peak_allocated_bytes": 402234368,
+      "checkpoint_reload_verified": true,
+      "validation_trace": {
+        "path_from_project_root": "artifacts/runs/r05-cold-replication-20260916/validation-ColdListMLP-s17.jsonl.gz",
+        "sha256": "4dec3a23c0604860b552bf5111eb4d3549cbea8a726811094085c5fe8fe83003"
+      },
+      "original_replay_verified": true
+    },
+    {
+      "name": "ColdListMLP-s29",
+      "seed": 29,
+      "setting": {
+        "name": "ColdListMLP",
+        "cold_weight": 4
+      },
+      "status": "completed",
+      "history": [
+        {
+          "epoch": 1,
+          "train_loss": 5.7914020246532925,
+          "validation_ndcg@10": 0.010555375716074993,
+          "validation_cold_recall@20": 0.00199203187250996,
+          "wall_seconds": 2.5494739999994636
+        },
+        {
+          "epoch": 2,
+          "train_loss": 5.45516473894706,
+          "validation_ndcg@10": 0.010795740683158807,
+          "validation_cold_recall@20": 0.0047310756972111555,
+          "wall_seconds": 2.674476699998195
+        },
+        {
+          "epoch": 3,
+          "train_loss": 5.372886114208229,
+          "validation_ndcg@10": 0.010651664799637882,
+          "validation_cold_recall@20": 0.0047310756972111555,
+          "wall_seconds": 2.5576459000003524
+        },
+        {
+          "epoch": 4,
+          "train_loss": 5.338044867755574,
+          "validation_ndcg@10": 0.010994389357396196,
+          "validation_cold_recall@20": 0.005478087649402391,
+          "wall_seconds": 2.5717111000049044
+        },
+        {
+          "epoch": 5,
+          "train_loss": 5.314151487345303,
+          "validation_ndcg@10": 0.010796295110715337,
+          "validation_cold_recall@20": 0.0049800796812749,
+          "wall_seconds": 2.6035229999979492
+        },
+        {
+          "epoch": 6,
+          "train_loss": 5.27976948651901,
+          "validation_ndcg@10": 0.010584264663719974,
+          "validation_cold_recall@20": 0.0049800796812749,
+          "wall_seconds": 2.609945299998799
+        },
+        {
+          "epoch": 7,
+          "train_loss": 5.24518261354967,
+          "validation_ndcg@10": 0.010862146494741284,
+          "validation_cold_recall@20": 0.005229083665338645,
+          "wall_seconds": 2.5927965000009863
+        },
+        {
+          "epoch": 8,
+          "train_loss": 5.214278227066103,
+          "validation_ndcg@10": 0.011146907555905063,
+          "validation_cold_recall@20": 0.0047310756972111555,
+          "wall_seconds": 3.0879312999968533
+        },
+        {
+          "epoch": 9,
+          "train_loss": 5.184646549238617,
+          "validation_ndcg@10": 0.011037288118109693,
+          "validation_cold_recall@20": 0.004233067729083665,
+          "wall_seconds": 2.6163288000025204
+        },
+        {
+          "epoch": 10,
+          "train_loss": 5.16346791219393,
+          "validation_ndcg@10": 0.011090683854763805,
+          "validation_cold_recall@20": 0.004482071713147411,
+          "wall_seconds": 2.570186400000239
+        },
+        {
+          "epoch": 11,
+          "train_loss": 5.136488952254767,
+          "validation_ndcg@10": 0.010945813860841648,
+          "validation_cold_recall@20": 0.0047310756972111555,
+          "wall_seconds": 2.586153700001887
+        },
+        {
+          "epoch": 12,
+          "train_loss": 5.11863195218701,
+          "validation_ndcg@10": 0.01084946035714756,
+          "validation_cold_recall@20": 0.0037350597609561755,
+          "wall_seconds": 2.6266457000019727
+        }
+      ],
+      "best_epoch": 8,
+      "best_validation": {
+        "cohorts": {
+          "all_positive_events": {
+            "n": 11573,
+            "ndcg@10": 0.011146907555905063,
+            "recall@20": 0.039402056510844205,
+            "candidate_recall@200": 0.15354704916616263,
+            "catalog_coverage@10": 0.0357453949734287,
+            "coverage_catalog_items": 125135,
+            "unique_recommended_items@10": 4473,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "available_target": {
+            "n": 11191,
+            "ndcg@10": 0.011527402479178741,
+            "recall@20": 0.04074702886247878,
+            "candidate_recall@200": 0.15878831203645788,
+            "catalog_coverage@10": 0.034826387501498385,
+            "coverage_catalog_items": 125135,
+            "unique_recommended_items@10": 4358,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "history_present": {
+            "n": 4207,
+            "ndcg@10": 0.015405380814275317,
+            "recall@20": 0.040171143332541,
+            "candidate_recall@200": 0.13834086047064417,
+            "catalog_coverage@10": 0.0357453949734287,
+            "coverage_catalog_items": 125135,
+            "unique_recommended_items@10": 4473,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "cold_user": {
+            "n": 7366,
+            "ndcg@10": 0.00871473310600506,
+            "recall@20": 0.03896280206353516,
+            "candidate_recall@200": 0.1622318761878903,
+            "catalog_coverage@10": 8.790787254956805e-05,
+            "coverage_catalog_items": 125131,
+            "unique_recommended_items@10": 11,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "model_cold_available": {
+            "n": 4016,
+            "ndcg@10": 0.0017316491412081494,
+            "recall@20": 0.0047310756972111555,
+            "candidate_recall@200": 0.01743027888446215,
+            "catalog_coverage@10": 0.020066969815633218,
+            "coverage_catalog_items": 125131,
+            "unique_recommended_items@10": 2511,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          }
+        },
+        "target_unavailable_events": 382
+      },
+      "wall_seconds": 36.62128649999795,
+      "checkpoint": {
+        "path_from_project_root": "artifacts/runs/r05-cold-replication-20260916/ColdListMLP-s29/best.pt",
+        "sha256": "98e5788215751bb7a0444ad32538305a2ed71bc04e4f34ff724ca6224002946a"
+      },
+      "gpu_peak_allocated_bytes": 402251776,
+      "checkpoint_reload_verified": true,
+      "validation_trace": {
+        "path_from_project_root": "artifacts/runs/r05-cold-replication-20260916/validation-ColdListMLP-s29.jsonl.gz",
+        "sha256": "faedeef4a5670fca6c4086bdf3f419a7547bdd370a0afe2eb21ee8477bd06a94"
+      }
+    },
+    {
+      "name": "ColdListMLP-s43",
+      "seed": 43,
+      "setting": {
+        "name": "ColdListMLP",
+        "cold_weight": 4
+      },
+      "status": "completed",
+      "history": [
+        {
+          "epoch": 1,
+          "train_loss": 5.787247759285503,
+          "validation_ndcg@10": 0.010519405205886987,
+          "validation_cold_recall@20": 0.0027390438247011954,
+          "wall_seconds": 2.5157628000015393
+        },
+        {
+          "epoch": 2,
+          "train_loss": 5.440362309454668,
+          "validation_ndcg@10": 0.01071100779702831,
+          "validation_cold_recall@20": 0.004482071713147411,
+          "wall_seconds": 2.5162529000008362
+        },
+        {
+          "epoch": 3,
+          "train_loss": 5.3666759899930145,
+          "validation_ndcg@10": 0.010888544228292043,
+          "validation_cold_recall@20": 0.0047310756972111555,
+          "wall_seconds": 2.5791447999945376
+        },
+        {
+          "epoch": 4,
+          "train_loss": 5.3366849465897515,
+          "validation_ndcg@10": 0.010763501188133545,
+          "validation_cold_recall@20": 0.004482071713147411,
+          "wall_seconds": 2.644382999998925
+        },
+        {
+          "epoch": 5,
+          "train_loss": 5.310538625708561,
+          "validation_ndcg@10": 0.010932289674146682,
+          "validation_cold_recall@20": 0.005478087649402391,
+          "wall_seconds": 2.646084300002258
+        },
+        {
+          "epoch": 6,
+          "train_loss": 5.289348425341281,
+          "validation_ndcg@10": 0.010608566010047032,
+          "validation_cold_recall@20": 0.005229083665338645,
+          "wall_seconds": 2.848918699994101
+        },
+        {
+          "epoch": 7,
+          "train_loss": 5.267121360595747,
+          "validation_ndcg@10": 0.011013219617700333,
+          "validation_cold_recall@20": 0.0047310756972111555,
+          "wall_seconds": 2.5369408999977168
+        },
+        {
+          "epoch": 8,
+          "train_loss": 5.229764821618424,
+          "validation_ndcg@10": 0.01081699059113663,
+          "validation_cold_recall@20": 0.0047310756972111555,
+          "wall_seconds": 2.507757599996694
+        },
+        {
+          "epoch": 9,
+          "train_loss": 5.208703700717167,
+          "validation_ndcg@10": 0.010825036561280851,
+          "validation_cold_recall@20": 0.004233067729083665,
+          "wall_seconds": 2.50990869999805
+        },
+        {
+          "epoch": 10,
+          "train_loss": 5.184371436048711,
+          "validation_ndcg@10": 0.010447892806726635,
+          "validation_cold_recall@20": 0.0049800796812749,
+          "wall_seconds": 2.642496899999969
+        },
+        {
+          "epoch": 11,
+          "train_loss": 5.16436840338159,
+          "validation_ndcg@10": 0.01079909301604429,
+          "validation_cold_recall@20": 0.004482071713147411,
+          "wall_seconds": 2.5899568000022555
+        }
+      ],
+      "best_epoch": 7,
+      "best_validation": {
+        "cohorts": {
+          "all_positive_events": {
+            "n": 11573,
+            "ndcg@10": 0.011013219617700333,
+            "recall@20": 0.03888360839885941,
+            "candidate_recall@200": 0.153806273222155,
+            "catalog_coverage@10": 0.034442801774083986,
+            "coverage_catalog_items": 125135,
+            "unique_recommended_items@10": 4310,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "available_target": {
+            "n": 11191,
+            "ndcg@10": 0.01138915116036511,
+            "recall@20": 0.04021088374586722,
+            "candidate_recall@200": 0.15905638459476365,
+            "catalog_coverage@10": 0.03356375114875934,
+            "coverage_catalog_items": 125135,
+            "unique_recommended_items@10": 4200,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "history_present": {
+            "n": 4207,
+            "ndcg@10": 0.015037619818591133,
+            "recall@20": 0.03874494889469931,
+            "candidate_recall@200": 0.13905395768956502,
+            "catalog_coverage@10": 0.034442801774083986,
+            "coverage_catalog_items": 125135,
+            "unique_recommended_items@10": 4310,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "cold_user": {
+            "n": 7366,
+            "ndcg@10": 0.00871473310600506,
+            "recall@20": 0.03896280206353516,
+            "candidate_recall@200": 0.1622318761878903,
+            "catalog_coverage@10": 8.790787254956805e-05,
+            "coverage_catalog_items": 125131,
+            "unique_recommended_items@10": 11,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "model_cold_available": {
+            "n": 4016,
+            "ndcg@10": 0.002254773997142714,
+            "recall@20": 0.0047310756972111555,
+            "candidate_recall@200": 0.01693227091633466,
+            "catalog_coverage@10": 0.019579480704221976,
+            "coverage_catalog_items": 125131,
+            "unique_recommended_items@10": 2450,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          }
+        },
+        "target_unavailable_events": 382
+      },
+      "wall_seconds": 33.81281780000427,
+      "checkpoint": {
+        "path_from_project_root": "artifacts/runs/r05-cold-replication-20260916/ColdListMLP-s43/best.pt",
+        "sha256": "b0b604fe634d699b9b9ad7f815abd8fa41fdd3233d07c75faf78e3cc7ff86df6"
+      },
+      "gpu_peak_allocated_bytes": 402251776,
+      "checkpoint_reload_verified": true,
+      "validation_trace": {
+        "path_from_project_root": "artifacts/runs/r05-cold-replication-20260916/validation-ColdListMLP-s43.jsonl.gz",
+        "sha256": "5404940fa4fbbe787aa93e6ae9934194db77de5c77f0adcab4a06209b234f06b"
+      }
+    }
+  ],
+  "test_results": [
+    {
+      "name": "ColdListMLP-s17",
+      "seed": 17,
+      "metrics": {
+        "cohorts": {
+          "all_positive_events": {
+            "n": 12720,
+            "ndcg@10": 0.009118981019380164,
+            "recall@20": 0.029874213836477988,
+            "candidate_recall@200": 0.10385220125786164,
+            "catalog_coverage@10": 0.049632419908341774,
+            "coverage_catalog_items": 137249,
+            "unique_recommended_items@10": 6812,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "available_target": {
+            "n": 12264,
+            "ndcg@10": 0.00945804293595203,
+            "recall@20": 0.030984996738421394,
+            "candidate_recall@200": 0.1077136333985649,
+            "catalog_coverage@10": 0.0484010812464936,
+            "coverage_catalog_items": 137249,
+            "unique_recommended_items@10": 6643,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "history_present": {
+            "n": 5214,
+            "ndcg@10": 0.01000187048500002,
+            "recall@20": 0.028768699654775604,
+            "candidate_recall@200": 0.09321058688147296,
+            "catalog_coverage@10": 0.049647250889160985,
+            "coverage_catalog_items": 137208,
+            "unique_recommended_items@10": 6812,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "cold_user": {
+            "n": 7506,
+            "ndcg@10": 0.008505686898178242,
+            "recall@20": 0.03064215294431122,
+            "candidate_recall@200": 0.1112443378630429,
+            "catalog_coverage@10": 8.01463034339048e-05,
+            "coverage_catalog_items": 137249,
+            "unique_recommended_items@10": 11,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "model_cold_available": {
+            "n": 7088,
+            "ndcg@10": 0.0012730487117088866,
+            "recall@20": 0.003668171557562077,
+            "candidate_recall@200": 0.016224604966139956,
+            "catalog_coverage@10": 0.037151454655407326,
+            "coverage_catalog_items": 137249,
+            "unique_recommended_items@10": 5099,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          }
+        },
+        "target_unavailable_events": 456
+      },
+      "trace": {
+        "path_from_project_root": "artifacts/runs/r05-cold-replication-20260916/test-ColdListMLP-s17.jsonl.gz",
+        "sha256": "e147195cbd385da23416388333938e1f7087e66376246d92d9ab960e327cea4a"
+      }
+    },
+    {
+      "name": "ColdListMLP-s29",
+      "seed": 29,
+      "metrics": {
+        "cohorts": {
+          "all_positive_events": {
+            "n": 12720,
+            "ndcg@10": 0.009760623214920165,
+            "recall@20": 0.03128930817610063,
+            "candidate_recall@200": 0.10408805031446541,
+            "catalog_coverage@10": 0.04191651669593221,
+            "coverage_catalog_items": 137249,
+            "unique_recommended_items@10": 5753,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "available_target": {
+            "n": 12264,
+            "ndcg@10": 0.010123542669095278,
+            "recall@20": 0.032452707110241355,
+            "candidate_recall@200": 0.10795825179386823,
+            "catalog_coverage@10": 0.040772610365102845,
+            "coverage_catalog_items": 137249,
+            "unique_recommended_items@10": 5596,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "history_present": {
+            "n": 5214,
+            "ndcg@10": 0.01156721162947045,
+            "recall@20": 0.03222094361334868,
+            "candidate_recall@200": 0.09378596087456847,
+            "catalog_coverage@10": 0.04192904203836511,
+            "coverage_catalog_items": 137208,
+            "unique_recommended_items@10": 5753,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "cold_user": {
+            "n": 7506,
+            "ndcg@10": 0.008505686898178242,
+            "recall@20": 0.03064215294431122,
+            "candidate_recall@200": 0.1112443378630429,
+            "catalog_coverage@10": 8.01463034339048e-05,
+            "coverage_catalog_items": 137249,
+            "unique_recommended_items@10": 11,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "model_cold_available": {
+            "n": 7088,
+            "ndcg@10": 0.001109805772362433,
+            "recall@20": 0.003386004514672686,
+            "candidate_recall@200": 0.014813769751693002,
+            "catalog_coverage@10": 0.031176912035788967,
+            "coverage_catalog_items": 137249,
+            "unique_recommended_items@10": 4279,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          }
+        },
+        "target_unavailable_events": 456
+      },
+      "trace": {
+        "path_from_project_root": "artifacts/runs/r05-cold-replication-20260916/test-ColdListMLP-s29.jsonl.gz",
+        "sha256": "1ce05a7c3eeb1f0ffb2c4d5a2b91ff3ec84fecb3a7373e40eba8d7fc418a3366"
+      }
+    },
+    {
+      "name": "ColdListMLP-s43",
+      "seed": 43,
+      "metrics": {
+        "cohorts": {
+          "all_positive_events": {
+            "n": 12720,
+            "ndcg@10": 0.009065981334361478,
+            "recall@20": 0.030817610062893082,
+            "candidate_recall@200": 0.10487421383647799,
+            "catalog_coverage@10": 0.04084547064095185,
+            "coverage_catalog_items": 137249,
+            "unique_recommended_items@10": 5606,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "available_target": {
+            "n": 12264,
+            "ndcg@10": 0.009403072616852413,
+            "recall@20": 0.0319634703196347,
+            "candidate_recall@200": 0.10877364644487932,
+            "catalog_coverage@10": 0.03977442458597148,
+            "coverage_catalog_items": 137249,
+            "unique_recommended_items@10": 5459,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "history_present": {
+            "n": 5214,
+            "ndcg@10": 0.009872573209695522,
+            "recall@20": 0.031070195627157654,
+            "candidate_recall@200": 0.09570387418488684,
+            "catalog_coverage@10": 0.04085767593726313,
+            "coverage_catalog_items": 137208,
+            "unique_recommended_items@10": 5606,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "cold_user": {
+            "n": 7506,
+            "ndcg@10": 0.008505686898178242,
+            "recall@20": 0.03064215294431122,
+            "candidate_recall@200": 0.1112443378630429,
+            "catalog_coverage@10": 8.01463034339048e-05,
+            "coverage_catalog_items": 137249,
+            "unique_recommended_items@10": 11,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          },
+          "model_cold_available": {
+            "n": 7088,
+            "ndcg@10": 0.0012607000448972194,
+            "recall@20": 0.003809255079006772,
+            "candidate_recall@200": 0.015660270880361173,
+            "catalog_coverage@10": 0.03037544900144992,
+            "coverage_catalog_items": 137249,
+            "unique_recommended_items@10": 4169,
+            "mean_candidates": 200.0,
+            "mean_personalized_candidates": 0.0,
+            "mean_popularity_fill": 0.0,
+            "ranking_latency_ms_p50": null,
+            "ranking_latency_ms_p95": null
+          }
+        },
+        "target_unavailable_events": 456
+      },
+      "trace": {
+        "path_from_project_root": "artifacts/runs/r05-cold-replication-20260916/test-ColdListMLP-s43.jsonl.gz",
+        "sha256": "4f69a69df4389ef18f70980c72e5724e0f45e216f9fd638f333ad25b5db70178"
+      }
+    }
+  ],
+  "checkpoints_frozen_at": "2026-09-16T14:50:08.906002+00:00",
+  "finished_at": "2026-09-16T14:50:47.402251+00:00",
+  "peak_working_set_bytes": 2294960128
+}

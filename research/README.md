@@ -103,10 +103,18 @@ $neuralTestTemp = Join-Path (Get-Location).Path ('tmp/pytest-' + [Guid]::NewGuid
 
 [模型原理与运行](R05-ranker-guide.md) · [完成结果](../docs/experiments/r05-ranker/report.md) · [训练曲线](../docs/experiments/r05-ranker/report.html) · [独立审计](../docs/validation/ranker-checks.json)
 
-最新验证：服务环境 96 项通过，研究环境 28 项通过（8 项门控重叠）。R05 冷加权只有 seed 17；普通排序有三个种子，二者的统计证据分开呈现。
+原 R05 验证：服务环境 96 项通过，研究环境 28 项通过（8 项门控重叠）。该次运行冷加权只有 seed 17；后续复验另见下节。
+
+## R05 冷加权固定配置复验
+
+已重放 seed 17 并补齐 seed 29 / 43，共 30 轮；冷目标命中 26 / 24 / 27，整体 NDCG 为 0.009315 ± 0.000387。已完成 48 项用户聚类边际区间与逐请求排名审计。
+
+[复验指南](R05-replication-guide.md) · [完成报告](../docs/experiments/r05-cold-replication/report.md) · [统计区间](../docs/experiments/r05-cold-replication/uncertainty.json)
+
+专项 18 项、原排序器 9 项通过，服务 96 项通过、5 个依赖相关模块跳过。旧测试已经查看，本阶段不作为新的封闭测试。
 
 ## 下一阶段
 
-内容召回入口已建立，双塔融合在本轮样本上改善了整体排序，但冷商品命中仍低于纯内容路径。冷商品保留与门控已经完成 R04 验证，未获得验证集选型收益。R05 已完成模拟冷商品任务和候选内学习排序。下一项重点为冷加权模型的固定配置复验与候选可达性改善；新的方法选择先登记新留出协议。
+内容召回入口已建立，双塔融合在本轮样本上改善了整体排序，但冷商品命中仍低于纯内容路径。冷商品保留与门控已经完成 R04 验证，未获得验证集选型收益。R05 已完成模拟冷商品任务和候选内学习排序。冷加权固定配置复验已完成，下一项重点为 R06 多兴趣召回与排序适配；新的方法选择先登记新留出协议。
 
 2026-09-16 补充：[实习指导评审与修订路线](../docs/reviews/2026-09-16-internship-roadmap.md)。其中待做事项不代表已经实现；[分组指标复核](../docs/validation/internship-guidance-checks.json)可以用 scripts/check_internship_guidance.py 在已有 R05 本地运行上重新生成。
