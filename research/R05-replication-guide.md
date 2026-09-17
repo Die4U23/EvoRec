@@ -33,3 +33,9 @@
 - 逐请求审计重算真实排名指标及候选合法性。原轨迹不含协同候选来源计数，故不伪造重建 mean_personalized_candidates / mean_popularity_fill。
 
 专项测试使用 tests/test_uncertainty.py 与 tests/test_replication.py，覆盖不等用户请求数、成对列、零差值、无效输入、源文件漂移、权重变化、候选注入、排名指标篡改及查询 ID 对齐。
+
+## 已完成结果（2026-09-17 交付）
+
+实际训练版本：7f065e2。三个种子共 30 轮，最佳轮次 3 / 8 / 7；冷目标命中 26 / 24 / 27。整体 NDCG=0.009315 ± 0.000387。
+
+[报告](../docs/experiments/r05-cold-replication/report.md)、[区间](../docs/experiments/r05-cold-replication/uncertainty.json)与[复算记录](../docs/validation/replication-analysis-repeat.json)分别保留。新增专项 18 项、原排序器 9 项通过；服务 96 项通过、5 个依赖相关模块跳过。
