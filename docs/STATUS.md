@@ -2,6 +2,8 @@
 
 更新：2026-09-17。项目阶段：M0 在线骨架 + R05 排序 + 冷加权三种子复验与用户聚类区间完成。
 
+2026-09-17 仓库整理：历史日志中的博客交付属于当时记录；相关文件现已停止跟踪并保留在本地。公开仓库保留实验报告和证据。
+
 ## 已完成
 
 - 项目框架、总体架构、数据设计、接口约定、研究协议、任务拆分与验收框架。
@@ -55,7 +57,7 @@
 
 **展示：** 新增 R04 Markdown / HTML / JSON 报告、3 张策略图、1 张失败定位图。博客共提供 10 张配图、20 个 PNG / SVG 文件，带来源清单和离线图册；正文已嵌图。静态元数据假设与线上尚未接入的边界继续保留。
 
-证据：[正式报告](experiments/r04-gating/report.md)、[运行归档](experiments/archive/r04-gating-20260915.json)、[失败定位](experiments/r04-gating/error-analysis.md)、[独立审计](validation/gating-checks.json)、[服务回归](validation/gating-core-tests.xml)、[研究专项](validation/gating-research-tests.xml)、[运行说明](../research/R04-gating-guide.md)、[博客图册](blog/assets/evorec/index.html)。
+证据：[正式报告](experiments/r04-gating/report.md)、[运行归档](experiments/archive/r04-gating-20260915.json)、[失败定位](experiments/r04-gating/error-analysis.md)、[独立审计](validation/gating-checks.json)、[服务回归](validation/gating-core-tests.xml)、[研究专项](validation/gating-research-tests.xml)、[运行说明](../research/R04-gating-guide.md)。
 
 ## 2026-09-15 R03 内容召回与双塔融合
 
@@ -127,4 +129,4 @@ API 检查通过进程内 ASGI 请求执行，不作为公网部署、真实网�
 
 ## 下一阶段
 
-R05 固定配置复验已完成，下一步登记 R06 多兴趣召回和排序适配的新留出协议。R06 尚未实现或训练。实习方向继续聚焦推荐算法，详细评审、指标复核及验收顺序见[修订路线](reviews/2026-09-16-internship-roadmap.md)。
+R05 固定配置复验已完成，下一步登记 R06 多兴趣召回和排序适配的新留出协议。R06 尚未实现或训练。研究方向继续聚焦推荐算法，R06 范围与验收规则见[登记协议](experiments/r06-multi-interest-protocol.md)。

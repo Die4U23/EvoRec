@@ -89,11 +89,11 @@ $neuralTestTemp = Join-Path (Get-Location).Path ('tmp/pytest-' + [Guid]::NewGuid
 
 实测：服务环境 85 项通过，神经测试模块因该环境不含 Torch 跳过；研究专项 11 项通过，其中 6 项协议检查与前一套重叠。专项检查含因果掩码、损失下降、过滤回退、检查点一致性及协议不匹配拒绝。
 
-## R04 冷商品策略与博客图表
+## R04 冷商品策略与实验图表
 
 冻结 R03 编码器与模型，用新的用户分组完成五种保留策略比较。验证集没有支持替换原融合策略。训练、推理模型与查询样本的冷商品定义分别保存，避免更换样本时悄悄改变比较对象。
 
-[运行指南](R04-gating-guide.md) · [正式报告](../docs/experiments/r04-gating/report.md) · [失败定位](../docs/experiments/r04-gating/error-analysis.md) · [博客图片](../docs/blog/assets/evorec/README.md)
+[运行指南](R04-gating-guide.md) · [正式报告](../docs/experiments/r04-gating/report.md) · [失败定位](../docs/experiments/r04-gating/error-analysis.md)
 
 最新回归为服务环境 96 项通过（神经模块在此环境跳过），研究环境 19 项通过，其中 8 项门控检查重叠。上方 85 / 11 为 R02 阶段记录。
 
@@ -116,5 +116,3 @@ $neuralTestTemp = Join-Path (Get-Location).Path ('tmp/pytest-' + [Guid]::NewGuid
 ## 下一阶段
 
 内容召回入口已建立，双塔融合在本轮样本上改善了整体排序，但冷商品命中仍低于纯内容路径。冷商品保留与门控已经完成 R04 验证，未获得验证集选型收益。R05 已完成模拟冷商品任务和候选内学习排序。冷加权固定配置复验已完成，下一项重点为 R06 多兴趣召回与排序适配；新的方法选择先登记新留出协议。
-
-2026-09-16 补充：[实习指导评审与修订路线](../docs/reviews/2026-09-16-internship-roadmap.md)。其中待做事项不代表已经实现；[分组指标复核](../docs/validation/internship-guidance-checks.json)可以用 scripts/check_internship_guidance.py 在已有 R05 本地运行上重新生成。

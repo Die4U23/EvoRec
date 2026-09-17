@@ -2,9 +2,11 @@
 
 面向动态商品库冷启动问题的推荐研究项目：从统计与内容召回，到候选融合、神经排序和失败诊断。
 
+项目由 **Die4U23** 发起并主导。项目目标与总体方向由作者提出，研究范围、优先级和推进取舍由作者决定；具体方案通过实验迭代。实现、测试与文档整理使用 AI 编程助手辅助，算法结论以仓库中的可复查证据为准。
+
 **已完成：M0 状态服务 + R01–R05 离线实验 + 冷加权三种子复验。** 已补齐用户聚类区间与排名审计；在线推荐服务尚未接入。
 
-[最新复验报告](docs/experiments/r05-cold-replication/report.html) · [模型原理与运行](research/R05-ranker-guide.md) · [持续博客](docs/blog/evorec-project-log.md) · [实习指导评审与后续路线](docs/reviews/2026-09-16-internship-roadmap.md)
+[最新复验报告](docs/experiments/r05-cold-replication/report.html) · [模型原理与运行](research/R05-ranker-guide.md) · [R06 研究协议](docs/experiments/r06-multi-interest-protocol.md)
 
 ## 当前结果
 
@@ -51,7 +53,6 @@ R05 及固定配置复验使用同一批测试请求。原测试已经查看，�
 | 任务依赖与需求覆盖 | [交付计划](docs/06-delivery-plan.md) |
 | 怎样证明可以发布 | [验证与发布](docs/07-validation-release.md) |
 | 当前完成到哪里 | [进度与验证记录](docs/STATUS.md) |
-| 持续阅读项目实践 | [EvoRec 项目实录](docs/blog/evorec-project-log.md)、[更新模板](docs/blog/update-template.md) |
 | 原始产品方案 | [展示版 PRD](EvoRec_展示版PRD.md) |
 | 为什么选择这些技术 | [技术栈选型报告](EvoRec_技术栈选型报告.md) |
 
@@ -109,3 +110,7 @@ python -m venv .venv
 R05 冷加权多种子复验与区间分析已完成。下一项为 R06 多兴趣召回和排序适配，先登记新留出协议，再以相同候选数量预算开展消融；R06 尚未实现或训练。每阶段分别提交协议、实现和结果，独立开发使用 codex/ 分支。
 
 实验运行入口见 [研究工作区](research/README.md)；本机测试临时目录权限的处理方式也记录在该页。
+
+## 仓库范围
+
+仓库维护项目源码、研究配置、测试、实验报告与结果图表。博客和求职材料在本地单独维护，不参与版本发布。[文件卫生与版本约定](docs/08-repository-policy.md)约束每次提交。
