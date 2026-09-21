@@ -15,3 +15,14 @@ datasets/**
 !datasets/README.md
 tmp/
 .venv-research/
+
+# Local publishing and career materials; never part of research deliveries.
+/docs/blog/
+/EvoRec_推广搜实习方向指导.md
+/docs/reviews/*internship*
+/docs/validation/internship-*
+/scripts/build_blog_assets.py
+/scripts/build_ranker_blog_assets.py
+/scripts/build_replication_blog_assets.py
+/scripts/check_internship_guidance.py
+/docs/career/

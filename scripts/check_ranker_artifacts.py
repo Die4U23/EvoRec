@@ -52,20 +52,24 @@ def check():
         assert payload["training_cache_sha256"]==s["training_cache"]["sha256"]
     (directory/"model-card.json").write_text(json.dumps(model_card,indent=2)+"\n",encoding="utf-8")
     assets=Path("docs/blog/assets/evorec/r05")
-    manifest=json.loads((assets/"manifest.json").read_text(encoding="utf-8"))
-    assert len(manifest["assets"])==4
-    assert manifest["generator_sha256"]==sha(manifest["generator"])
-    for item in manifest["assets"]:
-        path=assets/item["file"]
-        assert sha(path)==item["sha256"]==sha(item["source_image"])
-        assert sha(item["source_results"])==item["source_results_sha256"]
-        assert item["protocol_id"]==s["protocol_id"]
-        if path.suffix==".png":
-            with Image.open(path) as im: im.verify()
-            with Image.open(path) as im: assert im.size==(item["width"],item["height"])
-        else: assert ET.parse(path).getroot().tag.endswith("svg")
+    # Publishing assets are optional, local-only material.
+    blog_image_count = 0
+    if assets.exists():
+        manifest=json.loads((assets/"manifest.json").read_text(encoding="utf-8"))
+        assert len(manifest["assets"])==4
+        assert manifest["generator_sha256"]==sha(manifest["generator"])
+        for item in manifest["assets"]:
+            path=assets/item["file"]
+            assert sha(path)==item["sha256"]==sha(item["source_image"])
+            assert sha(item["source_results"])==item["source_results_sha256"]
+            assert item["protocol_id"]==s["protocol_id"]
+            if path.suffix==".png":
+                with Image.open(path) as im: im.verify()
+                with Image.open(path) as im: assert im.size==(item["width"],item["height"])
+            else: assert ET.parse(path).getroot().tag.endswith("svg")
+        blog_image_count = len(manifest["assets"])
     html_pages=[]
-    for page in (directory/"report.html",assets/"index.html"):
+    for page in [directory/"report.html"] + ([assets/"index.html"] if assets.exists() else []):
         parsed=Page(); parsed.feed(page.read_text(encoding="utf-8"))
         assert not parsed.stack and len(parsed.images)==2
         for target in parsed.images+parsed.links: assert (page.parent/target).exists(),target
@@ -85,7 +89,7 @@ def check():
     result={"status":"passed","checked_at":datetime.now(timezone.utc).isoformat(),"checker_sha256":sha(__file__),
             "series_sha256":sha(run/"series.json"),"model_parameters":model_card["parameters"],
             "model_checkpoints_checked":len(s["trials"]),"model_card":(directory/"model-card.json").as_posix(),
-            "report_and_archive_match":True,"audit_matches":True,"blog_image_files_checked":4,
+            "report_and_archive_match":True,"audit_matches":True,"blog_image_files_checked":blog_image_count,
             "html_structure_and_resources":html_pages,"tests":tests,"data_and_models_ignored":True,
             "visual_review":["learning curve axes/legends inspected","test comparison labels and values inspected"],
             "limits":["HTML structure/resources verified; full browser layout was not tested",

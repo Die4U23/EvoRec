@@ -1,6 +1,8 @@
 # 当前进度与验证记录
 
-更新：2026-09-17。项目阶段：M0 在线骨架 + R05 排序 + 冷加权三种子复验与用户聚类区间完成。
+更新：2026-09-17。项目阶段：M0 在线骨架 + R01–R06 离线实验、排序适配及用户聚类区间完成。
+
+2026-09-17 仓库整理：历史日志中的博客交付属于当时记录；相关文件现已停止跟踪并保留在本地。公开仓库保留实验报告和证据。
 
 ## 已完成
 
@@ -14,6 +16,22 @@
 - 推荐应用用例：快照核对、合法商品过滤、稳定去重排序、实际策略与回退检查、保存后返回和协作式超时。
 - 可注入的就绪查询；默认仍报告数据库、模型与商品版本未接入。
 - 详细系统架构、六项 ADR 决策、发布与崩溃恢复协议；同步更新持续实践博客。
+
+## 2026-09-17 R06 多兴趣召回与排序适配交付
+
+协议 e11840f33a2fec8d，实际训练代码 bf73ce7b002d7fa9ca3c327dc291efea6b42c908。新样本 223,839 条交互、137,016 名用户，与 R01–R05 用户交集为零。完成 D/C 各三个种子共 74 轮训练；所有检查点重载一致。A 的训练缓存与 R05 原运行完全一致。
+
+同样 CF 200＋内容 200 的预算下，冷目标入池从 115 / 6,978 提高到 122 / 6,978；无历史冷目标均为 0 / 3,928。A/B/C/D 三种子整体 NDCG 均值分别为 0.010074 / 0.010040 / 0.009820 / 0.010155。验证规则仍选择 A-frozen-s17。B-A 与 C-D 的整体 NDCG 及冷 Recall 区间均跨过零，不据测试结果替换原路径；C-D 整体区间上界 +0.000000421 仍为正。
+
+完整重建 45,382 条候选来源请求、重放 361,425 条排名记录，总计 138,921,354 次候选检查（不是独立商品数）。50 项预登记用户聚类区间独立复算，点估计与边界全部一致。区间条件于固定检查点，不含训练随机性，未作多重比较校正。
+
+验证：研究专项 47 项通过；服务与数据回归 108 项通过、6 个依赖相关模块跳过；两套中有 6 项协议检查重叠。12 项文件卫生测试包含在服务套件中，不重复相加。交付新增 3 张图，各提供 PNG / SVG；已逐张查看 PNG，检查图例、坐标、标签和裁切，HTML 完成结构与资源检查，未声称浏览器渲染通过。
+
+测试阶段均值内容计算 7.865 秒，新增多兴趣计算 12.469 秒；这是单次离线批处理记录。用户分组独立不代表时间、商品与静态元数据独立。测试已经查看，后续实验不能把本轮测试继续当作封闭留出。
+
+版本分为协议、文件卫生、实现、工程建议评审、结果交付的真实提交。R06 分支依赖 R05 分支，未合并不代表 main 已交付。45 个本地博客及实习材料逐一核对原哈希；无关 LICENSE 未纳入本轮提交。历史提交保留以维持训练指纹可追溯，项目主导与辅助实现的分工已明确。
+
+[完整报告](experiments/r06-multi-interest/report.md) · [运行归档](experiments/archive/r06-multi-interest-20260917.json) · [区间复算](validation/r06-interval-repeat.json) · [产物检查](validation/r06-artifacts-checks.json) · [服务回归](validation/r06-core-tests.xml) · [研究专项](validation/r06-implementation-tests.xml) · [运行指南](../research/R06-multi-interest-guide.md)
 
 ## 2026-09-17 冷加权三种子复验交付
 
@@ -55,7 +73,7 @@
 
 **展示：** 新增 R04 Markdown / HTML / JSON 报告、3 张策略图、1 张失败定位图。博客共提供 10 张配图、20 个 PNG / SVG 文件，带来源清单和离线图册；正文已嵌图。静态元数据假设与线上尚未接入的边界继续保留。
 
-证据：[正式报告](experiments/r04-gating/report.md)、[运行归档](experiments/archive/r04-gating-20260915.json)、[失败定位](experiments/r04-gating/error-analysis.md)、[独立审计](validation/gating-checks.json)、[服务回归](validation/gating-core-tests.xml)、[研究专项](validation/gating-research-tests.xml)、[运行说明](../research/R04-gating-guide.md)、[博客图册](blog/assets/evorec/index.html)。
+证据：[正式报告](experiments/r04-gating/report.md)、[运行归档](experiments/archive/r04-gating-20260915.json)、[失败定位](experiments/r04-gating/error-analysis.md)、[独立审计](validation/gating-checks.json)、[服务回归](validation/gating-core-tests.xml)、[研究专项](validation/gating-research-tests.xml)、[运行说明](../research/R04-gating-guide.md)。
 
 ## 2026-09-15 R03 内容召回与双塔融合
 
@@ -127,4 +145,4 @@ API 检查通过进程内 ASGI 请求执行，不作为公网部署、真实网�
 
 ## 下一阶段
 
-R05 固定配置复验已完成，下一步登记 R06 多兴趣召回和排序适配的新留出协议。R06 尚未实现或训练。实习方向继续聚焦推荐算法，详细评审、指标复核及验收顺序见[修订路线](reviews/2026-09-16-internship-roadmap.md)。
+R06 已完成。后续研究先诊断无历史冷目标与召回到排序的损失，再用新协议评估改动。工程建议已逐项对照现有实现，按[后续验收安排](09-engineering-follow-up.md)推进 M11/M12 持久化与 M21/M22 产物校验、发布恢复；不提前宣称在线能力已经落地。

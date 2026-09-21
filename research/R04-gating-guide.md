@@ -9,7 +9,6 @@ R04 已完成，最终按验证集保留原融合策略。它检验增加冷商�
 - [测试后失败定位](../docs/experiments/r04-gating/error-analysis.md)
 - [协议（查看结果前登记）](../docs/experiments/r04-gating-protocol.md)
 - [独立审计](../docs/validation/gating-checks.json)
-- [博客配图及 PNG / SVG 来源](../docs/blog/assets/evorec/README.md)
 
 验证 11,460 个正反馈事件，其中模型冷且可用 4,047 个。五种策略均命中 7 个冷目标，按整体 NDCG 下限与同分规则选择 fixed。测试 12,797 个事件、6,996 个冷目标；固定融合三种子 NDCG@10=0.009745 ± 0.000297。种子标准差不是置信区间。
 
@@ -41,10 +40,9 @@ R04 已完成，最终按验证集保留原融合策略。它检验增加冷商�
 .\.venv-research\Scripts\python.exe -m evorec.research.gating_report --run artifacts/runs/r04-gating-20260915
 .\.venv-research\Scripts\python.exe scripts/audit_gating.py --run artifacts/runs/r04-gating-20260915 --output docs/validation/gating-checks.json
 .\.venv-research\Scripts\python.exe scripts/analyze_gating_errors.py
-.\.venv-research\Scripts\python.exe scripts/build_blog_assets.py
 ```
 
-失败分析脚本目前固定读取本次 R04 运行；它使用测试标签诊断，不能用于训练或验证选型。配图脚本依赖已经生成的 R02 / R03 / R04 图表和本机微软雅黑字体；纯结果报告可以单独生成。所有 PNG / SVG 图均附来源清单。
+失败分析脚本目前固定读取本次 R04 运行；它使用测试标签诊断，不能用于训练或验证选型。实验图表随结果报告生成，来源为相应的结果 JSON；博客发布资源另在本地维护。
 
 ## 重新执行模型评估
 
