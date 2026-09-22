@@ -1,4 +1,4 @@
-# M0 runtime/test dependency snapshot; Python 3.12 / Windows.
+# M1 service/database development snapshot; Python 3.12 / Windows.
 # Build tools are governed separately by pyproject.toml.
 annotated-doc==0.0.5
 annotated-types==0.8.0
@@ -14,6 +14,9 @@ idna==3.19
 iniconfig==2.3.0
 packaging==26.3
 pluggy==1.6.0
+psycopg==3.3.6
+psycopg-binary==3.3.6
+psycopg-pool==3.3.2
 pydantic==2.13.5
 pydantic-core==2.46.5
 pygments==2.21.0
@@ -21,4 +24,5 @@ pytest==9.1.1
 starlette==1.6.0
 typing-extensions==4.16.0
 typing-inspection==0.4.4
+tzdata==2026.4
 uvicorn==0.53.0

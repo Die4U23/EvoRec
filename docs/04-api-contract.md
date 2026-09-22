@@ -8,16 +8,16 @@
 | GET /health/ready | 通过可注入探针报告推荐业务依赖是否就绪 | 已实现；默认未配置依赖，返回 503；契约支持就绪时 200 |
 | GET /api/v1/system | 版本、阶段、真实能力状态 | 已实现；200 |
 
-当前 OpenAPI 由应用导出到 `docs/contracts/openapi.json`。下方业务接口仅为设计，不出现在当前 OpenAPI 路径中，调用尚未注册的路径返回 404。
+当前 OpenAPI 由应用导出到 `docs/contracts/openapi.json`。会话创建、查询、重置和推荐已经注册为进程内演示接口；下方其余业务接口仍是设计，调用未注册路径返回 404。
 
 ## 2. 目标业务接口
 
 | 方法与路径 | 输入/输出要点 | 里程碑 |
 | --- | --- | --- |
-| POST /api/v1/sessions | 示例用户或新会话 → ID、epoch、历史版本 | M1 |
-| GET /api/v1/sessions/{id} | 当前会话摘要与状态 | M1 |
-| POST /api/v1/sessions/{id}/reset | 增加 epoch、恢复原始偏好 | M1 |
-| POST /api/v1/recommendations | 推荐输入契约 → 请求 ID、版本、实际策略、商品 | M1 |
+| POST /api/v1/sessions | 新进程内会话 → ID、epoch、历史版本；已实现演示版 | M1 |
+| GET /api/v1/sessions/{id} | 当前进程内会话摘要与状态；已实现演示版 | M1 |
+| POST /api/v1/sessions/{id}/reset | 增加 epoch 和历史版本并清空状态；已实现演示版 | M1 |
+| POST /api/v1/recommendations | 推荐输入契约 → 请求 ID、版本、实际策略、商品；已实现热门回退演示 | M1 |
 | GET /api/v1/items/{id} | 商品详情与有效状态 | M1 |
 | POST /api/v1/feedback | 反馈输入契约 → 原事件结果、最新历史版本 | M1 |
 | POST /api/v1/admin/catalog/imports | 文件或统一 JSON 批次 → 任务 ID | M2 |
@@ -57,10 +57,10 @@
 | 503 | 业务依赖未就绪、不可用或无可用回退 |
 | 504 | 推荐超过截止时间且未能完成有效回退 |
 
-业务错误统一目标格式为 `{error: {code, message, retryable, request_id}}`；request_id 在请求创建之前可以为空。M0 只提供就绪状态结构，没有实现整套业务错误处理。
+业务错误统一目标格式为 `{error: {code, message, retryable, request_id}}`；request_id 在请求创建之前可以为空。会话不存在、历史冲突和推荐超时已经使用该结构，反馈与管理错误仍待实现。
 
 ## 5. 权限与运行范围
 
-M0 服务默认仅监听 127.0.0.1，只有运行状态接口。M1 建立会话访问边界；M2 管理接口上线之前接入管理员身份和授权检查。管理员路径命名本身不是权限控制。
+服务默认仅监听 127.0.0.1。当前进程内演示没有身份认证，不可公开部署；PostgreSQL 接入时必须建立会话访问边界。M2 管理接口上线之前接入管理员身份和授权检查，管理员路径命名本身不是权限控制。
 
 普通展示页面通过服务获取允许展示的结果，不接收数据库凭据、内部模型路径或原始用户数据。标题与描述按纯文本渲染。公网发布需另行完成身份、传输、日志和运行配置检查。

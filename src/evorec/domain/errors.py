@@ -11,3 +11,7 @@ class SnapshotMismatch(Exception):
 
 class UnreportedFallback(Exception):
     """A fixed strategy changed without explaining why."""
+
+
+class ResourceNotFound(Exception):
+    """A requested session or other domain resource does not exist."""

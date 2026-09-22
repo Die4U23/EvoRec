@@ -40,13 +40,74 @@
             "type": "boolean"
           },
           "recommendations": {
-            "const": false,
-            "default": false,
+            "const": true,
+            "default": true,
             "title": "Recommendations",
             "type": "boolean"
           }
         },
         "title": "Capabilities",
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "retryable",
+          "request_id"
+        ],
+        "title": "ErrorDetail",
+        "type": "object"
+      },
+      "ErrorEnvelope": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
         "type": "object"
       },
       "Liveness": {
@@ -93,6 +154,189 @@
         "title": "Readiness",
         "type": "object"
       },
+      "RecommendationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_history_version": {
+            "minimum": 0.0,
+            "title": "Expected History Version",
+            "type": "integer"
+          },
+          "k": {
+            "default": 10,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "K",
+            "type": "integer"
+          },
+          "schema_version": {
+            "const": "0.1",
+            "default": "0.1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/Strategy",
+            "default": "popular"
+          }
+        },
+        "required": [
+          "session_id",
+          "expected_history_version"
+        ],
+        "title": "RecommendationInput",
+        "type": "object"
+      },
+      "RecommendationItemResponse": {
+        "properties": {
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "score",
+          "source"
+        ],
+        "title": "RecommendationItemResponse",
+        "type": "object"
+      },
+      "RecommendationResponse": {
+        "properties": {
+          "actual_strategy": {
+            "title": "Actual Strategy",
+            "type": "string"
+          },
+          "bundle_id": {
+            "format": "uuid",
+            "title": "Bundle Id",
+            "type": "string"
+          },
+          "exclusion_version": {
+            "title": "Exclusion Version",
+            "type": "integer"
+          },
+          "fallback_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Reason"
+          },
+          "history_version": {
+            "title": "History Version",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RecommendationItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requested_strategy": {
+            "title": "Requested Strategy",
+            "type": "string"
+          },
+          "session_epoch": {
+            "title": "Session Epoch",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "session_id",
+          "session_epoch",
+          "history_version",
+          "bundle_id",
+          "exclusion_version",
+          "requested_strategy",
+          "actual_strategy",
+          "fallback_reason",
+          "items"
+        ],
+        "title": "RecommendationResponse",
+        "type": "object"
+      },
+      "SessionResponse": {
+        "properties": {
+          "epoch": {
+            "title": "Epoch",
+            "type": "integer"
+          },
+          "hidden_items": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hidden Items",
+            "type": "array"
+          },
+          "history": {
+            "items": {
+              "type": "string"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "history_version": {
+            "title": "History Version",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "epoch",
+          "history_version",
+          "history",
+          "hidden_items"
+        ],
+        "title": "SessionResponse",
+        "type": "object"
+      },
+      "Strategy": {
+        "enum": [
+          "popular",
+          "dense",
+          "generative",
+          "hybrid",
+          "adaptive"
+        ],
+        "title": "Strategy",
+        "type": "string"
+      },
       "SystemInfo": {
         "properties": {
           "capabilities": {
@@ -105,8 +349,8 @@
             "type": "string"
           },
           "phase": {
-            "const": "M0-framework",
-            "default": "M0-framework",
+            "const": "M1-memory-demo",
+            "default": "M1-memory-demo",
             "title": "Phase",
             "type": "string"
           },
@@ -121,16 +365,254 @@
         ],
         "title": "SystemInfo",
         "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
       }
     }
   },
   "info": {
-    "description": "M0 工程框架。仅提供运行状态接口；业务接口见设计文档，尚未注册。存活检查通过不代表推荐业务就绪。",
-    "title": "EvoRec Framework API",
+    "description": "M1 进程内演示：会话和推荐结果不会跨进程重启保存。业务就绪仍为 false，直到数据库和真实模型运行时接入。",
+    "title": "EvoRec Demo API",
     "version": "0.0.1"
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/recommendations": {
+      "post": {
+        "operationId": "recommend_api_v1_recommendations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecommendationInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Session not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "History version conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Recommendation deadline exceeded"
+          }
+        },
+        "summary": "Recommend",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/api/v1/sessions": {
+      "post": {
+        "operationId": "create_session_api_v1_sessions_post",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Create Session",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}": {
+      "get": {
+        "operationId": "get_session_api_v1_sessions__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Session",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/reset": {
+      "post": {
+        "operationId": "reset_session_api_v1_sessions__session_id__reset_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Session",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
     "/api/v1/system": {
       "get": {
         "operationId": "system_api_v1_system_get",

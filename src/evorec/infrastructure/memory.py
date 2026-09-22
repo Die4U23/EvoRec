@@ -1,0 +1,131 @@
+"""Process-local adapters for exercising the M1 recommendation workflow.
+
+This module deliberately does not claim durable persistence. It gives the HTTP
+surface a real, deterministic workflow while the PostgreSQL adapter is still a
+separate milestone.
+"""
+
+import asyncio
+from contextlib import asynccontextmanager
+from dataclasses import replace
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
+
+from evorec.domain.errors import HistoryConflict, ResourceNotFound, SnapshotMismatch
+from evorec.domain.models import (
+    CatalogSnapshot,
+    RankedBatch,
+    RecommendationCommand,
+    RecommendationResult,
+    RequestBinding,
+    RequestContext,
+    ScoredCandidate,
+    SessionSnapshot,
+    Strategy,
+)
+
+
+_DEMO_SCORES = {
+    "demo-coop": 0.95,
+    "demo-racing": 0.85,
+    "demo-strategy": 0.75,
+}
+
+
+class InMemoryDemoBackend:
+    """Short-lived session, admission, ranking, and result adapters.
+
+    State is isolated per application instance and is lost when the process
+    exits. A single lock makes admission, reset, and completion transitions
+    deterministic for the local demonstration; it is not a database substitute.
+    """
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._sessions: dict[UUID, SessionSnapshot] = {}
+        self._request_states: dict[UUID, str] = {}
+        self._request_bindings: dict[UUID, RequestBinding] = {}
+        self._results: dict[UUID, RecommendationResult] = {}
+        self.catalog = CatalogSnapshot(
+            bundle_id=uuid5(NAMESPACE_URL, "https://evorec.local/bundles/m1-memory-demo"),
+            exclusion_version=0,
+            eligible_items=frozenset(_DEMO_SCORES),
+        )
+
+    async def create_session(self) -> SessionSnapshot:
+        snapshot = SessionSnapshot(uuid4(), 0, 0, (), frozenset())
+        async with self._lock:
+            self._sessions[snapshot.session_id] = snapshot
+        return snapshot
+
+    async def get_session(self, session_id: UUID) -> SessionSnapshot:
+        async with self._lock:
+            try:
+                return self._sessions[session_id]
+            except KeyError as exc:
+                raise ResourceNotFound("session does not exist") from exc
+
+    async def reset_session(self, session_id: UUID) -> SessionSnapshot:
+        async with self._lock:
+            try:
+                current = self._sessions[session_id]
+            except KeyError as exc:
+                raise ResourceNotFound("session does not exist") from exc
+            reset = replace(
+                current,
+                epoch=current.epoch + 1,
+                history_version=current.history_version + 1,
+                history=(),
+                hidden_items=frozenset(),
+            )
+            self._sessions[session_id] = reset
+            return reset
+
+    @asynccontextmanager
+    async def acquire(self, command: RecommendationCommand):
+        async with self._lock:
+            try:
+                session = self._sessions[command.session_id]
+            except KeyError as exc:
+                raise ResourceNotFound("session does not exist") from exc
+            if session.history_version != command.expected_history_version:
+                raise HistoryConflict("history changed before admission")
+            if command.request_id in self._request_states:
+                raise SnapshotMismatch("request ID has already been admitted")
+            context = RequestContext(command.request_id, session, self.catalog)
+            self._request_states[command.request_id] = "accepted"
+            self._request_bindings[command.request_id] = context.binding
+
+        try:
+            yield context
+        except BaseException:
+            async with self._lock:
+                if self._request_states.get(command.request_id) == "accepted":
+                    self._request_states[command.request_id] = "failed"
+            raise
+
+    async def rank(self, context: RequestContext, command: RecommendationCommand) -> RankedBatch:
+        fallback_reason = None
+        actual_strategy = command.strategy
+        if command.strategy == Strategy.ADAPTIVE:
+            actual_strategy = Strategy.POPULAR
+        elif command.strategy != Strategy.POPULAR:
+            actual_strategy = Strategy.POPULAR
+            fallback_reason = "strategy_not_loaded_in_memory_demo"
+        candidates = tuple(
+            ScoredCandidate(item_id, score, "memory-popular")
+            for item_id, score in _DEMO_SCORES.items()
+        )
+        return RankedBatch(context.binding, actual_strategy, candidates, fallback_reason)
+
+    async def save(self, result: RecommendationResult) -> None:
+        request_id = result.binding.request_id
+        async with self._lock:
+            state = self._request_states.get(request_id)
+            if state == "completed":
+                if self._results[request_id] != result:
+                    raise SnapshotMismatch("completed request has different result content")
+                return
+            if state != "accepted" or self._request_bindings.get(request_id) != result.binding:
+                raise SnapshotMismatch("result does not match an accepted request")
+            self._results[request_id] = result
+            self._request_states[request_id] = "completed"

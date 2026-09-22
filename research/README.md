@@ -18,7 +18,7 @@
 
 ## 本机环境
 
-服务环境为 .venv，研究环境为 .venv-research。当前研究环境以 system-site-packages 复用已有 PyTorch 2.9.0+cu126、NumPy 2.1.3 和 Matplotlib 3.9.3；它不是完全隔离的干净安装。服务依赖和显卡驱动没有改动。
+服务环境为 .venv，研究环境为 .venv-research。当前研究环境以 system-site-packages 复用已有 PyTorch 2.9.0+cu126、NumPy 2.1.3 和 Matplotlib 3.9.3；它不是完全隔离的干净安装。本轮已补齐项目基础依赖，`pip check` 通过，并新增可用于新环境的合并锁文件；仍未把现有目录本身当作干净复建证据。
 
 RTX 4060 Laptop GPU（8188 MiB）已通过实际前向、反向和完整训练验证。与本轮有关的 26 个依赖满足已安装元数据约束，见 [环境记录](environment-observed.json) 与 [训练依赖快照](requirements-training.lock.txt)。这不代表整个系统 Python 环境的所有第三方包均已检查。
 
@@ -26,11 +26,13 @@ RTX 4060 Laptop GPU（8188 MiB）已通过实际前向、反向和完整训练�
 
 ```powershell
 python -m venv .venv-research
-.\.venv-research\Scripts\python.exe -m pip install -r research/requirements-training.lock.txt
+.\.venv-research\Scripts\python.exe -m pip install -r research/requirements-research-dev.lock.txt
 .\.venv-research\Scripts\python.exe -m pip install --no-deps -e .
+.\.venv-research\Scripts\python.exe -m pip check
+.\.venv-research\Scripts\python.exe scripts/check_environment.py research --require-cuda
 ```
 
-安装需要网络，CUDA 包较大；快照来自 Windows / Python 3.12，本轮没有执行干净环境复建或 Linux 复建。训练入口目前要求 CUDA 可用。
+安装需要网络，CUDA 包较大；合并锁文件将服务/数据库开发依赖与研究依赖固定在同一个可解析集合中。历史 `requirements-training.lock.txt` 和 `requirements-content.lock.txt` 继续作为既有实验环境记录，不改写。当前仍没有执行全新目录复建或 Linux 复建；训练入口要求 CUDA 可用。
 
 ## 取得数据
 
@@ -85,6 +87,14 @@ $researchTestTemp = Join-Path (Get-Location).Path ('tmp/pytest-' + [Guid]::NewGu
 .\.venv\Scripts\python.exe -m pytest -p no:cacheprovider --basetemp $researchTestTemp
 $neuralTestTemp = Join-Path (Get-Location).Path ('tmp/pytest-' + [Guid]::NewGuid().ToString('N'))
 .\.venv-research\Scripts\python.exe -m pytest tests/test_training_protocol.py tests/test_neural.py -p no:cacheprovider --basetemp $neuralTestTemp
+```
+
+环境本身可以先独立检查，失败时比从训练异常反推依赖更直接：
+
+```powershell
+.\.venv\Scripts\python.exe scripts/check_environment.py service
+.\.venv\Scripts\python.exe scripts/check_environment.py database
+.\.venv-research\Scripts\python.exe scripts/check_environment.py research --require-cuda
 ```
 
 实测：服务环境 85 项通过，神经测试模块因该环境不含 Torch 跳过；研究专项 11 项通过，其中 6 项协议检查与前一套重叠。专项检查含因果掩码、损失下降、过滤回退、检查点一致性及协议不匹配拒绝。

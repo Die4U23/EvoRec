@@ -46,7 +46,7 @@ EvoRec 研究动态商品库中的推荐，核心问题是：**商品缺少训�
 
 ## 2. 整体架构与完成边界
 
-当前系统由 **离线研究链路** 和 **服务代码骨架** 两部分组成。离线链路已经完成采样、训练、推理、评价和结果审计；服务骨架已经定义请求快照与执行规则，但还没有连接真实数据库和模型运行时。
+当前系统由 **离线研究链路** 和 **进程内服务演示** 两部分组成。离线链路已经完成采样、训练、推理、评价和结果审计；服务侧已经把会话、接收、排序、过滤和结果记录接成可调用 HTTP 闭环，但状态仅存在内存，排序仅使用确定性的演示热门分数，还没有连接真实数据库和模型运行时。
 
 ### 2.1 系统全景
 
@@ -62,11 +62,14 @@ flowchart TB
     Audit --> Report["汇总报告、图表和验证记录"]
     Select --> Files["本地检查点、编码器、映射"]
   end
-  subgraph Skeleton["服务骨架：已实现代码"]
-    API["FastAPI 三个状态接口"]
-    UseCase["Recommend 应用用例：测试替身验证"]
+  subgraph Skeleton["进程内服务演示：已实现代码"]
+    API["FastAPI 状态、会话与推荐接口"]
+    UseCase["Recommend 应用用例"]
     Rules["不可变快照、绑定校验、过滤与稳定排序"]
+    Memory["进程内会话、接收、热门排序与结果记录"]
+    API --> UseCase
     UseCase --> Rules
+    Memory --> UseCase
   end
   subgraph Planned["业务运行组件：待实现"]
     Export["bundle 导出与兼容性校验"]
@@ -84,7 +87,7 @@ flowchart TB
   Web -. "业务 HTTP 路由待注册" .-> UseCase
 ~~~
 
-图中虚线表示设计中的连接。状态 API 当前只组装就绪查询，没有调用 `Recommend` 业务用例，也没有启动训练任务。
+图中虚线表示设计中的连接。推荐接口已经调用 `Recommend` 业务用例；演示后端在应用实例内创建状态，进程重启即丢失，不提供数据库事务、跨进程协调或真实模型推理。训练仍通过独立研究入口运行。
 
 ### 2.2 当前可以演示什么
 
@@ -96,7 +99,8 @@ flowchart TB
 | 数据采样、时间回放、统计基线 | 已实现并运行 | [研究工作区](../research/README.md) |
 | 序列模型、内容双塔和候选内排序 | 已真实训练 | [阶段记录](STATUS.md) |
 | 多兴趣召回、匹配重训练与结果审计 | R06 已完成 | [R06 报告](experiments/r06-multi-interest/report.md) |
-| 推荐、反馈业务 HTTP 接口 | 尚未注册 | 当前公开接口只有三个状态接口 |
+| 会话与推荐业务 HTTP 接口 | 已实现进程内演示 | 创建、查询、重置会话及推荐；状态不持久化 |
+| 反馈业务 HTTP 接口 | 尚未注册 | 输入契约已存在，幂等事务仍待 PostgreSQL 适配器 |
 | PostgreSQL、任务领取、模型发布 | 设计阶段 | [SQL 草案](../db/schema.design.sql)、[架构决策](architecture/decisions.md) |
 | 前端、C++ 扩展、线上性能 | 尚未实现或验证 | [Web 规划](../web/README.md)、[C++ 边界](../cpp/README.md) |
 
@@ -128,6 +132,7 @@ flowchart LR
 | [application/recommend.py](../src/evorec/application/recommend.py) | 调用接收、排序、保存接口并检查结果 | 把执行顺序和失败处理放在一个可测试用例里 |
 | [application/ports.py](../src/evorec/application/ports.py) | 接收、排序、记录、就绪四类 Protocol 接口 | 用例不绑定具体数据库或模型实现 |
 | [infrastructure/readiness.py](../src/evorec/infrastructure/readiness.py) | 返回尚未配置依赖的就绪状态 | 当前如实报告缺少数据库、模型和商品版本 |
+| [infrastructure/memory.py](../src/evorec/infrastructure/memory.py) | 进程内会话、接收、热门排序与结果记录 | 验证端口闭环；重启丢失，不替代 PostgreSQL |
 | [api/app.py](../src/evorec/api/app.py) | HTTP 状态接口和响应转换 | 对外协议与内部规则分离 |
 | [bootstrap.py](../src/evorec/bootstrap.py) | 当前组装就绪查询 | 在明确入口选择具体实现 |
 | [research](../src/evorec/research) | 数据、算法、训练、离线预测与评估 | 独立于在线会话和业务数据库运行 |
@@ -149,7 +154,7 @@ flowchart LR
 
 当前没有 Faiss 接入，也没有自研 C++ 推荐内核。采用精确内容打分便于核对召回结果；未来加入近似索引，需要同时衡量速度、内存和召回损失。
 
-服务环境 `.venv` 与研究环境 `.venv-research` 分开。已记录的研究环境使用 Windows、Python 3.12、PyTorch 2.9.0+cu126 和 RTX 4060 Laptop GPU，复用了系统包；尚无干净环境或 Linux 复建证据。这些是已有运行环境记录，不代表任意机器都能直接复现。
+服务环境 `.venv` 与研究环境 `.venv-research` 分开。服务锁文件现包含下一阶段 PostgreSQL 开发所需的 Psycopg binary/pool，研究侧新增合并开发锁和 service/database/research 三类自检入口。已记录的研究环境使用 Windows、Python 3.12、PyTorch 2.9.0+cu126 和 RTX 4060 Laptop GPU，当前目录仍复用了系统包；尚无全新目录或 Linux 复建证据。这些是已有运行环境记录，不代表任意机器都能直接复现。
 
 ## 4. 离线数据与算法链路
 
@@ -240,7 +245,7 @@ A/B 检查点在旧 R05 验证集选轮，C/D 在 R06 验证集选轮。因此 C
 
 ## 5. 推荐请求如何执行
 
-这部分解释已实现的应用用例。图中的接收、排序和记录是接口，当前由测试替身验证；还没有数据库与模型适配器构成的实际在线闭环。
+这部分解释已实现的应用用例。图中的接收、排序和记录由进程内适配器及测试替身共同验证；还没有 PostgreSQL 与真实模型适配器构成的持久在线闭环。
 
 ~~~mermaid
 sequenceDiagram
@@ -289,6 +294,7 @@ sequenceDiagram
 | 阶段 | 实现工作 | 实际发现与推进原因 |
 | --- | --- | --- |
 | M0 | 输入契约、状态 API、四层代码、快照绑定与推荐用例测试 | 先固定接口与失败行为，为算法接入留出边界 |
+| M1 内存切片 | 会话创建/查询/重置、推荐 HTTP、进程内接收/排序/记录适配器 | 先验证完整调用链和错误映射；不把易失状态计为持久化完成 |
 | R01 | 前缀数据、热门、ItemCF、时间回放与基础审计 | ItemCF 未超过热门参照；前缀采样与历史截断需要改善 |
 | R02 | 完整扫描与用户哈希采样、SASRec-style GPU 训练、早停与多种子 | 神经序列模型未超过 CF-blend，训练词表之外的冷商品没有入口 |
 | R03 | 标题/类别表示、内容双塔、协同与内容融合 | 内容打通冷商品入口；整体排序改善与冷命中减少同时出现 |
@@ -410,7 +416,7 @@ R06 对应的提交为：协议 `a2e098d`、文件卫生 `a8ab1af`、实现 `bf7
 .\.venv\Scripts\python.exe -m uvicorn evorec.api.app:app --host 127.0.0.1 --port 8000
 ~~~
 
-`GET /health/live` 返回进程存活；`GET /health/ready` 默认返回 503 并列出业务阻塞项；`GET /api/v1/system` 返回当前真实能力。业务推荐接口尚未注册，不能用“状态接口可访问”代表推荐闭环已运行。首次环境安装步骤见 [README](../README.md)。
+`GET /health/live` 返回进程存活；`GET /health/ready` 默认返回 503 并列出真实数据库、模型运行时和活动商品版本阻塞项；`GET /api/v1/system` 将进程内推荐演示标为可用、持久化标为不可用。`POST /api/v1/sessions` 可创建演示会话，`POST /api/v1/recommendations` 会执行完整应用用例；未加载的固定策略会带原因回退到热门路径。首次环境安装与调用边界见 [README](../README.md)。
 
 ### 9.2 查看和复建研究结果
 
@@ -438,7 +444,7 @@ R06 对应的提交为：协议 `a2e098d`、文件卫生 `a8ab1af`、实现 `bf7
 
 | 阶段 | 交付物 | 完成条件 |
 | --- | --- | --- |
-| M11/M12 | 接收与结果持久化、反馈幂等及业务接口 | 真实数据库中的历史冲突、相同请求重试、提交结果对账通过 |
+| M11/M12 | 将已验证的进程内接收/结果端口替换为 PostgreSQL，加入反馈幂等 | 真实数据库中的历史冲突、相同请求重试、提交结果对账通过 |
 | M21/M22 | bundle 校验工具、持久发布状态与恢复 | 错配产物拒绝；各持久化边界中断后可以恢复；过期执行者无法提交 |
 | 模型接入与展示 | 真实排序适配器、有限队列、前端最小推荐体验 | 请求能定位到模型/商品版本，回退与故障可解释 |
 | O01/V01 | 实机性能测量和必要优化 | 固定请求分布测量排队、检索、排序、保存与端到端耗时 |

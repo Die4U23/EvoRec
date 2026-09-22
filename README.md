@@ -4,7 +4,7 @@
 
 项目由 **Die4U23** 发起并主导。项目目标与总体方向由作者提出，研究范围、优先级和推进取舍由作者决定；具体方案通过实验迭代。实现、测试与文档整理使用 AI 编程助手辅助，算法结论以仓库中的可复查证据为准。
 
-**已完成：M0 状态服务 + R01–R06 离线实验。** R06 完成多兴趣召回、六次排序训练、完整候选与模型重放及 50 项配对区间；在线推荐服务尚未接入。
+**已完成：M1 进程内推荐演示 + R01–R06 离线实验。** 服务现在可创建、查询和重置会话，并通过既有 `Recommend` 用例返回可追溯的热门推荐；状态与结果仍只保存在当前进程，PostgreSQL 和真实模型运行时尚未接入。R06 完成多兴趣召回、六次排序训练、完整候选与模型重放及 50 项配对区间。
 
 [R06 图表报告](docs/experiments/r06-multi-interest/report.html) · [运行与复核](research/R06-multi-interest-guide.md) · [预登记协议](docs/experiments/r06-multi-interest-protocol.md)
 
@@ -62,8 +62,8 @@ R06 测试现已查看，后续调参需要新协议。静态商品元数据缺�
 docs/                 项目治理、架构、数据、接口、研究与验收
 src/evorec/domain/     不可变请求快照与合法推荐规则
 src/evorec/application/ 推荐编排、就绪查询与依赖接口
-src/evorec/infrastructure/ 外部依赖适配器；目前仅就绪阻塞状态
-src/evorec/api/        可运行的 FastAPI 状态接口
+src/evorec/infrastructure/ 外部依赖适配器；当前含进程内演示后端与就绪阻塞状态
+src/evorec/api/        可运行的 FastAPI 状态、会话与推荐接口
 src/evorec/bootstrap.py 依赖组装入口
 src/evorec/contracts.py 共享输入契约
 tests/                契约、应用用例、服务与分层边界检查
@@ -78,7 +78,7 @@ datasets/             本地数据区域，内容不进入版本控制
 artifacts/            模型、索引与结果区域，内容不进入版本控制
 ```
 
-## 运行 M0 服务
+## 运行 M1 进程内演示
 
 服务环境使用 Python 3.12；算法基线使用独立环境。以下操作在项目根目录执行。
 
@@ -86,14 +86,19 @@ artifacts/            模型、索引与结果区域，内容不进入版本控�
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.lock.txt
 .\.venv\Scripts\python.exe -m pip install --no-deps -e .
+.\.venv\Scripts\python.exe scripts/check_environment.py service
+.\.venv\Scripts\python.exe scripts/check_environment.py database
 .\.venv\Scripts\python.exe -m uvicorn evorec.api.app:app --host 127.0.0.1 --port 8000
 ```
 
-如果项目内已有安装完成的 `.venv`，直接执行最后一行。Linux 对应解释器为 `.venv/bin/python`。锁文件固定运行及测试依赖；首次安装仍需联网取得依赖及构建工具。此版本只在当前 Windows / Python 3.12 环境验证，Linux 部署仍需执行相同检查。
+如果项目内已有安装完成的 `.venv`，先运行两项环境检查再启动服务。锁文件包含服务测试及下一阶段 PostgreSQL 开发所需的 Psycopg binary/pool；驱动存在不代表本机已经安装或启动 PostgreSQL。需要数据库配置时，将 `.env.example` 复制为被忽略的 `.env` 并替换密码，不要提交真实凭据。Linux 对应解释器为 `.venv/bin/python`。首次安装仍需联网取得依赖及构建工具；此版本只在当前 Windows / Python 3.12 环境验证。
 
 - `GET /health/live`：进程存活，返回 200。
-- `GET /health/ready`：推荐业务尚未接入，返回 503 并列明阻塞项。
-- `GET /api/v1/system`：返回真实版本、阶段与能力状态。
+- `GET /health/ready`：持久数据库、真实模型运行时和活动商品版本尚未接入，返回 503 并列明阻塞项。
+- `GET /api/v1/system`：返回真实版本、阶段与能力状态；推荐演示为 true，持久化仍为 false。
+- `POST /api/v1/sessions`：创建只在当前进程有效的空会话。
+- `GET /api/v1/sessions/{id}`、`POST /api/v1/sessions/{id}/reset`：查询或重置演示会话。
+- `POST /api/v1/recommendations`：执行快照绑定、回退、过滤、Top-K 与结果记录；未加载的策略明确回退到演示热门路径。
 - `GET /openapi.json`：当前已经实现的接口说明。交互文档入口 `/docs` 的页面资源可能需要网络。
 
 检查与契约导出：
@@ -103,11 +108,11 @@ python -m venv .venv
 .\.venv\Scripts\python.exe scripts/export_contracts.py
 ```
 
-业务接口设计见文档；未注册的接口返回 404。存活检查通过不代表模型或数据库已经可用。当前不启动数据库、不下载模型、不公开部署服务。
+反馈、商品详情和管理接口仍未注册。会话及结果在进程重启后丢失，不具备跨进程并发或提交恢复保证；`/health/ready` 因而继续返回 503。当前不启动数据库、不下载模型、不公开部署服务。
 
 ## 下一项工作
 
-R06 已完成并保留未获支持的结果。研究上先解释无历史冷目标不可达与候选增益未转化为排名增益的原因，再登记后续实验；工程上按[建议评审与验收顺序](docs/09-engineering-follow-up.md)推进最小持久化闭环及 bundle 校验。每阶段分别提交协议、实现和结果，独立开发使用 codex/ 分支；这些后续模块尚未实现。
+R06 已完成并保留未获支持的结果。研究上先解释无历史冷目标不可达与候选增益未转化为排名增益的原因，再登记后续实验；工程上用当前内存闭环的端口与契约接入 PostgreSQL，补齐反馈幂等和提交结果对账，再推进 bundle 校验。每阶段分别提交协议、实现和结果，独立开发使用 codex/ 分支；这些持久化模块尚未实现。
 
 实验运行入口见 [研究工作区](research/README.md)；本机测试临时目录权限的处理方式也记录在该页。
 
