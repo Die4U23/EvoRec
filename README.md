@@ -45,6 +45,7 @@ R06 测试现已查看，后续调参需要新协议。静态商品元数据缺�
 
 | 想了解什么 | 入口 |
 | --- | --- |
+| 整体架构与实现过程 | [从数据、模型到服务的完整讲解](docs/10-architecture-and-implementation.md) |
 | 完整项目如何推进 | [项目框架与交付路线](docs/01-project-framework.md) |
 | 模块怎样连接 | [系统架构](docs/02-architecture.md)、[架构决策](docs/architecture/decisions.md) |
 | 数据与接口如何约定 | [数据设计](docs/03-data-design.md)、[接口约定](docs/04-api-contract.md) |
