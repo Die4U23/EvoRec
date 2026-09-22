@@ -67,7 +67,7 @@ src/evorec/api/        可运行的 FastAPI 状态、会话与推荐接口
 src/evorec/bootstrap.py 依赖组装入口
 src/evorec/contracts.py 共享输入契约
 tests/                契约、应用用例、服务与分层边界检查
-db/                   PostgreSQL 设计草案，尚未应用
+db/                   PostgreSQL 正式迁移及保留的早期设计草案
 src/evorec/research/   数据采样、统计基线、GPU 序列训练、时间评价与持续报告
 research/             实验配置与运行说明
 web/                  前端页面与状态规划，尚未实现
@@ -108,7 +108,19 @@ python -m venv .venv
 .\.venv\Scripts\python.exe scripts/export_contracts.py
 ```
 
-反馈、商品详情和管理接口仍未注册。会话及结果在进程重启后丢失，不具备跨进程并发或提交恢复保证；`/health/ready` 因而继续返回 503。当前不启动数据库、不下载模型、不公开部署服务。
+本机 PostgreSQL 已准备好且 `.env` 配置完成时，可以应用并验证 M11 核心迁移：
+
+```powershell
+$env:EVOREC_DATABASE_URL = (Get-Content .env | Select-String '^EVOREC_DATABASE_URL=').Line.Split('=', 2)[1]
+.\.venv\Scripts\python.exe scripts/migrate_database.py
+.\.venv\Scripts\python.exe scripts/migrate_database.py --check
+.\.venv\Scripts\python.exe scripts/verify_m11_database.py
+Remove-Item Env:EVOREC_DATABASE_URL
+```
+
+迁移按文件校验 SHA-256，并通过 PostgreSQL advisory lock 串行执行；已应用文件发生变化时拒绝继续。验证脚本使用临时 UUID 数据检查版本冲突、请求幂等、非法分数和会话行锁，结束后清理测试数据。
+
+反馈、商品详情和管理接口仍未注册。虽然正式数据库迁移已在本机 PostgreSQL 18.6 验证，当前 HTTP 会话及结果仍使用进程内适配器，重启后会丢失；`/health/ready` 因而继续返回 503。当前不下载模型、不公开部署服务。
 
 ## 下一项工作
 

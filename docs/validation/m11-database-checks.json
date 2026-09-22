@@ -1,0 +1,25 @@
+{
+  "checked_on": "2026-09-22",
+  "environment": "local Windows development database",
+  "postgresql_version": "18.6",
+  "migration": {
+    "filename": "0001_m1_core.sql",
+    "sha256": "085a00828c17e574f176fcbed5a9441cf44e445f789a93a88fdc99833bbd16c8",
+    "first_apply": "passed",
+    "repeat_apply": "no_op",
+    "check_mode": "current"
+  },
+  "checks": {
+    "duplicate_request_rejected": true,
+    "non_finite_score_rejected": true,
+    "reset_versions": [1, 1],
+    "session_row_lock_verified": true,
+    "stale_version_rejected": true,
+    "temporary_rows_cleaned": true
+  },
+  "boundaries": {
+    "postgres_adapter_implemented": false,
+    "feedback_transaction_implemented": false,
+    "clean_environment_rebuild_verified": false
+  }
+}
