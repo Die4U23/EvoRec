@@ -2,7 +2,11 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from evorec.domain.models import FeedbackCommand
+from evorec.domain.models import (
+    FeedbackCommand,
+    detail_exposure_event_id,
+    detail_exposure_payload_sha256,
+)
 
 
 def command(observed_at: datetime) -> FeedbackCommand:
@@ -33,3 +37,12 @@ def test_feedback_hash_changes_with_semantic_content():
     original = command(datetime(2026, 9, 23, 8, 30, tzinfo=timezone.utc))
     changed = replace(original, visible_duration_ms=1001)
     assert original.payload_sha256 != changed.payload_sha256
+
+
+def test_detail_exposure_identity_is_deterministic_and_event_specific():
+    first = uuid4()
+    second = uuid4()
+    assert detail_exposure_event_id(first) == detail_exposure_event_id(first)
+    assert detail_exposure_event_id(first) != detail_exposure_event_id(second)
+    assert detail_exposure_payload_sha256(first) == detail_exposure_payload_sha256(first)
+    assert detail_exposure_payload_sha256(first) != detail_exposure_payload_sha256(second)

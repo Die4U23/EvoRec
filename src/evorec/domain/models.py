@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
 from math import isfinite
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 
 class Strategy(StrEnum):
@@ -22,6 +22,19 @@ class FeedbackKind(StrEnum):
     EXPOSURE = "exposure"
     FAVORITE_SET = "favorite_set"
     HIDE_SET = "hide_set"
+
+
+def detail_exposure_event_id(detail_event_id: UUID) -> UUID:
+    """Derive the one synthetic exposure owned by a detail-view event."""
+    return uuid5(
+        NAMESPACE_URL,
+        f"https://evorec.local/feedback/detail-exposure/v1/{detail_event_id}",
+    )
+
+
+def detail_exposure_payload_sha256(detail_event_id: UUID) -> str:
+    marker = f"evorec-detail-exposure-v1:{detail_event_id}"
+    return hashlib.sha256(marker.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -126,6 +139,7 @@ class FeedbackResult:
     session_epoch: int
     history_version: int
     replayed: bool
+    exposure_event_id: UUID | None = None
 
 
 @dataclass(frozen=True)

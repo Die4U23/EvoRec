@@ -35,6 +35,8 @@ from evorec.domain.models import (
     ScoredCandidate,
     SessionSnapshot,
     Strategy,
+    detail_exposure_event_id,
+    detail_exposure_payload_sha256,
 )
 
 
@@ -175,12 +177,34 @@ class InMemoryDemoBackend:
                 )
                 self._sessions[command.session_id] = session
                 self._favorite_items[command.session_id] = favorites
+            exposure_event_id = None
+            if command.kind == FeedbackKind.DETAIL_VIEW:
+                exposure_event_id = detail_exposure_event_id(command.event_id)
+                exposure_hash = detail_exposure_payload_sha256(command.event_id)
+                previous_exposure = self._feedback.get(exposure_event_id)
+                if previous_exposure is not None and not hmac.compare_digest(
+                    previous_exposure[0], exposure_hash
+                ):
+                    raise IdempotencyConflict(
+                        "derived exposure event ID was already used by another event"
+                    )
+                self._feedback[exposure_event_id] = (
+                    exposure_hash,
+                    FeedbackResult(
+                        exposure_event_id,
+                        command.session_id,
+                        session.epoch,
+                        session.history_version,
+                        False,
+                    ),
+                )
             feedback = FeedbackResult(
                 command.event_id,
                 command.session_id,
                 session.epoch,
                 session.history_version,
                 False,
+                exposure_event_id,
             )
             self._feedback[command.event_id] = (command.payload_sha256, feedback)
             return feedback
