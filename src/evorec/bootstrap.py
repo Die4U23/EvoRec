@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 
 from evorec.application.health import ReadinessQuery
-from evorec.application.ports import SessionPort
+from evorec.application.ports import DemoBackendPort
 from evorec.application.recommend import Recommend
 from evorec.infrastructure.memory import InMemoryDemoBackend
 from evorec.infrastructure.readiness import UnconfiguredReadiness
@@ -12,14 +12,14 @@ from evorec.infrastructure.readiness import UnconfiguredReadiness
 
 @dataclass(frozen=True)
 class DemoApplication:
-    backend: SessionPort
+    backend: DemoBackendPort
     recommend: Recommend
     readiness: ReadinessQuery
     persistent: bool
 
 
 def build_demo_application(
-    backend: SessionPort | None = None,
+    backend: DemoBackendPort | None = None,
 ) -> DemoApplication:
     database_url = os.getenv("EVOREC_DATABASE_URL")
     if backend is None:

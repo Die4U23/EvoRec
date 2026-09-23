@@ -13,13 +13,19 @@ from psycopg.types.json import Jsonb
 
 from evorec.domain.errors import (
     AccessDenied,
+    FeedbackSourceMismatch,
     HistoryConflict,
+    IdempotencyConflict,
     ResourceNotFound,
+    SessionEpochConflict,
     SnapshotMismatch,
 )
 from evorec.domain.models import (
     CatalogSnapshot,
     CreatedSession,
+    FeedbackCommand,
+    FeedbackKind,
+    FeedbackResult,
     RankedBatch,
     ReadinessReport,
     RecommendationCommand,
@@ -121,6 +127,10 @@ class PostgresDemoBackend:
                 (session_id,),
             )
             row = cursor.fetchone()
+            connection.execute(
+                "DELETE FROM session_item_states WHERE session_id = %s",
+                (session_id,),
+            )
         assert row is not None
         return self._snapshot(row)
 
@@ -201,6 +211,168 @@ class PostgresDemoBackend:
                 """,
                 (request_id,),
             )
+
+    async def record_feedback(self, command: FeedbackCommand) -> FeedbackResult:
+        return await asyncio.to_thread(self._record_feedback, command)
+
+    def _record_feedback(self, command: FeedbackCommand) -> FeedbackResult:
+        with self._connect() as connection:
+            connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (str(command.event_id),),
+            )
+            cursor = connection.execute(
+                """
+                SELECT session_id, owner_token_sha256, epoch, history_version,
+                       history, hidden_items, favorite_items
+                FROM sessions WHERE session_id = %s FOR UPDATE
+                """,
+                (command.session_id,),
+            )
+            session = cursor.fetchone()
+            if session is None:
+                raise ResourceNotFound("session does not exist")
+            self._authorize(session, command.session_token)
+
+            cursor = connection.execute(
+                """
+                SELECT payload_sha256, session_epoch, outcome_history_version
+                FROM feedback_events WHERE event_id = %s
+                """,
+                (command.event_id,),
+            )
+            previous = cursor.fetchone()
+            if previous is not None:
+                if not hmac.compare_digest(
+                    str(previous["payload_sha256"]), command.payload_sha256
+                ):
+                    raise IdempotencyConflict(
+                        "event ID was already used for different feedback"
+                    )
+                return FeedbackResult(
+                    command.event_id,
+                    command.session_id,
+                    previous["session_epoch"],
+                    previous["outcome_history_version"],
+                    True,
+                )
+
+            cursor = connection.execute(
+                """
+                SELECT r.session_id, r.session_epoch
+                FROM recommendation_requests r
+                JOIN request_items ri ON ri.request_id = r.request_id
+                WHERE r.request_id = %s AND ri.item_id = %s
+                """,
+                (command.request_id, command.item_id),
+            )
+            source = cursor.fetchone()
+            if source is None or source["session_id"] != command.session_id:
+                raise FeedbackSourceMismatch(
+                    "feedback does not refer to an item returned to this session"
+                )
+            if source["session_epoch"] != session["epoch"]:
+                raise SessionEpochConflict(
+                    "feedback request belongs to an earlier session epoch"
+                )
+
+            history = list(session["history"])
+            hidden = set(session["hidden_items"])
+            favorites = set(session["favorite_items"])
+            changed = False
+            if command.kind == FeedbackKind.DETAIL_VIEW:
+                history.append(command.item_id)
+                changed = True
+            elif command.kind == FeedbackKind.HIDE_SET:
+                before = command.item_id in hidden
+                if command.desired_state:
+                    hidden.add(command.item_id)
+                else:
+                    hidden.discard(command.item_id)
+                changed = before != command.desired_state
+            elif command.kind == FeedbackKind.FAVORITE_SET:
+                before = command.item_id in favorites
+                if command.desired_state:
+                    favorites.add(command.item_id)
+                else:
+                    favorites.discard(command.item_id)
+                changed = before != command.desired_state
+
+            outcome_version = session["history_version"] + int(changed)
+            if changed:
+                connection.execute(
+                    """
+                    UPDATE sessions
+                    SET history_version = %s, history = %s, hidden_items = %s,
+                        favorite_items = %s, updated_at = now()
+                    WHERE session_id = %s
+                    """,
+                    (
+                        outcome_version,
+                        Jsonb(history),
+                        Jsonb(sorted(hidden)),
+                        Jsonb(sorted(favorites)),
+                        command.session_id,
+                    ),
+                )
+
+            evidence = None
+            if command.kind == FeedbackKind.EXPOSURE:
+                evidence = Jsonb(
+                    {
+                        "visible_ratio": command.visible_ratio,
+                        "visible_duration_ms": command.visible_duration_ms,
+                    }
+                )
+            connection.execute(
+                """
+                INSERT INTO feedback_events (
+                    event_id, session_id, request_id, item_id, session_epoch,
+                    event_kind, desired_state, observed_at, payload_sha256,
+                    evidence, outcome_history_version
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    command.event_id,
+                    command.session_id,
+                    command.request_id,
+                    command.item_id,
+                    session["epoch"],
+                    command.kind.value,
+                    command.desired_state,
+                    command.observed_at,
+                    command.payload_sha256,
+                    evidence,
+                    outcome_version,
+                ),
+            )
+            if command.kind in {FeedbackKind.FAVORITE_SET, FeedbackKind.HIDE_SET}:
+                connection.execute(
+                    """
+                    INSERT INTO session_item_states (
+                        session_id, item_id, is_favorite, is_hidden, updated_by_event_id
+                    ) VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (session_id, item_id) DO UPDATE
+                    SET is_favorite = EXCLUDED.is_favorite,
+                        is_hidden = EXCLUDED.is_hidden,
+                        updated_by_event_id = EXCLUDED.updated_by_event_id,
+                        updated_at = now()
+                    """,
+                    (
+                        command.session_id,
+                        command.item_id,
+                        command.item_id in favorites,
+                        command.item_id in hidden,
+                        command.event_id,
+                    ),
+                )
+        return FeedbackResult(
+            command.event_id,
+            command.session_id,
+            session["epoch"],
+            outcome_version,
+            False,
+        )
 
     async def rank(self, context: RequestContext, command: RecommendationCommand) -> RankedBatch:
         actual = command.strategy

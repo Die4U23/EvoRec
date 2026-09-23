@@ -1,4 +1,6 @@
 import asyncio
+from datetime import datetime, timezone
+from uuid import uuid4
 
 import httpx
 
@@ -48,6 +50,7 @@ def test_openapi_describes_actual_routes_and_503_readiness():
         "/health/live", "/health/ready", "/api/v1/system",
         "/api/v1/sessions", "/api/v1/sessions/{session_id}",
         "/api/v1/sessions/{session_id}/reset", "/api/v1/recommendations",
+        "/api/v1/feedback",
     }
     responses = schema["paths"]["/health/ready"]["get"]["responses"]
     assert "503" in responses
@@ -146,5 +149,65 @@ def test_memory_demo_requires_and_checks_session_token():
             assert missing.status_code == invalid.status_code == 401
             assert valid.status_code == 200
             assert valid.json()["session_id"] == session["session_id"]
+
+    asyncio.run(exercise())
+
+
+def test_memory_feedback_is_idempotent_and_rejects_stale_epoch():
+    async def exercise():
+        app = memory_app()
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            session = (await client.post("/api/v1/sessions")).json()
+            headers = {"X-Session-Token": session["access_token"]}
+            recommendation = (
+                await client.post(
+                    "/api/v1/recommendations",
+                    headers=headers,
+                    json={
+                        "session_id": session["session_id"],
+                        "expected_history_version": 0,
+                        "strategy": "popular",
+                        "k": 1,
+                    },
+                )
+            ).json()
+            feedback = {
+                "event_id": str(uuid4()),
+                "session_id": session["session_id"],
+                "request_id": recommendation["request_id"],
+                "item_id": recommendation["items"][0]["item_id"],
+                "kind": "detail_view",
+                "observed_at": datetime.now(timezone.utc).isoformat(),
+            }
+            first = await client.post("/api/v1/feedback", headers=headers, json=feedback)
+            replay = await client.post("/api/v1/feedback", headers=headers, json=feedback)
+            changed = await client.post(
+                "/api/v1/feedback",
+                headers=headers,
+                json={**feedback, "observed_at": "2026-09-23T01:02:03+00:00"},
+            )
+            assert first.status_code == replay.status_code == 200
+            assert first.json()["history_version"] == 1
+            assert first.json()["replayed"] is False
+            assert replay.json()["replayed"] is True
+            assert changed.status_code == 409
+            assert changed.json()["error"]["code"] == "feedback_idempotency_conflict"
+
+            current = await client.get(
+                f"/api/v1/sessions/{session['session_id']}", headers=headers,
+            )
+            assert current.json()["history"] == [feedback["item_id"]]
+            await client.post(
+                f"/api/v1/sessions/{session['session_id']}/reset", headers=headers,
+            )
+            stale = await client.post(
+                "/api/v1/feedback",
+                headers=headers,
+                json={**feedback, "event_id": str(uuid4())},
+            )
+            assert stale.status_code == 409
+            assert stale.json()["error"]["code"] == "session_epoch_conflict"
 
     asyncio.run(exercise())

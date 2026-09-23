@@ -12,10 +12,21 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
-from evorec.domain.errors import AccessDenied, HistoryConflict, ResourceNotFound, SnapshotMismatch
+from evorec.domain.errors import (
+    AccessDenied,
+    FeedbackSourceMismatch,
+    HistoryConflict,
+    IdempotencyConflict,
+    ResourceNotFound,
+    SessionEpochConflict,
+    SnapshotMismatch,
+)
 from evorec.domain.models import (
     CatalogSnapshot,
     CreatedSession,
+    FeedbackCommand,
+    FeedbackKind,
+    FeedbackResult,
     RankedBatch,
     RecommendationCommand,
     RecommendationResult,
@@ -46,9 +57,11 @@ class InMemoryDemoBackend:
         self._lock = asyncio.Lock()
         self._sessions: dict[UUID, SessionSnapshot] = {}
         self._session_tokens: dict[UUID, str] = {}
+        self._favorite_items: dict[UUID, frozenset[str]] = {}
         self._request_states: dict[UUID, str] = {}
         self._request_bindings: dict[UUID, RequestBinding] = {}
         self._results: dict[UUID, RecommendationResult] = {}
+        self._feedback: dict[UUID, tuple[str, FeedbackResult]] = {}
         self.catalog = CatalogSnapshot(
             bundle_id=uuid5(NAMESPACE_URL, "https://evorec.local/bundles/m1-memory-demo"),
             exclusion_version=0,
@@ -65,6 +78,7 @@ class InMemoryDemoBackend:
         async with self._lock:
             self._sessions[snapshot.session_id] = snapshot
             self._session_tokens[snapshot.session_id] = self._token_sha256(access_token)
+            self._favorite_items[snapshot.session_id] = frozenset()
         return CreatedSession(snapshot, access_token)
 
     async def get_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
@@ -97,7 +111,79 @@ class InMemoryDemoBackend:
                 hidden_items=frozenset(),
             )
             self._sessions[session_id] = reset
+            self._favorite_items[session_id] = frozenset()
             return reset
+
+    async def record_feedback(self, command: FeedbackCommand) -> FeedbackResult:
+        async with self._lock:
+            try:
+                session = self._sessions[command.session_id]
+            except KeyError as exc:
+                raise ResourceNotFound("session does not exist") from exc
+            if not hmac.compare_digest(
+                self._session_tokens[command.session_id],
+                self._token_sha256(command.session_token),
+            ):
+                raise AccessDenied("session token is invalid")
+
+            previous = self._feedback.get(command.event_id)
+            if previous is not None:
+                if not hmac.compare_digest(previous[0], command.payload_sha256):
+                    raise IdempotencyConflict("event ID was already used for different feedback")
+                return replace(previous[1], replayed=True)
+
+            result = self._results.get(command.request_id)
+            if result is None or result.binding.session_id != command.session_id:
+                raise FeedbackSourceMismatch("feedback request does not belong to this session")
+            if not any(item.item_id == command.item_id for item in result.items):
+                raise FeedbackSourceMismatch("feedback item was not returned by the request")
+            if result.binding.session_epoch != session.epoch:
+                raise SessionEpochConflict("feedback request belongs to an earlier session epoch")
+
+            history = session.history
+            hidden = session.hidden_items
+            favorites = self._favorite_items[command.session_id]
+            changed = False
+            if command.kind == FeedbackKind.DETAIL_VIEW:
+                history = (*history, command.item_id)
+                changed = True
+            elif command.kind == FeedbackKind.HIDE_SET:
+                updated = set(hidden)
+                before = command.item_id in updated
+                if command.desired_state:
+                    updated.add(command.item_id)
+                else:
+                    updated.discard(command.item_id)
+                hidden = frozenset(updated)
+                changed = before != command.desired_state
+            elif command.kind == FeedbackKind.FAVORITE_SET:
+                updated = set(favorites)
+                before = command.item_id in updated
+                if command.desired_state:
+                    updated.add(command.item_id)
+                else:
+                    updated.discard(command.item_id)
+                favorites = frozenset(updated)
+                changed = before != command.desired_state
+
+            if changed:
+                session = replace(
+                    session,
+                    history_version=session.history_version + 1,
+                    history=history,
+                    hidden_items=hidden,
+                )
+                self._sessions[command.session_id] = session
+                self._favorite_items[command.session_id] = favorites
+            feedback = FeedbackResult(
+                command.event_id,
+                command.session_id,
+                session.epoch,
+                session.history_version,
+                False,
+            )
+            self._feedback[command.event_id] = (command.payload_sha256, feedback)
+            return feedback
 
     @asynccontextmanager
     async def acquire(self, command: RecommendationCommand):

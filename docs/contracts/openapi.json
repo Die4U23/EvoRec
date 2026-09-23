@@ -96,6 +96,135 @@
         "title": "ErrorEnvelope",
         "type": "object"
       },
+      "FeedbackInput": {
+        "additionalProperties": false,
+        "properties": {
+          "desired_state": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desired State"
+          },
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "item_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "title": "Item Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "detail_view",
+              "exposure",
+              "favorite_set",
+              "hide_set"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "0.1",
+            "default": "0.1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "visible_duration_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visible Duration Ms"
+          },
+          "visible_ratio": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visible Ratio"
+          }
+        },
+        "required": [
+          "event_id",
+          "session_id",
+          "request_id",
+          "item_id",
+          "kind",
+          "observed_at"
+        ],
+        "title": "FeedbackInput",
+        "type": "object"
+      },
+      "FeedbackResponse": {
+        "properties": {
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "history_version": {
+            "title": "History Version",
+            "type": "integer"
+          },
+          "replayed": {
+            "title": "Replayed",
+            "type": "boolean"
+          },
+          "session_epoch": {
+            "title": "Session Epoch",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "session_id",
+          "session_epoch",
+          "history_version",
+          "replayed"
+        ],
+        "title": "FeedbackResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -459,6 +588,95 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/feedback": {
+      "post": {
+        "operationId": "feedback_api_v1_feedback_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Session-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Missing or invalid session token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Session not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Feedback conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Feedback",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
     "/api/v1/recommendations": {
       "post": {
         "operationId": "recommend_api_v1_recommendations_post",

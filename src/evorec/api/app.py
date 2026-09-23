@@ -10,9 +10,23 @@ from pydantic import BaseModel
 from evorec import __version__
 from evorec.application.health import ReadinessQuery
 from evorec.bootstrap import DemoApplication, build_demo_application
-from evorec.contracts import RecommendationInput
-from evorec.domain.errors import AccessDenied, HistoryConflict, ResourceNotFound
-from evorec.domain.models import CreatedSession, RecommendationCommand, RecommendationResult, SessionSnapshot
+from evorec.contracts import FeedbackInput, RecommendationInput
+from evorec.domain.errors import (
+    AccessDenied,
+    FeedbackSourceMismatch,
+    HistoryConflict,
+    IdempotencyConflict,
+    ResourceNotFound,
+    SessionEpochConflict,
+)
+from evorec.domain.models import (
+    CreatedSession,
+    FeedbackCommand,
+    FeedbackResult,
+    RecommendationCommand,
+    RecommendationResult,
+    SessionSnapshot,
+)
 
 
 class Liveness(BaseModel):
@@ -74,6 +88,14 @@ class RecommendationResponse(BaseModel):
     items: list[RecommendationItemResponse]
 
 
+class FeedbackResponse(BaseModel):
+    event_id: UUID
+    session_id: UUID
+    session_epoch: int
+    history_version: int
+    replayed: bool
+
+
 class ErrorDetail(BaseModel):
     code: str
     message: str
@@ -118,6 +140,16 @@ def _recommendation_response(result: RecommendationResult) -> RecommendationResp
             RecommendationItemResponse(item_id=item.item_id, score=item.score, source=item.source)
             for item in result.items
         ],
+    )
+
+
+def _feedback_response(result: FeedbackResult) -> FeedbackResponse:
+    return FeedbackResponse(
+        event_id=result.event_id,
+        session_id=result.session_id,
+        session_epoch=result.session_epoch,
+        history_version=result.history_version,
+        replayed=result.replayed,
     )
 
 
@@ -264,6 +296,50 @@ def create_app(
                 504, "recommendation_timeout", "recommendation deadline exceeded",
                 request_id, retryable=True,
             )
+
+    @app.post(
+        "/api/v1/feedback",
+        response_model=FeedbackResponse,
+        tags=["demo"],
+        responses={
+            401: {"model": ErrorEnvelope, "description": "Missing or invalid session token"},
+            404: {"model": ErrorEnvelope, "description": "Session not found"},
+            409: {"model": ErrorEnvelope, "description": "Feedback conflict"},
+        },
+    )
+    async def feedback(
+        payload: FeedbackInput,
+        session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    ):
+        if not session_token:
+            return _error(
+                401, "session_access_denied", "session token is required", payload.request_id,
+            )
+        command = FeedbackCommand(
+            event_id=payload.event_id,
+            session_id=payload.session_id,
+            session_token=session_token,
+            request_id=payload.request_id,
+            item_id=payload.item_id,
+            kind=payload.kind,
+            observed_at=payload.observed_at,
+            desired_state=payload.desired_state,
+            visible_ratio=payload.visible_ratio,
+            visible_duration_ms=payload.visible_duration_ms,
+            schema_version=payload.schema_version,
+        )
+        try:
+            return _feedback_response(await demo.backend.record_feedback(command))
+        except ResourceNotFound as exc:
+            return _error(404, "session_not_found", str(exc), payload.request_id)
+        except AccessDenied as exc:
+            return _error(401, "session_access_denied", str(exc), payload.request_id)
+        except IdempotencyConflict as exc:
+            return _error(409, "feedback_idempotency_conflict", str(exc), payload.request_id)
+        except SessionEpochConflict as exc:
+            return _error(409, "session_epoch_conflict", str(exc), payload.request_id)
+        except FeedbackSourceMismatch as exc:
+            return _error(409, "feedback_source_conflict", str(exc), payload.request_id)
 
     return app
 

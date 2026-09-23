@@ -19,7 +19,7 @@
 | POST /api/v1/sessions/{id}/reset | `X-Session-Token` → 增加 epoch 和历史版本并清空状态；已实现 | M1 |
 | POST /api/v1/recommendations | `X-Session-Token` + 推荐输入 → 请求 ID、版本、实际策略、商品；已实现持久化热门回退演示 | M1 |
 | GET /api/v1/items/{id} | 商品详情与有效状态 | M1 |
-| POST /api/v1/feedback | 反馈输入契约 → 原事件结果、最新历史版本 | M1 |
+| POST /api/v1/feedback | `X-Session-Token` + 反馈输入 → 原事件结果、最新历史版本；已实现 | M12 |
 | POST /api/v1/admin/catalog/imports | 文件或统一 JSON 批次 → 任务 ID | M2 |
 | GET /api/v1/admin/catalog/imports/{id} | 进度、错误与产物状态 | M2 |
 | POST /api/v1/admin/catalog/imports/{id}/retry | 校验原内容后幂等重试 | M2 |
@@ -38,7 +38,7 @@
 
 推荐输入包含 session_id、expected_history_version、strategy、k；k 默认为 10，当前允许 1-50。策略名称不代表已经接入对应模型。创建会话后必须保存访问令牌，后续会话和推荐请求通过 `X-Session-Token` 提交；数据库只保存其 SHA-256 摘要。该令牌是当前本地演示的最小访问边界，不替代公网部署所需的完整身份系统。
 
-反馈包含 event_id、session_id、request_id、item_id、kind、observed_at。状态设置事件要求 desired_state；曝光要求 visible_ratio 和 visible_duration_ms。未知字段拒绝，时间必须带时区。
+反馈包含 event_id、session_id、request_id、item_id、kind、observed_at。状态设置事件要求 desired_state；曝光要求 visible_ratio 和 visible_duration_ms。未知字段拒绝，时间必须带时区。同一 `event_id` 同一规范化内容返回原历史版本并标记 `replayed=true`；同 ID 不同内容返回 409。反馈必须关联该会话当前 epoch 中真实返回的商品。
 
 发布采用预期活动版本比较，避免两个管理操作覆盖彼此。匹配失败返回冲突，调用方重新读取状态后决定重试。单批大小、权限和商品存在性由接口与业务层检查。
 
