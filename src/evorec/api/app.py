@@ -94,6 +94,7 @@ class FeedbackResponse(BaseModel):
     session_epoch: int
     history_version: int
     replayed: bool
+    exposure_event_id: UUID | None
 
 
 class ErrorDetail(BaseModel):
@@ -150,6 +151,7 @@ def _feedback_response(result: FeedbackResult) -> FeedbackResponse:
         session_epoch=result.session_epoch,
         history_version=result.history_version,
         replayed=result.replayed,
+        exposure_event_id=result.exposure_event_id,
     )
 
 

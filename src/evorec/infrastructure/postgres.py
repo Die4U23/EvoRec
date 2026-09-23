@@ -35,6 +35,8 @@ from evorec.domain.models import (
     ScoredCandidate,
     SessionSnapshot,
     Strategy,
+    detail_exposure_event_id,
+    detail_exposure_payload_sha256,
 )
 
 
@@ -215,6 +217,76 @@ class PostgresDemoBackend:
     async def record_feedback(self, command: FeedbackCommand) -> FeedbackResult:
         return await asyncio.to_thread(self._record_feedback, command)
 
+    @staticmethod
+    def _ensure_detail_exposure(
+        connection: psycopg.Connection,
+        command: FeedbackCommand,
+        session_epoch: int,
+        outcome_version: int,
+    ) -> UUID | None:
+        if command.kind != FeedbackKind.DETAIL_VIEW:
+            return None
+        exposure_event_id = detail_exposure_event_id(command.event_id)
+        payload_sha256 = detail_exposure_payload_sha256(command.event_id)
+        connection.execute(
+            """
+            INSERT INTO feedback_events (
+                event_id, session_id, request_id, item_id, session_epoch,
+                event_kind, desired_state, observed_at, payload_sha256,
+                evidence, outcome_history_version
+            ) VALUES (%s, %s, %s, %s, %s, 'exposure', NULL, %s, %s, %s, %s)
+            ON CONFLICT (event_id) DO NOTHING
+            """,
+            (
+                exposure_event_id,
+                command.session_id,
+                command.request_id,
+                command.item_id,
+                session_epoch,
+                command.observed_at,
+                payload_sha256,
+                Jsonb(
+                    {
+                        "source": "detail_view_backfill",
+                        "detail_event_id": str(command.event_id),
+                    }
+                ),
+                outcome_version,
+            ),
+        )
+        cursor = connection.execute(
+            """
+            SELECT session_id, request_id, item_id, session_epoch, event_kind,
+                   payload_sha256, outcome_history_version
+            FROM feedback_events WHERE event_id = %s
+            """,
+            (exposure_event_id,),
+        )
+        stored = cursor.fetchone()
+        expected = (
+            command.session_id,
+            command.request_id,
+            command.item_id,
+            session_epoch,
+            "exposure",
+            payload_sha256,
+            outcome_version,
+        )
+        actual = (
+            stored["session_id"],
+            stored["request_id"],
+            stored["item_id"],
+            stored["session_epoch"],
+            stored["event_kind"],
+            str(stored["payload_sha256"]),
+            stored["outcome_history_version"],
+        )
+        if actual != expected:
+            raise IdempotencyConflict(
+                "derived exposure event ID was already used by another event"
+            )
+        return exposure_event_id
+
     def _record_feedback(self, command: FeedbackCommand) -> FeedbackResult:
         with self._connect() as connection:
             connection.execute(
@@ -249,12 +321,19 @@ class PostgresDemoBackend:
                     raise IdempotencyConflict(
                         "event ID was already used for different feedback"
                     )
+                exposure_event_id = self._ensure_detail_exposure(
+                    connection,
+                    command,
+                    previous["session_epoch"],
+                    previous["outcome_history_version"],
+                )
                 return FeedbackResult(
                     command.event_id,
                     command.session_id,
                     previous["session_epoch"],
                     previous["outcome_history_version"],
                     True,
+                    exposure_event_id,
                 )
 
             cursor = connection.execute(
@@ -346,6 +425,12 @@ class PostgresDemoBackend:
                     outcome_version,
                 ),
             )
+            exposure_event_id = self._ensure_detail_exposure(
+                connection,
+                command,
+                session["epoch"],
+                outcome_version,
+            )
             if command.kind in {FeedbackKind.FAVORITE_SET, FeedbackKind.HIDE_SET}:
                 connection.execute(
                     """
@@ -372,6 +457,7 @@ class PostgresDemoBackend:
             session["epoch"],
             outcome_version,
             False,
+            exposure_event_id,
         )
 
     async def rank(self, context: RequestContext, command: RecommendationCommand) -> RankedBatch:

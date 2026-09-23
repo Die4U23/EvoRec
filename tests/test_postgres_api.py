@@ -50,6 +50,27 @@ def test_postgres_session_and_recommendation_survive_new_app_instance():
             assert result["actual_strategy"] == "popular"
             assert result["fallback_reason"] == "strategy_not_loaded_in_postgres_demo"
             assert len(result["items"]) == 2
+            detail = {
+                "event_id": str(uuid4()),
+                "session_id": session["session_id"],
+                "request_id": result["request_id"],
+                "item_id": result["items"][0]["item_id"],
+                "kind": "detail_view",
+                "observed_at": datetime.now(timezone.utc).isoformat(),
+            }
+            detail_recorded = await client.post(
+                "/api/v1/feedback", headers=headers, json=detail,
+            )
+            detail_replayed = await client.post(
+                "/api/v1/feedback", headers=headers, json=detail,
+            )
+            assert detail_recorded.status_code == detail_replayed.status_code == 200
+            assert detail_recorded.json()["history_version"] == 1
+            assert detail_recorded.json()["exposure_event_id"]
+            assert (
+                detail_replayed.json()["exposure_event_id"]
+                == detail_recorded.json()["exposure_event_id"]
+            )
             feedback = {
                 "event_id": str(uuid4()),
                 "session_id": session["session_id"],
@@ -72,11 +93,11 @@ def test_postgres_session_and_recommendation_survive_new_app_instance():
                 json={**feedback, "desired_state": False},
             )
             assert recorded.status_code == replayed.status_code == 200
-            assert recorded.json()["history_version"] == 1
+            assert recorded.json()["history_version"] == 2
             assert recorded.json()["replayed"] is False
             assert replayed.json()["replayed"] is True
             assert repeated_state.status_code == 200
-            assert repeated_state.json()["history_version"] == 1
+            assert repeated_state.json()["history_version"] == 2
             assert repeated_state.json()["replayed"] is False
             assert conflict.status_code == 409
             assert conflict.json()["error"]["code"] == "feedback_idempotency_conflict"
@@ -116,7 +137,8 @@ def test_postgres_session_and_recommendation_survive_new_app_instance():
                 f"/api/v1/sessions/{session['session_id']}", headers=headers,
             )
             assert restored.status_code == 200
-            assert restored.json()["history_version"] == 1
+            assert restored.json()["history_version"] == 2
+            assert restored.json()["history"] == [detail["item_id"]]
             assert restored.json()["hidden_items"] == [feedback["item_id"]]
             denied = await client.get(
                 f"/api/v1/sessions/{session['session_id']}",
@@ -131,17 +153,23 @@ def test_postgres_session_and_recommendation_survive_new_app_instance():
                        (SELECT count(*) FROM request_items WHERE request_id = r.request_id),
                        (SELECT count(*) FROM feedback_events WHERE session_id = %s),
                        (SELECT is_hidden FROM session_item_states
-                        WHERE session_id = %s AND item_id = %s)
+                        WHERE session_id = %s AND item_id = %s),
+                       (SELECT event_kind FROM feedback_events WHERE event_id = %s),
+                       (SELECT evidence->>'source' FROM feedback_events WHERE event_id = %s)
                 FROM recommendation_requests r WHERE request_id = %s
                 """,
                 (
                     session["session_id"],
                     session["session_id"],
                     feedback["item_id"],
+                    detail_recorded.json()["exposure_event_id"],
+                    detail_recorded.json()["exposure_event_id"],
                     result["request_id"],
                 ),
             ).fetchone()
-            assert row == ("completed", "popular", 2, 2, True)
+            assert row == (
+                "completed", "popular", 2, 4, True, "exposure", "detail_view_backfill",
+            )
             connection.execute(
                 "DELETE FROM session_item_states WHERE session_id = %s",
                 (session["session_id"],),
