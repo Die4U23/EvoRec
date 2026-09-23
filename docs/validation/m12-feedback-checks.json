@@ -10,12 +10,14 @@
     ".\\.venv\\Scripts\\python.exe -m pytest tests/test_postgres_api.py -q -p no:cacheprovider --basetemp .pytest-tmp-feedback-pg2",
     ".\\.venv-research\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp .pytest-tmp-m12-final-20260923",
     ".\\.venv\\Scripts\\python.exe -m pytest tests/test_postgres_api.py -q -p no:cacheprovider --basetemp .pytest-tmp-reconcile-pg",
-    ".\\.venv-research\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp .pytest-tmp-reconcile-final-20260923"
+    ".\\.venv-research\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp .pytest-tmp-reconcile-final-20260923",
+    ".\\.venv-research\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp .pytest-tmp-push-20260923"
   ],
   "results": {
     "memory_feedback_and_contracts": "30 passed",
     "postgres_api_integration": "1 passed",
-    "full_regression": "169 passed"
+    "full_regression": "169 passed",
+    "pre_push_regression": "169 passed in 10.96s at 1614fd5"
   },
   "verified_behaviors": [
     "feedback requires the owning session token",
