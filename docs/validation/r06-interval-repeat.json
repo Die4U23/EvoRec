@@ -1,0 +1,9 @@
+{
+  "status": "passed",
+  "intervals_recomputed": 50,
+  "all_point_estimates_and_bounds_identical": true,
+  "series_sha256": "dc8b5cb6ed231d7c576497a21bac632c6abcd74b31926a53ceb77e7905d406e4",
+  "analysis_sha256": "76d2340648829e788145f7ac67a3259bb111ef0d09314c13a8fa29a116eeefb8",
+  "checker_sha256": "08cc540a190d76820996f88edeadefc5179dde4b80567c3a5a0d308201326e28",
+  "source": "metrics independently recomputed from saved recommendation ranks"
+}

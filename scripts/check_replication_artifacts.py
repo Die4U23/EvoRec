@@ -78,18 +78,22 @@ def check():
     for record in series["source_inputs"].values():
         checked_file(record)
     assets = Path("docs/blog/assets/evorec/r05-replication")
-    manifest = read(assets / "manifest.json")
-    assert manifest["generator_sha256"] == file_sha(Path(manifest["generator"]))
-    assert len(manifest["assets"]) == 4
-    for row in manifest["assets"]:
-        path = assets / row["file"]
-        assert file_sha(path) == row["sha256"] == file_sha(Path(row["source_image"]))
-        assert file_sha(Path(row["source_results"])) == row["source_results_sha256"]
-        if path.suffix == ".png":
-            with Image.open(path) as picture:
-                picture.verify()
-        else:
-            assert ET.parse(path).getroot().tag.endswith("svg")
+    # Publishing assets are optional, local-only material.
+    blog_image_count = 0
+    if assets.exists():
+        manifest = read(assets / "manifest.json")
+        assert manifest["generator_sha256"] == file_sha(Path(manifest["generator"]))
+        assert len(manifest["assets"]) == 4
+        for row in manifest["assets"]:
+            path = assets / row["file"]
+            assert file_sha(path) == row["sha256"] == file_sha(Path(row["source_image"]))
+            assert file_sha(Path(row["source_results"])) == row["source_results_sha256"]
+            if path.suffix == ".png":
+                with Image.open(path) as picture:
+                    picture.verify()
+            else:
+                assert ET.parse(path).getroot().tag.endswith("svg")
+        blog_image_count = len(manifest["assets"])
     tests = {}
     for name, expected in (("replication-core-tests.xml", 96),
                            ("replication-implementation-tests.xml", 18),
@@ -101,7 +105,7 @@ def check():
         assert passed == expected
         tests[name] = {"passed": passed, "skipped": len(cases) - passed}
     local_links = 0
-    documents = list(Path("docs").rglob("*.md")) + list(Path("research").rglob("*.md")) + [Path("README.md")]
+    documents = [Path(p) for p in subprocess.check_output(["git", "ls-files", "-z"]).decode("utf-8").split("\0") if p.endswith(".md")]
     for path in documents:
         for target in re.findall(r"!?\[[^\]\n]*\]\(([^)\n]+)\)", path.read_text(encoding="utf-8-sig")):
             target = target.strip().strip("<>")
@@ -127,7 +131,7 @@ def check():
         "checkpoints": checkpoints,
         "audited_queries": analysis["audited_queries"],
         "audited_candidate_checks": analysis["audited_candidate_checks"],
-        "confidence_intervals": 48, "blog_image_files_checked": 4,
+        "confidence_intervals": 48, "blog_image_files_checked": blog_image_count,
         "markdown_local_links_checked": local_links, "tests": tests,
         "limits": ["historical R05 already inspected; not a fresh test",
                    "current model checkpoints are local ignored artifacts",

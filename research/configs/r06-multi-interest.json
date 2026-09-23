@@ -1,0 +1,156 @@
+{
+  "schema_version": "0.6",
+  "stage": "R06-multi-interest",
+  "dataset_path": "datasets/video_games_r06.csv",
+  "metadata_path": "datasets/video_games_r03.metadata.json",
+  "training_run": "artifacts/runs/r03-content-20260915",
+  "train_end_ms": 1628643414042,
+  "validation_end_ms": 1658002729837,
+  "positive_rating_min": 4,
+  "history_limit": 50,
+  "candidate_k": 200,
+  "sample": {
+    "seed": "evorec-r02-v1",
+    "denominator": 20,
+    "bucket": 4,
+    "exclude_r01": true
+  },
+  "content": {
+    "fields": [
+      "title",
+      "categories"
+    ],
+    "access_assumption": "static-2023-metadata-at-item-availability; historical content timestamps unavailable",
+    "max_features": 20000,
+    "min_df": 2,
+    "dimensions": 128,
+    "svd_seed": 17,
+    "history_decay": 0.8
+  },
+  "encoder_fit_end_ms": 1483228800000,
+  "folds": [
+    {
+      "name": "2017-2019",
+      "start_ms": 1483228800000,
+      "end_ms": 1577836800000
+    },
+    {
+      "name": "2020-2021",
+      "start_ms": 1577836800000,
+      "end_ms": 1628643414042
+    }
+  ],
+  "max_training_queries_per_fold": 12000,
+  "pool_k": 400,
+  "retrieval_k": 200,
+  "fusion_alpha": 0.5,
+  "rrf_constant": 60,
+  "seeds": [
+    17,
+    29,
+    43
+  ],
+  "trials": [
+    {
+      "name": "ColdListMLP",
+      "cold_weight": 4
+    }
+  ],
+  "learning_rate": 0.001,
+  "weight_decay": 0.001,
+  "max_epochs": 15,
+  "patience": 4,
+  "batch_size": 64,
+  "evaluation_batch_size": 128,
+  "model": {
+    "hidden": 128,
+    "bottleneck": 64,
+    "base_scale": 8,
+    "residual_scale": 4
+  },
+  "selection": {
+    "seed": 17,
+    "epoch_metric": "validation/all_positive_events/ndcg@10",
+    "ndcg_min_ratio": 0.97,
+    "floor_baselines": [
+      "CF-blend",
+      "A-frozen-s17"
+    ],
+    "method_metric": "validation/model_cold_available/recall@20",
+    "declaration_order": [
+      "CF-blend",
+      "A-RRF",
+      "A-frozen-s17",
+      "B-RRF",
+      "B-frozen-s17",
+      "D-adapted-s17",
+      "C-adapted-s17"
+    ],
+    "tie_break": "higher overall NDCG, then earlier declaration order"
+  },
+  "report_directory": "docs/experiments/r06-multi-interest",
+  "limits": [
+    "New user bucket excludes R01-R05; calendar and items still overlap.",
+    "Static metadata lacks historical versions; availability is first interaction proxy.",
+    "A/B checkpoints were selected on R05 validation; C/D use R06 validation. C-D controls retraining and selection stage.",
+    "Fixed seed metric mean is not an ensemble; user-cluster intervals condition on checkpoints, with no multiplicity adjustment.",
+    "Candidate count is fixed but multi-interest uses more computation; offline batch time is not online latency."
+  ],
+  "source_run": "artifacts/runs/r05-ranker-20260916",
+  "source_series_sha256": "ae8fcb98a5d26269529123c80ca924be02c553dbbb4b3f442d7d63f5e52dbab6",
+  "source_replication": "artifacts/runs/r05-cold-replication-20260916",
+  "source_replication_sha256": "c20f0aaeb4381287535745a9cf4cbfc3354c6047b3e88021e2364729f07c5966",
+  "multi_interest": {
+    "recent_events": 8,
+    "decay": 0.9,
+    "score": "max_j(decay**j * max(cosine, 0))",
+    "centroid_weight": 0.5,
+    "rrf_constant": 60,
+    "provider_k": 200,
+    "content_k": 200
+  },
+  "arms": {
+    "A": "centroid + frozen R05 cold ranker",
+    "B": "centroid/multi fusion + same frozen ranker",
+    "C": "centroid/multi fusion + adapted ranker",
+    "D": "centroid + adapted ranker; matched retraining control"
+  },
+  "bootstrap": {
+    "replicates": 10000,
+    "seed": 20260917,
+    "confidence": 0.95,
+    "cohorts": [
+      "all_positive_events",
+      "history_present",
+      "model_cold_available",
+      "history_cold_available",
+      "no_history_cold_available"
+    ],
+    "metrics": [
+      "ndcg@10",
+      "recall@20"
+    ],
+    "contrasts": [
+      [
+        "B-frozen",
+        "A-frozen"
+      ],
+      [
+        "C-adapted",
+        "B-frozen"
+      ],
+      [
+        "C-adapted",
+        "D-adapted"
+      ],
+      [
+        "B-RRF",
+        "A-RRF"
+      ],
+      [
+        "C-adapted",
+        "CF-blend"
+      ]
+    ]
+  }
+}

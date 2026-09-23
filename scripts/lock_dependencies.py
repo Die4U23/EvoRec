@@ -13,7 +13,7 @@ def main() -> None:
         for d in distributions()
         if d.metadata["Name"].lower().replace("_", "-") not in excluded
     }
-    header = "# M0 runtime/test dependency snapshot; Python 3.12 / Windows.\n# Build tools are governed separately by pyproject.toml.\n"
+    header = "# M1 service/database development snapshot; Python 3.12 / Windows.\n# Build tools are governed separately by pyproject.toml.\n"
     body = "".join(f"{name}=={version}\n" for name, version in sorted(packages.items()))
     (ROOT / "requirements-dev.lock.txt").write_text(header + body, encoding="utf-8")
     print(f"Locked {len(packages)} runtime/test dependencies")

@@ -11,3 +11,23 @@ class SnapshotMismatch(Exception):
 
 class UnreportedFallback(Exception):
     """A fixed strategy changed without explaining why."""
+
+
+class ResourceNotFound(Exception):
+    """A requested session or other domain resource does not exist."""
+
+
+class AccessDenied(Exception):
+    """A session credential is absent or does not match the stored owner."""
+
+
+class IdempotencyConflict(Exception):
+    """An idempotency key was already used for different semantic content."""
+
+
+class SessionEpochConflict(Exception):
+    """Feedback belongs to a request admitted before the current reset epoch."""
+
+
+class FeedbackSourceMismatch(Exception):
+    """Feedback does not refer to an item returned to the same session."""
