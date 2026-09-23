@@ -197,6 +197,18 @@
             "title": "Event Id",
             "type": "string"
           },
+          "exposure_event_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exposure Event Id"
+          },
           "history_version": {
             "title": "History Version",
             "type": "integer"
@@ -220,7 +232,8 @@
           "session_id",
           "session_epoch",
           "history_version",
-          "replayed"
+          "replayed",
+          "exposure_event_id"
         ],
         "title": "FeedbackResponse",
         "type": "object"

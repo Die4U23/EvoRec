@@ -192,6 +192,8 @@ def test_memory_feedback_is_idempotent_and_rejects_stale_epoch():
             assert first.json()["history_version"] == 1
             assert first.json()["replayed"] is False
             assert replay.json()["replayed"] is True
+            assert first.json()["exposure_event_id"]
+            assert replay.json()["exposure_event_id"] == first.json()["exposure_event_id"]
             assert changed.status_code == 409
             assert changed.json()["error"]["code"] == "feedback_idempotency_conflict"
 

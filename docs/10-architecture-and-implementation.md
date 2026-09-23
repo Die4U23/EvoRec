@@ -100,7 +100,7 @@ flowchart TB
 | 序列模型、内容双塔和候选内排序 | 已真实训练 | [阶段记录](STATUS.md) |
 | 多兴趣召回、匹配重训练与结果审计 | R06 已完成 | [R06 报告](experiments/r06-multi-interest/report.md) |
 | 会话与推荐业务 HTTP 接口 | 已实现可选 PostgreSQL 持久化 | 会话令牌、创建、查询、重置、推荐及结果位置落库 |
-| 反馈业务 HTTP 接口 | 已实现 | 会话访问、来源核对、epoch 冲突、载荷哈希幂等与状态更新在 PostgreSQL 事务中完成 |
+| 反馈业务 HTTP 接口 | 已实现 | 会话访问、来源核对、epoch 冲突、载荷哈希幂等、详情派生曝光与状态更新在 PostgreSQL 事务中完成 |
 | bundle 候选校验 | 已实现结构、路径、哈希、映射和向量兼容检查 | [bundle.py](../src/evorec/infrastructure/bundle.py)、[产物约定](../artifacts/README.md) |
 | PostgreSQL、任务领取、模型发布 | 核心迁移与推荐适配器已实现；任务和模型发布待实现 | [正式迁移](../db/migrations/0001_m1_core.sql)、[架构决策](architecture/decisions.md) |
 | 前端、C++ 扩展、线上性能 | 尚未实现或验证 | [Web 规划](../web/README.md)、[C++ 边界](../cpp/README.md) |

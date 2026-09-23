@@ -7,12 +7,12 @@
   },
   "commands": [
     ".\\.venv\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp=tmp\\pytest-bundle tests/test_bundle_validation.py",
-    ".\\.venv-research\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp=tmp\\pytest-m21-research --junitxml=docs\\validation\\m21-bundle-tests.xml",
+    ".\\.venv-research\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp=tmp\\pytest-m21-merge-record --junitxml=docs\\validation\\m21-bundle-tests.xml",
     ".\\.venv\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp=tmp\\pytest-m21-postgres tests\\test_postgres_api.py"
   ],
   "results": {
     "bundle_validation": "8 passed",
-    "full_regression": "176 passed, 1 PostgreSQL integration test skipped because the database URL was intentionally absent from that process",
+    "full_regression": "177 passed after merging the detail-view exposure change; 1 PostgreSQL integration test skipped because the database URL was intentionally absent from that process",
     "postgres_api_integration": "1 passed after loading the ignored local database URL"
   },
   "verified_behaviors": [
