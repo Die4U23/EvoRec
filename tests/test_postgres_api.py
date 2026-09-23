@@ -1,13 +1,22 @@
 import asyncio
-from datetime import datetime, timezone
 import os
-from uuid import uuid4
+from dataclasses import replace
+from datetime import datetime, timezone
+from uuid import UUID, uuid4
 
 import httpx
 import psycopg
 import pytest
 
 from evorec.api.app import create_app
+from evorec.domain.errors import SnapshotMismatch
+from evorec.domain.models import (
+    RecommendationResult,
+    RequestBinding,
+    ScoredCandidate,
+    Strategy,
+)
+from evorec.infrastructure.postgres import PostgresDemoBackend
 
 
 DATABASE_URL = os.getenv("EVOREC_DATABASE_URL")
@@ -71,6 +80,33 @@ def test_postgres_session_and_recommendation_survive_new_app_instance():
             assert repeated_state.json()["replayed"] is False
             assert conflict.status_code == 409
             assert conflict.json()["error"]["code"] == "feedback_idempotency_conflict"
+
+            persisted_result = RecommendationResult(
+                binding=RequestBinding(
+                    UUID(result["request_id"]),
+                    UUID(result["session_id"]),
+                    result["session_epoch"],
+                    result["history_version"],
+                    UUID(result["bundle_id"]),
+                    result["exclusion_version"],
+                ),
+                requested_strategy=Strategy(result["requested_strategy"]),
+                actual_strategy=Strategy(result["actual_strategy"]),
+                items=tuple(ScoredCandidate(**item) for item in result["items"]),
+                fallback_reason=result["fallback_reason"],
+            )
+            recorder = PostgresDemoBackend(DATABASE_URL)
+            await recorder.save(persisted_result)
+            changed_item = replace(
+                persisted_result.items[0], score=persisted_result.items[0].score + 0.01,
+            )
+            with pytest.raises(SnapshotMismatch, match="different result content"):
+                await recorder.save(
+                    replace(
+                        persisted_result,
+                        items=(changed_item, *persisted_result.items[1:]),
+                    )
+                )
 
         second_app = create_app()
         async with httpx.AsyncClient(

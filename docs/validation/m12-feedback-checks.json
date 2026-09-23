@@ -8,7 +8,9 @@
   "commands": [
     ".\\.venv\\Scripts\\python.exe -m pytest tests/test_api.py tests/test_contracts.py tests/test_feedback.py -q -p no:cacheprovider --basetemp .pytest-tmp-feedback-memory2",
     ".\\.venv\\Scripts\\python.exe -m pytest tests/test_postgres_api.py -q -p no:cacheprovider --basetemp .pytest-tmp-feedback-pg2",
-    ".\\.venv-research\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp .pytest-tmp-m12-final-20260923"
+    ".\\.venv-research\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp .pytest-tmp-m12-final-20260923",
+    ".\\.venv\\Scripts\\python.exe -m pytest tests/test_postgres_api.py -q -p no:cacheprovider --basetemp .pytest-tmp-reconcile-pg",
+    ".\\.venv-research\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp .pytest-tmp-reconcile-final-20260923"
   ],
   "results": {
     "memory_feedback_and_contracts": "30 passed",
@@ -23,12 +25,13 @@
     "the same event ID and payload replays the original outcome without another version increment",
     "the same event ID with different semantic content returns HTTP 409",
     "a distinct event that repeats an existing explicit state records an event without incrementing history version",
+    "resubmitting identical completed recommendation content succeeds while changed content is rejected",
     "feedback, session arrays, history version, and item state commit in one PostgreSQL transaction",
     "a second application instance reads the persisted history version and hidden item state"
   ],
   "boundaries": [
     "detail-view exposure backfill is not implemented",
-    "completed recommendation content reconciliation is not implemented",
+    "a client-provided recommendation idempotency key is not implemented",
     "the real model runtime and public identity system are not loaded"
   ]
 }

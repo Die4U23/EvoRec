@@ -397,7 +397,8 @@ class PostgresDemoBackend:
             cursor = connection.execute(
                 """
                 SELECT session_id, session_epoch, history_version, bundle_id,
-                       exclusion_version, status
+                       exclusion_version, requested_strategy, actual_strategy,
+                       fallback_reason, status
                 FROM recommendation_requests WHERE request_id = %s FOR UPDATE
                 """,
                 (binding.request_id,),
@@ -412,6 +413,27 @@ class PostgresDemoBackend:
             if stored != binding:
                 raise SnapshotMismatch("result binding differs from the accepted request")
             if row["status"] == "completed":
+                cursor = connection.execute(
+                    """
+                    SELECT item_id, score, source
+                    FROM request_items WHERE request_id = %s ORDER BY position
+                    """,
+                    (binding.request_id,),
+                )
+                stored_items = tuple(
+                    (item["item_id"], item["score"], item["source"])
+                    for item in cursor.fetchall()
+                )
+                submitted_items = tuple(
+                    (item.item_id, item.score, item.source) for item in result.items
+                )
+                if (
+                    row["requested_strategy"] != result.requested_strategy
+                    or row["actual_strategy"] != result.actual_strategy
+                    or row["fallback_reason"] != result.fallback_reason
+                    or stored_items != submitted_items
+                ):
+                    raise SnapshotMismatch("completed request has different result content")
                 return
             if row["status"] != "accepted":
                 raise SnapshotMismatch("request is not in an accepted state")
