@@ -1,18 +1,21 @@
 """Process-local adapters for exercising the M1 recommendation workflow.
 
-This module deliberately does not claim durable persistence. It gives the HTTP
-surface a real, deterministic workflow while the PostgreSQL adapter is still a
-separate milestone.
+This module deliberately does not claim durable persistence. It remains the
+zero-configuration fallback and deterministic test backend for the HTTP workflow.
 """
 
 import asyncio
+import hashlib
+import hmac
+import secrets
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
-from evorec.domain.errors import HistoryConflict, ResourceNotFound, SnapshotMismatch
+from evorec.domain.errors import AccessDenied, HistoryConflict, ResourceNotFound, SnapshotMismatch
 from evorec.domain.models import (
     CatalogSnapshot,
+    CreatedSession,
     RankedBatch,
     RecommendationCommand,
     RecommendationResult,
@@ -42,6 +45,7 @@ class InMemoryDemoBackend:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._sessions: dict[UUID, SessionSnapshot] = {}
+        self._session_tokens: dict[UUID, str] = {}
         self._request_states: dict[UUID, str] = {}
         self._request_bindings: dict[UUID, RequestBinding] = {}
         self._results: dict[UUID, RecommendationResult] = {}
@@ -51,25 +55,40 @@ class InMemoryDemoBackend:
             eligible_items=frozenset(_DEMO_SCORES),
         )
 
-    async def create_session(self) -> SessionSnapshot:
+    @staticmethod
+    def _token_sha256(access_token: str) -> str:
+        return hashlib.sha256(access_token.encode("utf-8")).hexdigest()
+
+    async def create_session(self) -> CreatedSession:
         snapshot = SessionSnapshot(uuid4(), 0, 0, (), frozenset())
+        access_token = secrets.token_urlsafe(32)
         async with self._lock:
             self._sessions[snapshot.session_id] = snapshot
-        return snapshot
+            self._session_tokens[snapshot.session_id] = self._token_sha256(access_token)
+        return CreatedSession(snapshot, access_token)
 
-    async def get_session(self, session_id: UUID) -> SessionSnapshot:
+    async def get_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
         async with self._lock:
             try:
-                return self._sessions[session_id]
+                snapshot = self._sessions[session_id]
             except KeyError as exc:
                 raise ResourceNotFound("session does not exist") from exc
+            if not hmac.compare_digest(
+                self._session_tokens[session_id], self._token_sha256(access_token)
+            ):
+                raise AccessDenied("session token is invalid")
+            return snapshot
 
-    async def reset_session(self, session_id: UUID) -> SessionSnapshot:
+    async def reset_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
         async with self._lock:
             try:
                 current = self._sessions[session_id]
             except KeyError as exc:
                 raise ResourceNotFound("session does not exist") from exc
+            if not hmac.compare_digest(
+                self._session_tokens[session_id], self._token_sha256(access_token)
+            ):
+                raise AccessDenied("session token is invalid")
             reset = replace(
                 current,
                 epoch=current.epoch + 1,
@@ -87,6 +106,10 @@ class InMemoryDemoBackend:
                 session = self._sessions[command.session_id]
             except KeyError as exc:
                 raise ResourceNotFound("session does not exist") from exc
+            if not hmac.compare_digest(
+                self._session_tokens[command.session_id], self._token_sha256(command.session_token)
+            ):
+                raise AccessDenied("session token is invalid")
             if session.history_version != command.expected_history_version:
                 raise HistoryConflict("history changed before admission")
             if command.request_id in self._request_states:

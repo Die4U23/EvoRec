@@ -1,0 +1,293 @@
+"""PostgreSQL adapters for the M1 demo workflow."""
+
+import asyncio
+import hashlib
+import hmac
+import secrets
+from contextlib import asynccontextmanager
+from uuid import UUID, uuid4
+
+import psycopg
+from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
+
+from evorec.domain.errors import (
+    AccessDenied,
+    HistoryConflict,
+    ResourceNotFound,
+    SnapshotMismatch,
+)
+from evorec.domain.models import (
+    CatalogSnapshot,
+    CreatedSession,
+    RankedBatch,
+    ReadinessReport,
+    RecommendationCommand,
+    RecommendationResult,
+    RequestBinding,
+    RequestContext,
+    ScoredCandidate,
+    SessionSnapshot,
+    Strategy,
+)
+
+
+class PostgresDemoBackend:
+    """Persist sessions, admitted requests, and completed recommendation items."""
+
+    def __init__(self, database_url: str) -> None:
+        self.database_url = database_url
+
+    @staticmethod
+    def _token_sha256(access_token: str) -> str:
+        return hashlib.sha256(access_token.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _snapshot(row: dict[str, object]) -> SessionSnapshot:
+        return SessionSnapshot(
+            session_id=row["session_id"],
+            epoch=row["epoch"],
+            history_version=row["history_version"],
+            history=tuple(row["history"]),
+            hidden_items=frozenset(row["hidden_items"]),
+        )
+
+    @staticmethod
+    def _authorize(row: dict[str, object], access_token: str) -> None:
+        if not hmac.compare_digest(
+            str(row["owner_token_sha256"]),
+            PostgresDemoBackend._token_sha256(access_token),
+        ):
+            raise AccessDenied("session token is invalid")
+
+    def _connect(self) -> psycopg.Connection:
+        return psycopg.connect(self.database_url, row_factory=dict_row)
+
+    async def create_session(self) -> CreatedSession:
+        return await asyncio.to_thread(self._create_session)
+
+    def _create_session(self) -> CreatedSession:
+        snapshot = SessionSnapshot(uuid4(), 0, 0, (), frozenset())
+        access_token = secrets.token_urlsafe(32)
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO sessions (session_id, owner_token_sha256) VALUES (%s, %s)",
+                (snapshot.session_id, self._token_sha256(access_token)),
+            )
+        return CreatedSession(snapshot, access_token)
+
+    async def get_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
+        return await asyncio.to_thread(self._get_session, session_id, access_token)
+
+    def _get_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                SELECT session_id, owner_token_sha256, epoch, history_version,
+                       history, hidden_items
+                FROM sessions WHERE session_id = %s
+                """,
+                (session_id,),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            raise ResourceNotFound("session does not exist")
+        self._authorize(row, access_token)
+        return self._snapshot(row)
+
+    async def reset_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
+        return await asyncio.to_thread(self._reset_session, session_id, access_token)
+
+    def _reset_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "SELECT owner_token_sha256 FROM sessions WHERE session_id = %s FOR UPDATE",
+                (session_id,),
+            )
+            owner = cursor.fetchone()
+            if owner is None:
+                raise ResourceNotFound("session does not exist")
+            self._authorize(owner, access_token)
+            cursor = connection.execute(
+                """
+                UPDATE sessions
+                SET epoch = epoch + 1, history_version = history_version + 1,
+                    history = '[]'::jsonb, hidden_items = '[]'::jsonb,
+                    favorite_items = '[]'::jsonb, updated_at = now()
+                WHERE session_id = %s
+                RETURNING session_id, owner_token_sha256, epoch, history_version,
+                          history, hidden_items
+                """,
+                (session_id,),
+            )
+            row = cursor.fetchone()
+        assert row is not None
+        return self._snapshot(row)
+
+    @asynccontextmanager
+    async def acquire(self, command: RecommendationCommand):
+        context = await asyncio.to_thread(self._admit, command)
+        try:
+            yield context
+        except BaseException:
+            await asyncio.to_thread(self._mark_failed, command.request_id)
+            raise
+
+    def _admit(self, command: RecommendationCommand) -> RequestContext:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                SELECT session_id, owner_token_sha256, epoch, history_version,
+                       history, hidden_items
+                FROM sessions WHERE session_id = %s FOR UPDATE
+                """,
+                (command.session_id,),
+            )
+            session_row = cursor.fetchone()
+            if session_row is None:
+                raise ResourceNotFound("session does not exist")
+            self._authorize(session_row, command.session_token)
+            session = self._snapshot(session_row)
+            if session.history_version != command.expected_history_version:
+                raise HistoryConflict("history changed before admission")
+
+            cursor = connection.execute(
+                """
+                SELECT active_bundle_id, exclusion_version
+                FROM catalog_control WHERE singleton = 1 AND admission_open
+                FOR SHARE
+                """
+            )
+            control = cursor.fetchone()
+            if control is None or control["active_bundle_id"] is None:
+                raise RuntimeError("catalog admission is not ready")
+            cursor = connection.execute(
+                """
+                SELECT bi.item_id
+                FROM bundle_items bi JOIN items i ON i.item_id = bi.item_id
+                WHERE bi.bundle_id = %s AND i.is_active
+                """,
+                (control["active_bundle_id"],),
+            )
+            eligible = frozenset(row["item_id"] for row in cursor.fetchall())
+            catalog = CatalogSnapshot(
+                control["active_bundle_id"], control["exclusion_version"], eligible,
+            )
+            context = RequestContext(command.request_id, session, catalog)
+            connection.execute(
+                """
+                INSERT INTO recommendation_requests (
+                    request_id, session_id, session_epoch, history_version,
+                    history_snapshot, hidden_snapshot, bundle_id, exclusion_version,
+                    requested_strategy, requested_k, status
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'accepted')
+                """,
+                (
+                    command.request_id, command.session_id, session.epoch,
+                    session.history_version, Jsonb(list(session.history)),
+                    Jsonb(sorted(session.hidden_items)),
+                    catalog.bundle_id, catalog.exclusion_version, command.strategy, command.k,
+                ),
+            )
+        return context
+
+    def _mark_failed(self, request_id: UUID) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE recommendation_requests
+                SET status = 'failed', failure_code = 'execution_failed', updated_at = now()
+                WHERE request_id = %s AND status = 'accepted'
+                """,
+                (request_id,),
+            )
+
+    async def rank(self, context: RequestContext, command: RecommendationCommand) -> RankedBatch:
+        actual = command.strategy
+        fallback = None
+        if command.strategy == Strategy.ADAPTIVE:
+            actual = Strategy.POPULAR
+        elif command.strategy != Strategy.POPULAR:
+            actual = Strategy.POPULAR
+            fallback = "strategy_not_loaded_in_postgres_demo"
+        candidates = tuple(
+            ScoredCandidate(item_id, 1.0 / position, "postgres-demo-popular")
+            for position, item_id in enumerate(sorted(context.catalog.eligible_items), start=1)
+        )
+        return RankedBatch(context.binding, actual, candidates, fallback)
+
+    async def save(self, result: RecommendationResult) -> None:
+        await asyncio.to_thread(self._save, result)
+
+    def _save(self, result: RecommendationResult) -> None:
+        binding = result.binding
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                SELECT session_id, session_epoch, history_version, bundle_id,
+                       exclusion_version, status
+                FROM recommendation_requests WHERE request_id = %s FOR UPDATE
+                """,
+                (binding.request_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise SnapshotMismatch("result does not match an accepted request")
+            stored = RequestBinding(
+                binding.request_id, row["session_id"], row["session_epoch"],
+                row["history_version"], row["bundle_id"], row["exclusion_version"],
+            )
+            if stored != binding:
+                raise SnapshotMismatch("result binding differs from the accepted request")
+            if row["status"] == "completed":
+                return
+            if row["status"] != "accepted":
+                raise SnapshotMismatch("request is not in an accepted state")
+            if result.items:
+                cursor = connection.cursor()
+                cursor.executemany(
+                    """
+                    INSERT INTO request_items (request_id, item_id, position, score, source)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    [
+                        (binding.request_id, item.item_id, position, item.score, item.source)
+                        for position, item in enumerate(result.items, start=1)
+                    ],
+                )
+            connection.execute(
+                """
+                UPDATE recommendation_requests
+                SET actual_strategy = %s, status = 'completed', fallback_reason = %s,
+                    completed_at = now(), updated_at = now()
+                WHERE request_id = %s
+                """,
+                (result.actual_strategy, result.fallback_reason, binding.request_id),
+            )
+
+
+class PostgresDemoReadiness:
+    def __init__(self, database_url: str) -> None:
+        self.database_url = database_url
+
+    async def check(self) -> ReadinessReport:
+        return await asyncio.to_thread(self._check)
+
+    def _check(self) -> ReadinessReport:
+        blockers: list[str] = ["model_runtime_not_loaded"]
+        try:
+            with psycopg.connect(self.database_url) as connection:
+                cursor = connection.execute(
+                    """
+                    SELECT active_bundle_id, admission_open
+                    FROM catalog_control WHERE singleton = 1
+                    """
+                )
+                row = cursor.fetchone()
+        except psycopg.Error:
+            return ReadinessReport(("database_not_connected", "model_runtime_not_loaded"))
+        if row is None or row[0] is None:
+            blockers.append("catalog_bundle_not_loaded")
+        if row is None or not row[1]:
+            blockers.append("publication_barrier_closed")
+        return ReadinessReport(tuple(blockers))

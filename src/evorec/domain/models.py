@@ -18,12 +18,15 @@ class Strategy(StrEnum):
 class RecommendationCommand:
     request_id: UUID
     session_id: UUID
+    session_token: str
     expected_history_version: int
     strategy: Strategy
     k: int
     timeout_seconds: float
 
     def __post_init__(self) -> None:
+        if not self.session_token or not self.session_token.strip():
+            raise ValueError("session token must be present")
         if type(self.k) is not int or not 1 <= self.k <= 50:
             raise ValueError("k must be an integer between 1 and 50")
         if type(self.expected_history_version) is not int or self.expected_history_version < 0:
@@ -31,6 +34,16 @@ class RecommendationCommand:
         if isinstance(self.timeout_seconds, bool) or not isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
             raise ValueError("timeout must be finite and positive")
         object.__setattr__(self, "strategy", Strategy(self.strategy))
+
+
+@dataclass(frozen=True)
+class CreatedSession:
+    snapshot: "SessionSnapshot"
+    access_token: str
+
+    def __post_init__(self) -> None:
+        if not self.access_token or not self.access_token.strip():
+            raise ValueError("session access token must be present")
 
 
 @dataclass(frozen=True)

@@ -2,10 +2,31 @@
 
 from contextlib import AbstractAsyncContextManager
 from typing import Protocol
+from uuid import UUID
 
 from evorec.domain.models import (
-    RankedBatch, ReadinessReport, RecommendationCommand, RecommendationResult, RequestContext,
+    CreatedSession,
+    RankedBatch,
+    ReadinessReport,
+    RecommendationCommand,
+    RecommendationResult,
+    RequestContext,
+    SessionSnapshot,
 )
+
+
+class SessionPort(Protocol):
+    async def create_session(self) -> CreatedSession:
+        """Create a session and return its access token exactly once."""
+        ...
+
+    async def get_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
+        """Return a session only when its ownership token matches."""
+        ...
+
+    async def reset_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
+        """Atomically advance epoch and history version and clear explicit state."""
+        ...
 
 
 class AdmissionPort(Protocol):

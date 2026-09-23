@@ -1,18 +1,18 @@
-"""Status API plus a process-local M1 recommendation demonstration."""
+"""Status API plus the selectable in-memory/PostgreSQL M1 demonstration."""
 
 from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from evorec import __version__
 from evorec.application.health import ReadinessQuery
-from evorec.bootstrap import DemoApplication, build_demo_application, build_readiness_query
+from evorec.bootstrap import DemoApplication, build_demo_application
 from evorec.contracts import RecommendationInput
-from evorec.domain.errors import HistoryConflict, ResourceNotFound
-from evorec.domain.models import RecommendationCommand, RecommendationResult, SessionSnapshot
+from evorec.domain.errors import AccessDenied, HistoryConflict, ResourceNotFound
+from evorec.domain.models import CreatedSession, RecommendationCommand, RecommendationResult, SessionSnapshot
 
 
 class Liveness(BaseModel):
@@ -29,7 +29,7 @@ class Readiness(BaseModel):
 class Capabilities(BaseModel):
     health_checks: Literal[True] = True
     input_contracts: Literal[True] = True
-    persistence: Literal[False] = False
+    persistence: bool = False
     recommendations: Literal[True] = True
     catalog_publication: Literal[False] = False
     model_training: Literal[False] = False
@@ -39,7 +39,7 @@ class Capabilities(BaseModel):
 class SystemInfo(BaseModel):
     name: Literal["EvoRec"] = "EvoRec"
     version: str = __version__
-    phase: Literal["M1-memory-demo"] = "M1-memory-demo"
+    phase: Literal["M1-persistent-demo"] = "M1-persistent-demo"
     capabilities: Capabilities
 
 
@@ -49,6 +49,10 @@ class SessionResponse(BaseModel):
     history_version: int
     history: list[str]
     hidden_items: list[str]
+
+
+class SessionCreatedResponse(SessionResponse):
+    access_token: str
 
 
 class RecommendationItemResponse(BaseModel):
@@ -88,6 +92,13 @@ def _session_response(snapshot: SessionSnapshot) -> SessionResponse:
         history_version=snapshot.history_version,
         history=list(snapshot.history),
         hidden_items=sorted(snapshot.hidden_items),
+    )
+
+
+def _created_session_response(created: CreatedSession) -> SessionCreatedResponse:
+    return SessionCreatedResponse(
+        **_session_response(created.snapshot).model_dump(),
+        access_token=created.access_token,
     )
 
 
@@ -132,14 +143,19 @@ def create_app(
     readiness_query: ReadinessQuery | None = None,
     demo_application: DemoApplication | None = None,
 ) -> FastAPI:
-    readiness_query = readiness_query or build_readiness_query()
     demo = demo_application or build_demo_application()
+    readiness_query = readiness_query or demo.readiness
+    storage_description = (
+        "配置 PostgreSQL：会话、请求和推荐结果可跨应用实例恢复。"
+        if demo.persistent
+        else "未配置 PostgreSQL：会话和推荐结果只保存在当前进程。"
+    )
     app = FastAPI(
         title="EvoRec Demo API",
         version=__version__,
         description=(
-            "M1 进程内演示：会话和推荐结果不会跨进程重启保存。"
-            "业务就绪仍为 false，直到数据库和真实模型运行时接入。"
+            f"M1 推荐演示。{storage_description}"
+            "真实模型运行时尚未接入，因此业务就绪仍为 false。"
         ),
     )
 
@@ -158,31 +174,53 @@ def create_app(
 
     @app.get("/api/v1/system", response_model=SystemInfo, tags=["system"])
     def system() -> SystemInfo:
-        return SystemInfo(capabilities=Capabilities())
+        return SystemInfo(capabilities=Capabilities(persistence=demo.persistent))
 
-    @app.post("/api/v1/sessions", response_model=SessionResponse, status_code=201, tags=["demo"])
-    async def create_session() -> SessionResponse:
-        return _session_response(await demo.backend.create_session())
+    @app.post(
+        "/api/v1/sessions", response_model=SessionCreatedResponse, status_code=201, tags=["demo"],
+    )
+    async def create_session() -> SessionCreatedResponse:
+        return _created_session_response(await demo.backend.create_session())
 
     @app.get(
         "/api/v1/sessions/{session_id}", response_model=SessionResponse, tags=["demo"],
-        responses={404: {"model": ErrorEnvelope, "description": "Session not found"}},
+        responses={
+            401: {"model": ErrorEnvelope, "description": "Missing or invalid session token"},
+            404: {"model": ErrorEnvelope, "description": "Session not found"},
+        },
     )
-    async def get_session(session_id: UUID):
+    async def get_session(
+        session_id: UUID,
+        session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    ):
+        if not session_token:
+            return _error(401, "session_access_denied", "session token is required")
         try:
-            return _session_response(await demo.backend.get_session(session_id))
+            return _session_response(await demo.backend.get_session(session_id, session_token))
         except ResourceNotFound as exc:
             return _error(404, "session_not_found", str(exc))
+        except AccessDenied as exc:
+            return _error(401, "session_access_denied", str(exc))
 
     @app.post(
         "/api/v1/sessions/{session_id}/reset", response_model=SessionResponse, tags=["demo"],
-        responses={404: {"model": ErrorEnvelope, "description": "Session not found"}},
+        responses={
+            401: {"model": ErrorEnvelope, "description": "Missing or invalid session token"},
+            404: {"model": ErrorEnvelope, "description": "Session not found"},
+        },
     )
-    async def reset_session(session_id: UUID):
+    async def reset_session(
+        session_id: UUID,
+        session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    ):
+        if not session_token:
+            return _error(401, "session_access_denied", "session token is required")
         try:
-            return _session_response(await demo.backend.reset_session(session_id))
+            return _session_response(await demo.backend.reset_session(session_id, session_token))
         except ResourceNotFound as exc:
             return _error(404, "session_not_found", str(exc))
+        except AccessDenied as exc:
+            return _error(401, "session_access_denied", str(exc))
 
     @app.post(
         "/api/v1/recommendations",
@@ -190,15 +228,24 @@ def create_app(
         tags=["demo"],
         responses={
             404: {"model": ErrorEnvelope, "description": "Session not found"},
+            401: {"model": ErrorEnvelope, "description": "Missing or invalid session token"},
             409: {"model": ErrorEnvelope, "description": "History version conflict"},
             504: {"model": ErrorEnvelope, "description": "Recommendation deadline exceeded"},
         },
     )
-    async def recommend(payload: RecommendationInput):
+    async def recommend(
+        payload: RecommendationInput,
+        session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    ):
         request_id = uuid4()
+        if not session_token:
+            return _error(
+                401, "session_access_denied", "session token is required", request_id,
+            )
         command = RecommendationCommand(
             request_id=request_id,
             session_id=payload.session_id,
+            session_token=session_token,
             expected_history_version=payload.expected_history_version,
             strategy=payload.strategy,
             k=payload.k,
@@ -208,6 +255,8 @@ def create_app(
             return _recommendation_response(await demo.recommend.execute(command))
         except ResourceNotFound as exc:
             return _error(404, "session_not_found", str(exc), request_id)
+        except AccessDenied as exc:
+            return _error(401, "session_access_denied", str(exc), request_id)
         except HistoryConflict as exc:
             return _error(409, "history_conflict", str(exc), request_id)
         except TimeoutError:

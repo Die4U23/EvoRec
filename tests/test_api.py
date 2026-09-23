@@ -4,12 +4,18 @@ import httpx
 
 from evorec.api.app import create_app
 from evorec.application.health import ReadinessQuery
+from evorec.bootstrap import build_demo_application
 from evorec.domain.models import ReadinessReport
+from evorec.infrastructure.memory import InMemoryDemoBackend
+
+
+def memory_app():
+    return create_app(demo_application=build_demo_application(InMemoryDemoBackend()))
 
 
 def request(method, path, **kwargs):
     async def call():
-        transport = httpx.ASGITransport(app=create_app())
+        transport = httpx.ASGITransport(app=memory_app())
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             return await client.request(method, path, **kwargs)
 
@@ -29,7 +35,7 @@ def test_liveness_does_not_claim_business_readiness():
 
 def test_unimplemented_capabilities_are_not_advertised_as_available():
     system = request("GET", "/api/v1/system").json()
-    assert system["phase"] == "M1-memory-demo"
+    assert system["phase"] == "M1-persistent-demo"
     assert system["capabilities"]["recommendations"] is True
     for capability in ["catalog_publication", "persistence", "model_training", "frontend"]:
         assert system["capabilities"][capability] is False
@@ -72,19 +78,20 @@ def test_readiness_uses_current_probe_state_instead_of_a_startup_constant():
 
 def test_memory_demo_session_recommendation_and_stale_history_conflict():
     async def exercise():
-        app = create_app()
+        app = memory_app()
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             created = await client.post("/api/v1/sessions")
             assert created.status_code == 201
             session = created.json()
             assert session["epoch"] == session["history_version"] == 0
+            headers = {"X-Session-Token": session["access_token"]}
 
             recommended = await client.post("/api/v1/recommendations", json={
                 "session_id": session["session_id"],
                 "expected_history_version": 0,
                 "strategy": "dense",
                 "k": 2,
-            })
+            }, headers=headers)
             assert recommended.status_code == 200
             result = recommended.json()
             assert result["requested_strategy"] == "dense"
@@ -92,7 +99,9 @@ def test_memory_demo_session_recommendation_and_stale_history_conflict():
             assert result["fallback_reason"] == "strategy_not_loaded_in_memory_demo"
             assert [item["item_id"] for item in result["items"]] == ["demo-coop", "demo-racing"]
 
-            reset = await client.post(f"/api/v1/sessions/{session['session_id']}/reset")
+            reset = await client.post(
+                f"/api/v1/sessions/{session['session_id']}/reset", headers=headers,
+            )
             assert reset.status_code == 200
             assert reset.json()["epoch"] == reset.json()["history_version"] == 1
 
@@ -101,7 +110,7 @@ def test_memory_demo_session_recommendation_and_stale_history_conflict():
                 "expected_history_version": 0,
                 "strategy": "popular",
                 "k": 1,
-            })
+            }, headers=headers)
             assert stale.status_code == 409
             assert stale.json()["error"]["code"] == "history_conflict"
             assert stale.json()["error"]["request_id"]
@@ -110,7 +119,10 @@ def test_memory_demo_session_recommendation_and_stale_history_conflict():
 
 
 def test_memory_demo_missing_session_uses_the_business_error_shape():
-    missing = request("GET", "/api/v1/sessions/00000000-0000-0000-0000-000000000000")
+    missing = request(
+        "GET", "/api/v1/sessions/00000000-0000-0000-0000-000000000000",
+        headers={"X-Session-Token": "unknown-token"},
+    )
     assert missing.status_code == 404
     assert missing.json() == {
         "error": {
@@ -120,3 +132,19 @@ def test_memory_demo_missing_session_uses_the_business_error_shape():
             "request_id": None,
         }
     }
+
+
+def test_memory_demo_requires_and_checks_session_token():
+    async def exercise():
+        app = memory_app()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            session = (await client.post("/api/v1/sessions")).json()
+            path = f"/api/v1/sessions/{session['session_id']}"
+            missing = await client.get(path)
+            invalid = await client.get(path, headers={"X-Session-Token": "wrong"})
+            valid = await client.get(path, headers={"X-Session-Token": session["access_token"]})
+            assert missing.status_code == invalid.status_code == 401
+            assert valid.status_code == 200
+            assert valid.json()["session_id"] == session["session_id"]
+
+    asyncio.run(exercise())

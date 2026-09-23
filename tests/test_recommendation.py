@@ -24,7 +24,7 @@ def context():
 
 def command_for(context, **changes):
     command = RecommendationCommand(
-        context.request_id, context.session.session_id, 7, Strategy.DENSE, 10, 1.0,
+        context.request_id, context.session.session_id, "test-token", 7, Strategy.DENSE, 10, 1.0,
     )
     return replace(command, **changes)
 

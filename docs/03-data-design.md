@@ -1,6 +1,6 @@
 # 数据设计与一致性约定
 
-SQL 草案见 [db/schema.design.sql](../db/schema.design.sql)。该文件用于评审，尚未在 PostgreSQL 上执行；正式迁移在 M1 建立并验证。
+早期 SQL 草案见 [db/schema.design.sql](../db/schema.design.sql)，仅用于演进参考，不直接执行。M1 正式迁移见 [db/migrations/0001_m1_core.sql](../db/migrations/0001_m1_core.sql)，已在本机 PostgreSQL 执行并验证。
 
 2026-09-15 架构细化后，草案仍需补齐任务租约、发布操作幂等记录、bundle 商品成员快照、请求屏蔽快照与回退原因、反馈原处理结果，以及会话归属和收藏状态。具体事务边界以 [系统架构](02-architecture.md) 为准，现有十张表不代表这些协议已经实现。
 

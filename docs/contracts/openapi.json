@@ -34,7 +34,6 @@
             "type": "boolean"
           },
           "persistence": {
-            "const": false,
             "default": false,
             "title": "Persistence",
             "type": "boolean"
@@ -286,6 +285,51 @@
         "title": "RecommendationResponse",
         "type": "object"
       },
+      "SessionCreatedResponse": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "epoch": {
+            "title": "Epoch",
+            "type": "integer"
+          },
+          "hidden_items": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hidden Items",
+            "type": "array"
+          },
+          "history": {
+            "items": {
+              "type": "string"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "history_version": {
+            "title": "History Version",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "epoch",
+          "history_version",
+          "history",
+          "hidden_items",
+          "access_token"
+        ],
+        "title": "SessionCreatedResponse",
+        "type": "object"
+      },
       "SessionResponse": {
         "properties": {
           "epoch": {
@@ -349,8 +393,8 @@
             "type": "string"
           },
           "phase": {
-            "const": "M1-memory-demo",
-            "default": "M1-memory-demo",
+            "const": "M1-persistent-demo",
+            "default": "M1-persistent-demo",
             "title": "Phase",
             "type": "string"
           },
@@ -409,7 +453,7 @@
     }
   },
   "info": {
-    "description": "M1 进程内演示：会话和推荐结果不会跨进程重启保存。业务就绪仍为 false，直到数据库和真实模型运行时接入。",
+    "description": "M1 推荐演示。未配置 PostgreSQL：会话和推荐结果只保存在当前进程。真实模型运行时尚未接入，因此业务就绪仍为 false。",
     "title": "EvoRec Demo API",
     "version": "0.0.1"
   },
@@ -418,6 +462,24 @@
     "/api/v1/recommendations": {
       "post": {
         "operationId": "recommend_api_v1_recommendations_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Session-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -438,6 +500,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Missing or invalid session token"
           },
           "404": {
             "content": {
@@ -494,7 +566,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SessionResponse"
+                  "$ref": "#/components/schemas/SessionCreatedResponse"
                 }
               }
             },
@@ -520,6 +592,22 @@
               "title": "Session Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
           }
         ],
         "responses": {
@@ -532,6 +620,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Missing or invalid session token"
           },
           "404": {
             "content": {
@@ -573,6 +671,22 @@
               "title": "Session Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
           }
         ],
         "responses": {
@@ -585,6 +699,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Missing or invalid session token"
           },
           "404": {
             "content": {

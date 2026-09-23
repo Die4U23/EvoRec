@@ -1,0 +1,33 @@
+{
+  "checked_at": "2026-09-23",
+  "environment": {
+    "database": "local PostgreSQL 18.6",
+    "platform": "Windows",
+    "python": "3.12"
+  },
+  "commands": [
+    ".\\.venv\\Scripts\\python.exe scripts/seed_demo_catalog.py",
+    ".\\.venv\\Scripts\\python.exe -m pytest tests/test_postgres_api.py -q -p no:cacheprovider",
+    ".\\.venv-research\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp .pytest-tmp-full-20260923"
+  ],
+  "results": {
+    "postgres_api_integration": "1 passed",
+    "full_regression": "166 passed",
+    "migration": "0001_m1_core.sql already applied",
+    "demo_seed": "idempotent seed completed"
+  },
+  "verified_behaviors": [
+    "PostgreSQL mode reports persistence capability",
+    "session creation returns an access token while only its SHA-256 digest is stored",
+    "a second application instance can read the persisted session",
+    "an invalid session token returns HTTP 401",
+    "a recommendation request reaches completed state with two ordered request items",
+    "the Windows adapter avoids Psycopg async ProactorEventLoop incompatibility by running synchronous database transactions in worker threads"
+  ],
+  "boundaries": [
+    "ranking still uses the explicitly labelled demo popular path",
+    "readiness remains false because the real model runtime is not loaded",
+    "feedback idempotency and completed-result content reconciliation are not implemented",
+    "this evidence does not cover public deployment, network load, or multi-host failure recovery"
+  ]
+}

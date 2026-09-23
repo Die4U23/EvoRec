@@ -15,3 +15,7 @@ class UnreportedFallback(Exception):
 
 class ResourceNotFound(Exception):
     """A requested session or other domain resource does not exist."""
+
+
+class AccessDenied(Exception):
+    """A session credential is absent or does not match the stored owner."""

@@ -87,7 +87,7 @@ flowchart TB
   Web -. "业务 HTTP 路由待注册" .-> UseCase
 ~~~
 
-图中虚线表示设计中的连接。推荐接口已经调用 `Recommend` 业务用例；演示后端在应用实例内创建状态，进程重启即丢失，不提供数据库事务、跨进程协调或真实模型推理。训练仍通过独立研究入口运行。
+图中虚线表示设计中的连接。推荐接口已经调用 `Recommend` 业务用例；未配置数据库时使用进程内后端，配置 `EVOREC_DATABASE_URL` 后会话、请求和结果进入 PostgreSQL。真实模型推理仍未加载，训练继续通过独立研究入口运行。
 
 ### 2.2 当前可以演示什么
 
@@ -99,9 +99,9 @@ flowchart TB
 | 数据采样、时间回放、统计基线 | 已实现并运行 | [研究工作区](../research/README.md) |
 | 序列模型、内容双塔和候选内排序 | 已真实训练 | [阶段记录](STATUS.md) |
 | 多兴趣召回、匹配重训练与结果审计 | R06 已完成 | [R06 报告](experiments/r06-multi-interest/report.md) |
-| 会话与推荐业务 HTTP 接口 | 已实现进程内演示 | 创建、查询、重置会话及推荐；状态不持久化 |
+| 会话与推荐业务 HTTP 接口 | 已实现可选 PostgreSQL 持久化 | 会话令牌、创建、查询、重置、推荐及结果位置落库 |
 | 反馈业务 HTTP 接口 | 尚未注册 | 输入契约已存在，幂等事务仍待 PostgreSQL 适配器 |
-| PostgreSQL、任务领取、模型发布 | 设计阶段 | [SQL 草案](../db/schema.design.sql)、[架构决策](architecture/decisions.md) |
+| PostgreSQL、任务领取、模型发布 | 核心迁移与推荐适配器已实现；任务和模型发布待实现 | [正式迁移](../db/migrations/0001_m1_core.sql)、[架构决策](architecture/decisions.md) |
 | 前端、C++ 扩展、线上性能 | 尚未实现或验证 | [Web 规划](../web/README.md)、[C++ 边界](../cpp/README.md) |
 
 `/api/v1/system` 中 `model_training=false` 表示在线服务没有训练能力，不表示项目没有离线神经模型。研究训练使用独立命令入口。
@@ -130,11 +130,12 @@ flowchart LR
 | [domain/models.py](../src/evorec/domain/models.py) | 会话快照、商品快照、版本绑定、排序批次和结果 | 将一次请求的含义固定下来，避免模型或数据库细节侵入 |
 | [domain/recommendation.py](../src/evorec/domain/recommendation.py) | 合法性过滤、去重、稳定 Top-K | 统一结果规则，避免不同模型各自解释业务约束 |
 | [application/recommend.py](../src/evorec/application/recommend.py) | 调用接收、排序、保存接口并检查结果 | 把执行顺序和失败处理放在一个可测试用例里 |
-| [application/ports.py](../src/evorec/application/ports.py) | 接收、排序、记录、就绪四类 Protocol 接口 | 用例不绑定具体数据库或模型实现 |
+| [application/ports.py](../src/evorec/application/ports.py) | 会话、接收、排序、记录、就绪 Protocol 接口 | 用例不绑定具体数据库或模型实现 |
 | [infrastructure/readiness.py](../src/evorec/infrastructure/readiness.py) | 返回尚未配置依赖的就绪状态 | 当前如实报告缺少数据库、模型和商品版本 |
 | [infrastructure/memory.py](../src/evorec/infrastructure/memory.py) | 进程内会话、接收、热门排序与结果记录 | 验证端口闭环；重启丢失，不替代 PostgreSQL |
+| [infrastructure/postgres.py](../src/evorec/infrastructure/postgres.py) | 持久化会话、请求快照、演示排序结果与就绪检查 | 在线操作在线程中使用短连接事务，兼容 Windows 事件循环 |
 | [api/app.py](../src/evorec/api/app.py) | HTTP 状态接口和响应转换 | 对外协议与内部规则分离 |
-| [bootstrap.py](../src/evorec/bootstrap.py) | 当前组装就绪查询 | 在明确入口选择具体实现 |
+| [bootstrap.py](../src/evorec/bootstrap.py) | 按环境选择内存或 PostgreSQL 后端并组装用例 | 在明确入口选择具体实现 |
 | [research](../src/evorec/research) | 数据、算法、训练、离线预测与评估 | 独立于在线会话和业务数据库运行 |
 
 离线与在线的规则目标一致，但目前是不同实现，不能声称已经统一调用同一套过滤代码。例如，离线协议维护所有历史交互的 `seen`；服务领域函数过滤传入的 `session.history` 和 `hidden_items`。未来适配器如何构造完整排除集合，需要契约一致性测试，不能直接把有限的正反馈序列当作全部历史。
@@ -149,7 +150,7 @@ flowchart LR
 | FastAPI、Pydantic | 状态路由和外部输入契约 | 将字段错误与业务执行分开，导出明确接口定义 |
 | pytest | 领域规则、训练协议、模型行为与文件卫生检查 | 让关键失败场景可以重复验证 |
 | Matplotlib | 实验曲线、比较图与区间图 | 图表直接来自结果文件，提供 PNG 和 SVG |
-| PostgreSQL | M11 核心迁移已在本机 18.6 实库执行；应用适配器待接入 | 用事务、行锁和幂等键管理会话、反馈及推荐结果 |
+| PostgreSQL | M11 核心迁移与会话/推荐适配器已在本机 18.6 实库验证 | 用事务、行锁和幂等键管理会话及推荐结果；反馈仍待接入 |
 | C++20、CMake、pybind11 | 接入规划，暂无实现 | 等性能测量定位值得优化的模块，再承担批量处理或索引相关工作 |
 
 当前没有 Faiss 接入，也没有自研 C++ 推荐内核。采用精确内容打分便于核对召回结果；未来加入近似索引，需要同时衡量速度、内存和召回损失。
@@ -245,7 +246,7 @@ A/B 检查点在旧 R05 验证集选轮，C/D 在 R06 验证集选轮。因此 C
 
 ## 5. 推荐请求如何执行
 
-这部分解释已实现的应用用例。图中的接收、排序和记录由进程内适配器及测试替身共同验证；还没有 PostgreSQL 与真实模型适配器构成的持久在线闭环。
+这部分解释已实现的应用用例。图中的接收和记录已有 PostgreSQL 持久化适配器；排序当前仍是明确标记的演示热门路径，尚未形成真实模型在线闭环。
 
 ~~~mermaid
 sequenceDiagram
@@ -444,7 +445,7 @@ R06 对应的提交为：协议 `a2e098d`、文件卫生 `a8ab1af`、实现 `bf7
 
 | 阶段 | 交付物 | 完成条件 |
 | --- | --- | --- |
-| M11/M12 | 在已验证的核心迁移上实现 PostgreSQL 接收/结果端口，加入反馈幂等 | 真实数据库中的历史冲突、相同请求重试、提交结果对账通过 |
+| M11/M12 | PostgreSQL 会话、接收和结果端口已完成；继续加入反馈幂等与完成结果对账 | 真实数据库中的反馈重放、相同请求重试、提交结果对账通过 |
 | M21/M22 | bundle 校验工具、持久发布状态与恢复 | 错配产物拒绝；各持久化边界中断后可以恢复；过期执行者无法提交 |
 | 模型接入与展示 | 真实排序适配器、有限队列、前端最小推荐体验 | 请求能定位到模型/商品版本，回退与故障可解释 |
 | O01/V01 | 实机性能测量和必要优化 | 固定请求分布测量排队、检索、排序、保存与端到端耗时 |
