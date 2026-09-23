@@ -1,0 +1,35 @@
+{
+  "checked_at": "2026-09-23",
+  "environment": {
+    "database": "local PostgreSQL 18.6",
+    "platform": "Windows",
+    "python": "3.12"
+  },
+  "commands": [
+    ".\\.venv\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp=tmp\\pytest-runtime3 tests\\test_model_runtime.py tests\\test_bundle_validation.py tests\\test_architecture.py",
+    ".\\.venv-research\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp=tmp\\pytest-runtime-full --junitxml=docs\\validation\\m21-controlled-load-tests.xml",
+    ".\\.venv\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp=tmp\\pytest-runtime-postgres tests\\test_postgres_api.py"
+  ],
+  "results": {
+    "controlled_load_tests": "8 passed",
+    "targeted_bundle_and_architecture_regression": "17 passed",
+    "full_regression": "185 passed, 1 PostgreSQL integration test skipped because the database URL was intentionally absent from that process",
+    "postgres_api_integration": "1 passed after loading the ignored local database URL"
+  },
+  "verified_behaviors": [
+    "the loader revalidates bundle identity and hashes before deserializing components",
+    "only explicit JSON component contracts and little-endian float32 embeddings are accepted",
+    "pickle, torch checkpoints, executable payloads, and unknown file suffixes are not loaded",
+    "total bytes, JSON bytes, item count, dimension, embedding values, and golden samples are bounded",
+    "ranker, encoder, codebook, mapping, embeddings, and flat index identities and shapes agree",
+    "non-finite and non-normalized embeddings are rejected",
+    "golden sample scores and stable ranking order are replayed during load",
+    "the CLI reports activated=false and does not mutate publication state"
+  ],
+  "boundaries": [
+    "the loaded model is a portable dot-product CPU baseline, not the frozen R06 ranker",
+    "the runtime is not wired to RankingPort or the public recommendation path",
+    "no database bundle status, active pointer, readiness state, or publication operation is changed",
+    "the tests use synthetic bundle components and do not establish production latency or memory targets"
+  ]
+}

@@ -102,6 +102,7 @@ flowchart TB
 | 会话与推荐业务 HTTP 接口 | 已实现可选 PostgreSQL 持久化 | 会话令牌、创建、查询、重置、推荐及结果位置落库 |
 | 反馈业务 HTTP 接口 | 已实现 | 会话访问、来源核对、epoch 冲突、载荷哈希幂等、详情派生曝光与状态更新在 PostgreSQL 事务中完成 |
 | bundle 候选校验 | 已实现结构、路径、哈希、映射和向量兼容检查 | [bundle.py](../src/evorec/infrastructure/bundle.py)、[产物约定](../artifacts/README.md) |
+| 受控模型加载 | 已实现白名单 CPU 格式、资源上限、二次哈希和黄金样本回放 | [model_runtime.py](../src/evorec/infrastructure/model_runtime.py)；尚未接入 R06 冻结权重或活动发布 |
 | PostgreSQL、任务领取、模型发布 | 核心迁移与推荐适配器已实现；任务和模型发布待实现 | [正式迁移](../db/migrations/0001_m1_core.sql)、[架构决策](architecture/decisions.md) |
 | 前端、C++ 扩展、线上性能 | 尚未实现或验证 | [Web 规划](../web/README.md)、[C++ 边界](../cpp/README.md) |
 
@@ -136,6 +137,7 @@ flowchart LR
 | [infrastructure/memory.py](../src/evorec/infrastructure/memory.py) | 进程内会话、接收、热门排序与结果记录 | 验证端口闭环；重启丢失，不替代 PostgreSQL |
 | [infrastructure/postgres.py](../src/evorec/infrastructure/postgres.py) | 持久化会话、请求快照、演示排序结果与就绪检查 | 在线操作在线程中使用短连接事务，兼容 Windows 事件循环 |
 | [infrastructure/bundle.py](../src/evorec/infrastructure/bundle.py) | 校验候选 bundle 的清单、封闭文件集合、映射与向量契约 | 在任何模型反序列化前建立受管路径和完整性边界 |
+| [infrastructure/model_runtime.py](../src/evorec/infrastructure/model_runtime.py) | 受限加载 JSON/float32 CPU 组件并回放黄金样本 | 不执行 bundle 代码；证明加载边界，不替代真实训练模型适配器 |
 | [api/app.py](../src/evorec/api/app.py) | HTTP 状态接口和响应转换 | 对外协议与内部规则分离 |
 | [bootstrap.py](../src/evorec/bootstrap.py) | 按环境选择内存或 PostgreSQL 后端并组装用例 | 在明确入口选择具体实现 |
 | [research](../src/evorec/research) | 数据、算法、训练、离线预测与评估 | 独立于在线会话和业务数据库运行 |
@@ -343,7 +345,7 @@ B-A 整体 NDCG 差值的 95% 边际区间为 [−0.000260567, +0.000184014]；C
 
 ## 7. 模型版本与发布恢复设计
 
-本节包含已落地的首层 bundle 校验和后续服务接入设计。真实模型加载器、发布协调器和持久任务执行者仍未实现；已有训练检查点、离线来源清单或通过首层校验，都不等于已经完成在线 bundle。
+本节包含已落地的首层 bundle 校验、可移植受控加载边界和后续服务接入设计。R06 真实模型适配器、发布协调器和持久任务执行者仍未实现；已有训练检查点、离线来源清单或通过受控加载，都不等于已经完成在线 bundle。
 
 ### 7.1 为什么需要一起发布模型和映射
 
@@ -353,7 +355,9 @@ B-A 整体 NDCG 差值的 95% 边际区间为 [−0.000260567, +0.000184014]；C
 
 校验顺序为：清单结构 → 受管路径与文件哈希 → 维度及类型兼容 → 受控加载 → 小样本输出一致性。前三步已由 [bundle.py](../src/evorec/infrastructure/bundle.py) 实现：清单拒绝未知字段，文件集合必须封闭，路径不得越过受管根目录或使用符号链接，商品映射必须连续唯一，向量字节数必须匹配条数、维度与类型。成功结果返回原始清单 SHA-256，后续可以保存为候选身份。
 
-当前校验器刻意不反序列化权重或索引，也不更新数据库状态，因此还不能覆盖恶意/损坏模型载荷、实际索引参数、运行时依赖和样本输出漂移。[load_ranker](../src/evorec/research/ranker.py) 已检查离线排序器的协议、特征指纹、标量顺序和模型配置，这可以作为下一步受控加载兼容性契约的依据。
+首层校验器刻意不反序列化权重或索引。其后新增的 [model_runtime.py](../src/evorec/infrastructure/model_runtime.py) 只接受白名单 JSON 组件和小端 float32 向量：加载前重新执行完整校验并核对清单身份，应用总字节、JSON、商品数、维度和样本数上限，拒绝非有限或未归一化向量、组件 ID/形状/索引错配，并回放 ranker 内的预期分数和顺序。它不调用 pickle、`torch.load` 或 bundle 内代码。
+
+当前运行时实现的是可审计的 `mean-history-v1 + dot-product-v1 + flat-v1` CPU 基线，只证明受控加载和小样本一致性边界；还没有转换 R06 冻结权重、加载真实近似索引、接入在线 `RankingPort` 或更新数据库状态。[load_ranker](../src/evorec/research/ranker.py) 对离线排序器协议、特征指纹、标量顺序和模型配置的检查仍是后续真实模型适配的依据。
 
 ### 7.2 发布不等于修改一个活动指针
 
@@ -450,7 +454,7 @@ R06 对应的提交为：协议 `a2e098d`、文件卫生 `a8ab1af`、实现 `bf7
 | 阶段 | 交付物 | 完成条件 |
 | --- | --- | --- |
 | M11/M12 | PostgreSQL 会话、接收、结果、反馈幂等及完成结果内容对账已完成 | 真实数据库中的反馈重放、相同结果重试和不同结果拒绝已通过；客户端推荐幂等键仍待单独设计 |
-| M21/M22 | M21 首层 bundle 校验已实现；受控模型加载、持久发布状态与恢复待实现 | 已拒绝路径、哈希、映射及向量错配；仍需证明加载失败隔离、持久化边界恢复和过期执行者无法提交 |
+| M21/M22 | 首层 bundle 校验和白名单 CPU 受控加载已实现；真实冻结模型适配、持久发布状态与恢复待实现 | 已拒绝路径、哈希、映射、向量、组件和黄金样本错配；仍需证明真实模型加载失败隔离、持久化边界恢复和过期执行者无法提交 |
 | 模型接入与展示 | 真实排序适配器、有限队列、前端最小推荐体验 | 请求能定位到模型/商品版本，回退与故障可解释 |
 | O01/V01 | 实机性能测量和必要优化 | 固定请求分布测量排队、检索、排序、保存与端到端耗时 |
 | C++ 扩展 | 被测量证明有必要的局部模块 | 与参考实现语义一致，并提供耗时与内存的前后对照 |
