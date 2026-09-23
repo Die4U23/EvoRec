@@ -16,6 +16,9 @@ from evorec.research.data import load_events
 from evorec.research.evaluation import evaluate
 
 
+EXPERIMENT_SCOPES = ("src/evorec/research", "research/configs", "tests", "scripts")
+
+
 def file_sha(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
@@ -28,6 +31,47 @@ def git_snapshot():
         return {"git_base_commit": commit, "working_tree_dirty": dirty}
     except (OSError, subprocess.CalledProcessError):
         return {"git_base_commit": None, "working_tree_dirty": None}
+
+
+def clean_experiment_snapshot(scopes=EXPERIMENT_SCOPES):
+    """Return Git provenance, rejecting uncommitted experiment inputs.
+
+    Ignored datasets and run outputs remain allowed. Changes outside the declared
+    experiment scopes are recorded, but cannot silently alter the experiment.
+    """
+    scopes = tuple(str(path).replace("\\", "/") for path in scopes)
+    snapshot = git_snapshot()
+    if snapshot["git_base_commit"] is None:
+        raise RuntimeError("recorded experiments require a Git checkout")
+    try:
+        scoped_changes = subprocess.check_output(
+            ["git", "-c", "core.quotePath=false", "status", "--porcelain", "--untracked-files=all", "--", *scopes],
+            text=True,
+            encoding="utf-8",
+            stderr=subprocess.DEVNULL,
+        ).splitlines()
+        all_changes = subprocess.check_output(
+            ["git", "-c", "core.quotePath=false", "status", "--porcelain", "--untracked-files=all"],
+            text=True,
+            encoding="utf-8",
+            stderr=subprocess.DEVNULL,
+        ).splitlines()
+        tree = subprocess.check_output(
+            ["git", "rev-parse", "HEAD^{tree}"], text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise RuntimeError("unable to verify experiment Git provenance") from error
+    if scoped_changes:
+        changed = ", ".join(scoped_changes[:8])
+        suffix = " ..." if len(scoped_changes) > 8 else ""
+        raise RuntimeError(f"commit experiment code, configuration, tests and scripts before running: {changed}{suffix}")
+    return {
+        **snapshot,
+        "git_tree": tree,
+        "experiment_paths_clean": True,
+        "experiment_scopes": list(scopes),
+        "unrelated_worktree_changes": [line for line in all_changes if line not in scoped_changes],
+    }
 
 
 def peak_memory_bytes():
@@ -68,21 +112,22 @@ def run(config_path: Path, output: Path):
     if config["train_end_ms"] >= config["validation_end_ms"]:
         raise ValueError("invalid time boundaries")
     dataset = Path(config["dataset_path"])
-    provenance = json.loads(dataset.with_suffix(".manifest.json").read_text(encoding="utf-8"))
-    if provenance["status"] != "completed_prefix_sample" or file_sha(dataset) != provenance["sample_sha256"]:
+    data_provenance = json.loads(dataset.with_suffix(".manifest.json").read_text(encoding="utf-8"))
+    if data_provenance["status"] != "completed_prefix_sample" or file_sha(dataset) != data_provenance["sample_sha256"]:
         raise ValueError("sample provenance or checksum mismatch")
+    code_provenance = clean_experiment_snapshot()
     output.mkdir(parents=True, exist_ok=False)
     manifest_path = output / "run.json"
     manifest = {
         "schema_version": "0.1", "status": "running", "stage": "R01-feasibility",
         "started_at": datetime.now(timezone.utc).isoformat(), "configuration": config,
-        "data_provenance": provenance,
+        "data_provenance": data_provenance,
         "environment": {
             "python": platform.python_version(), "os": platform.platform(),
             "logical_processors": os.cpu_count(), "compute": "CPU", "third_party_research_dependencies": [],
         },
         "code": {
-            **git_snapshot(),
+            **code_provenance,
             "source_sha256": {p.name: file_sha(p) for p in sorted(Path(__file__).parent.glob("*.py"))},
             "config_sha256": file_sha(config_path),
         },
@@ -103,7 +148,7 @@ def run(config_path: Path, output: Path):
     started, cpu_started = time.perf_counter(), time.process_time()
     try:
         events, statistics = load_events(dataset)
-        if statistics["input_rows"] != provenance["rows"]:
+        if statistics["input_rows"] != data_provenance["rows"]:
             raise ValueError("manifest row count mismatch")
         train = [event for event in events if event.timestamp_ms < config["train_end_ms"]]
         if not any(event.rating >= positive_min for event in train):

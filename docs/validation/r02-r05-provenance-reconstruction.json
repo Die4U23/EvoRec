@@ -1,0 +1,50 @@
+{
+  "status": "passed",
+  "claim": "Exact saved source and configuration bytes are recoverable; this does not change the original dirty-worktree fact.",
+  "manifest_sha256": "26d77f01e811314e087533097a2eac24c18893f363074caa6c72e878ea92dc48",
+  "checker_sha256": "254fd2ceb400c29e9e095f6de3cd7dc739b747cf8f22f6fce554fe0e3499b002",
+  "runs_checked": 4,
+  "runs": [
+    {
+      "run_id": "r02-training-20260915",
+      "source_files": 12,
+      "git_recovered": 11,
+      "vendored": 1,
+      "local_run_verified": true,
+      "original_working_tree_dirty": true,
+      "exact_source_reconstructable": true
+    },
+    {
+      "run_id": "r03-content-20260915",
+      "source_files": 16,
+      "git_recovered": 15,
+      "vendored": 1,
+      "local_run_verified": true,
+      "original_working_tree_dirty": true,
+      "exact_source_reconstructable": true
+    },
+    {
+      "run_id": "r04-gating-20260915",
+      "source_files": 18,
+      "git_recovered": 18,
+      "vendored": 0,
+      "local_run_verified": true,
+      "original_working_tree_dirty": true,
+      "exact_source_reconstructable": true
+    },
+    {
+      "run_id": "r05-ranker-20260916",
+      "source_files": 23,
+      "git_recovered": 22,
+      "vendored": 1,
+      "local_run_verified": true,
+      "original_working_tree_dirty": true,
+      "exact_source_reconstructable": true
+    }
+  ],
+  "limitations": [
+    "The original dirty-worktree fact is preserved, not rewritten.",
+    "Reconstruction proves exact source and configuration bytes, not the complete historical dependency installation.",
+    "A clean replication is still required for a new clean-run claim."
+  ]
+}

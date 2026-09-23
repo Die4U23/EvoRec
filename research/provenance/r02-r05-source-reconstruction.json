@@ -1,0 +1,755 @@
+{
+  "schema_version": 1,
+  "status": "historical_source_reconstruction",
+  "claim": "Exact saved source and configuration bytes are recoverable; this does not change the original dirty-worktree fact.",
+  "runs": [
+    {
+      "run_id": "r02-training-20260915",
+      "archive_path": "docs/experiments/archive/r02-training-20260915.json",
+      "original_git_base_commit": "3e1cde0b640c2b613fbd04f360b9588998dd0d06",
+      "original_working_tree_dirty": true,
+      "reconstructed_source_tree_sha256": "c1daaff39f9bdd46b0e533b15d32697da0e553de2030df470523d3ac4ee30d36",
+      "configuration": {
+        "type": "git",
+        "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+        "path": "research/configs/r02-training.json",
+        "git_blob_oid": "47e9381e3dc3d26b74cc1651ca87cc3d594936e3",
+        "sha256": "a5649d792dd39af43075b95f52c0a5f165220ef615f5f95066b3aacc1408ed12"
+      },
+      "source_files": [
+        {
+          "name": "__init__.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/__init__.py",
+            "git_blob_oid": "3e9a467659d6595ff616a6a891cbba996877d8d6",
+            "sha256": "1c6825b36a5c1d097a10d1ed268f22e148e9efe16e82998b1feb3006e043d078"
+          }
+        },
+        {
+          "name": "baselines.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/baselines.py",
+            "git_blob_oid": "afc3e6ade239317748ff3200eca086ff6780729c",
+            "sha256": "ba83384655e0a61a1f4323cd5f79984a3e912b967931a00eb766dc05f346ed79"
+          }
+        },
+        {
+          "name": "data.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/data.py",
+            "git_blob_oid": "8aa89571fe8b201db11617b78845ef50255b2938",
+            "sha256": "1fc50e8989451d2d5431de6ba44e0f1f562e1d1e4382ca1e0910dded3efd5ddf"
+          }
+        },
+        {
+          "name": "download.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/download.py",
+            "git_blob_oid": "fd59619942e4ee230ff8aab5c53c2d5c600115ea",
+            "sha256": "46ea0d53c36f611952cf060cb0808f8bfddb9639aa22dc2a44f7cb24bc0f438d"
+          }
+        },
+        {
+          "name": "evaluation.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/evaluation.py",
+            "git_blob_oid": "0e8c3540b2ba68addfc96e0ccbf1fae3a4627edd",
+            "sha256": "7b6e20d6e35d71ff997ba54f1102117cafbd91286be3d909a73957a67f0f932e"
+          }
+        },
+        {
+          "name": "neural.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/neural.py",
+            "git_blob_oid": "b38e93b55c722c4d9efb966b2cc3b20482c2a217",
+            "sha256": "245ab6db379b1a89057aed6ef6c323cd4e6ad4ea31770aa17e234e3f5f9f37c9"
+          }
+        },
+        {
+          "name": "protocol.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/protocol.py",
+            "git_blob_oid": "44ffe4d949802a745f07c2b2bf30b941d52a7539",
+            "sha256": "065b9f010e48733b54b17ffaa7adc4663983c520ca6d6836972f2a21f0c6b669"
+          }
+        },
+        {
+          "name": "reporting.py",
+          "recovery": {
+          "type": "vendored_base64",
+          "path": "research/provenance/legacy-source/ee6dc0f9e77d1317b5e40b26a09ee1cc1ea54bd8e23243bbca91679c084a4781.b64",
+            "sha256": "ee6dc0f9e77d1317b5e40b26a09ee1cc1ea54bd8e23243bbca91679c084a4781"
+          }
+        },
+        {
+          "name": "runner.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/runner.py",
+            "git_blob_oid": "2d1bee5d2ea2556c0b1822c33de1c502ae2e41c8",
+            "sha256": "b2ac0fe6533149ec55cf0833b9b21131cc9da614c4bad1572249c8c67f325705"
+          }
+        },
+        {
+          "name": "sample.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/sample.py",
+            "git_blob_oid": "da5b9f363d5485ce7145a33aaeb60aae174c6fae",
+            "sha256": "625e82dc95579cb3c87a8621ca79ab871d04bf23fe8783175ca54e5b21ef39d4"
+          }
+        },
+        {
+          "name": "train.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/train.py",
+            "git_blob_oid": "bca8319270d2ef6076cd7d6fa997eef867b7564a",
+            "sha256": "b0f3c16d13ef94e503307187371d4db1219d91f66908dd06e0be2efc1c62bc4a"
+          }
+        },
+        {
+          "name": "training_baselines.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/training_baselines.py",
+            "git_blob_oid": "73e61741a1c09dd4074d29bc232c9ee09eb6790e",
+            "sha256": "5626e65a891512b6048fe57afcc095ca96c07c231ea25e9ba3a940cac4004127"
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "r03-content-20260915",
+      "archive_path": "docs/experiments/archive/r03-content-20260915.json",
+      "original_git_base_commit": "3e1cde0b640c2b613fbd04f360b9588998dd0d06",
+      "original_working_tree_dirty": true,
+      "reconstructed_source_tree_sha256": "a5acbfe2b4663fb549dead4af48b5984e096b3e41ca125d25efacea92ccf8101",
+      "configuration": {
+        "type": "git",
+        "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+        "path": "research/configs/r03-content.json",
+        "git_blob_oid": "f7b629c212c13656efa5deac5648275c78faa1ca",
+        "sha256": "044d3ad3e13b4efe8559117924c9b60aad128a5e1ba7a2898138aff80759ecd1"
+      },
+      "source_files": [
+        {
+          "name": "__init__.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/__init__.py",
+            "git_blob_oid": "3e9a467659d6595ff616a6a891cbba996877d8d6",
+            "sha256": "1c6825b36a5c1d097a10d1ed268f22e148e9efe16e82998b1feb3006e043d078"
+          }
+        },
+        {
+          "name": "baselines.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/baselines.py",
+            "git_blob_oid": "afc3e6ade239317748ff3200eca086ff6780729c",
+            "sha256": "ba83384655e0a61a1f4323cd5f79984a3e912b967931a00eb766dc05f346ed79"
+          }
+        },
+        {
+          "name": "content_data.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/content_data.py",
+            "git_blob_oid": "04e70042f35dab26f35c978a81e5777d0822a676",
+            "sha256": "fd77b44136671e3964414ee73fca7f7bc2b3a197407d87fc8b36d35f8170ca9d"
+          }
+        },
+        {
+          "name": "content_report.py",
+          "recovery": {
+          "type": "vendored_base64",
+          "path": "research/provenance/legacy-source/2a51492061bd62a82a58b0c3de3d8de85822d9a7d8e376763147ab6fde96b862.b64",
+            "sha256": "2a51492061bd62a82a58b0c3de3d8de85822d9a7d8e376763147ab6fde96b862"
+          }
+        },
+        {
+          "name": "content.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/content.py",
+            "git_blob_oid": "f2ac24de22ab0cf0bcc4f6e657addbe422e12c2c",
+            "sha256": "9a159ada0f4ad7dec25092fc1312a45841ccec0b76d5487e4e08d313673e686e"
+          }
+        },
+        {
+          "name": "data.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/data.py",
+            "git_blob_oid": "8aa89571fe8b201db11617b78845ef50255b2938",
+            "sha256": "1fc50e8989451d2d5431de6ba44e0f1f562e1d1e4382ca1e0910dded3efd5ddf"
+          }
+        },
+        {
+          "name": "download.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/download.py",
+            "git_blob_oid": "fd59619942e4ee230ff8aab5c53c2d5c600115ea",
+            "sha256": "46ea0d53c36f611952cf060cb0808f8bfddb9639aa22dc2a44f7cb24bc0f438d"
+          }
+        },
+        {
+          "name": "evaluation.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/evaluation.py",
+            "git_blob_oid": "0e8c3540b2ba68addfc96e0ccbf1fae3a4627edd",
+            "sha256": "7b6e20d6e35d71ff997ba54f1102117cafbd91286be3d909a73957a67f0f932e"
+          }
+        },
+        {
+          "name": "neural.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/neural.py",
+            "git_blob_oid": "b38e93b55c722c4d9efb966b2cc3b20482c2a217",
+            "sha256": "245ab6db379b1a89057aed6ef6c323cd4e6ad4ea31770aa17e234e3f5f9f37c9"
+          }
+        },
+        {
+          "name": "protocol.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/protocol.py",
+            "git_blob_oid": "44ffe4d949802a745f07c2b2bf30b941d52a7539",
+            "sha256": "065b9f010e48733b54b17ffaa7adc4663983c520ca6d6836972f2a21f0c6b669"
+          }
+        },
+        {
+          "name": "reporting.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/reporting.py",
+            "git_blob_oid": "beca35808414c59c7be441e7aae47d46e1159594",
+            "sha256": "266de663e37e8f1a0350cce914b1691ecd4dfc4d06f5707af58cd9c0e53b2925"
+          }
+        },
+        {
+          "name": "runner.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/runner.py",
+            "git_blob_oid": "2d1bee5d2ea2556c0b1822c33de1c502ae2e41c8",
+            "sha256": "b2ac0fe6533149ec55cf0833b9b21131cc9da614c4bad1572249c8c67f325705"
+          }
+        },
+        {
+          "name": "sample.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/sample.py",
+            "git_blob_oid": "da5b9f363d5485ce7145a33aaeb60aae174c6fae",
+            "sha256": "625e82dc95579cb3c87a8621ca79ab871d04bf23fe8783175ca54e5b21ef39d4"
+          }
+        },
+        {
+          "name": "train_content.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/train_content.py",
+            "git_blob_oid": "ea4795e86e497eb95e049886a0b90a50b3751b35",
+            "sha256": "9addc1ca4e6a22b57e049c08c2d71847485f30f2f717f589ea5f4ca618b73d0f"
+          }
+        },
+        {
+          "name": "train.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/train.py",
+            "git_blob_oid": "bca8319270d2ef6076cd7d6fa997eef867b7564a",
+            "sha256": "b0f3c16d13ef94e503307187371d4db1219d91f66908dd06e0be2efc1c62bc4a"
+          }
+        },
+        {
+          "name": "training_baselines.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/training_baselines.py",
+            "git_blob_oid": "73e61741a1c09dd4074d29bc232c9ee09eb6790e",
+            "sha256": "5626e65a891512b6048fe57afcc095ca96c07c231ea25e9ba3a940cac4004127"
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "r04-gating-20260915",
+      "archive_path": "docs/experiments/archive/r04-gating-20260915.json",
+      "original_git_base_commit": "3e1cde0b640c2b613fbd04f360b9588998dd0d06",
+      "original_working_tree_dirty": true,
+      "reconstructed_source_tree_sha256": "ad6ff1355cda5c05316b67265f5ef3746b859ac0769e12e64dd5f29ed6d4c8be",
+      "configuration": {
+        "type": "git",
+        "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+        "path": "research/configs/r04-gating.json",
+        "git_blob_oid": "f36a2fb4cbd33808cec6daf5b94e05e7e5aa111b",
+        "sha256": "31d631424c8af4307d1d6eea4841568fe840fe1cd47d098291450d6efc1c5b1e"
+      },
+      "source_files": [
+        {
+          "name": "__init__.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/__init__.py",
+            "git_blob_oid": "3e9a467659d6595ff616a6a891cbba996877d8d6",
+            "sha256": "1c6825b36a5c1d097a10d1ed268f22e148e9efe16e82998b1feb3006e043d078"
+          }
+        },
+        {
+          "name": "baselines.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/baselines.py",
+            "git_blob_oid": "afc3e6ade239317748ff3200eca086ff6780729c",
+            "sha256": "ba83384655e0a61a1f4323cd5f79984a3e912b967931a00eb766dc05f346ed79"
+          }
+        },
+        {
+          "name": "content_data.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/content_data.py",
+            "git_blob_oid": "04e70042f35dab26f35c978a81e5777d0822a676",
+            "sha256": "fd77b44136671e3964414ee73fca7f7bc2b3a197407d87fc8b36d35f8170ca9d"
+          }
+        },
+        {
+          "name": "content_report.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/content_report.py",
+            "git_blob_oid": "c10f2db922f922e81d428169f472c676bb803b6a",
+            "sha256": "0bfb8a6dcf3d5a74c9bf8c996f3aef114e007a165d582a4694c57a09743ea843"
+          }
+        },
+        {
+          "name": "content.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/content.py",
+            "git_blob_oid": "f2ac24de22ab0cf0bcc4f6e657addbe422e12c2c",
+            "sha256": "9a159ada0f4ad7dec25092fc1312a45841ccec0b76d5487e4e08d313673e686e"
+          }
+        },
+        {
+          "name": "data.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/data.py",
+            "git_blob_oid": "8aa89571fe8b201db11617b78845ef50255b2938",
+            "sha256": "1fc50e8989451d2d5431de6ba44e0f1f562e1d1e4382ca1e0910dded3efd5ddf"
+          }
+        },
+        {
+          "name": "download.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/download.py",
+            "git_blob_oid": "fd59619942e4ee230ff8aab5c53c2d5c600115ea",
+            "sha256": "46ea0d53c36f611952cf060cb0808f8bfddb9639aa22dc2a44f7cb24bc0f438d"
+          }
+        },
+        {
+          "name": "evaluation.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/evaluation.py",
+            "git_blob_oid": "0e8c3540b2ba68addfc96e0ccbf1fae3a4627edd",
+            "sha256": "7b6e20d6e35d71ff997ba54f1102117cafbd91286be3d909a73957a67f0f932e"
+          }
+        },
+        {
+          "name": "gating.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/gating.py",
+            "git_blob_oid": "6f1b98dc4d9dbbde78fa16e30c91fe8aebe4f67d",
+            "sha256": "2aa7d939dd4869cac381fd44b8259f83c88ada4cb6ad338ee627e78060fd48a5"
+          }
+        },
+        {
+          "name": "neural.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/neural.py",
+            "git_blob_oid": "b38e93b55c722c4d9efb966b2cc3b20482c2a217",
+            "sha256": "245ab6db379b1a89057aed6ef6c323cd4e6ad4ea31770aa17e234e3f5f9f37c9"
+          }
+        },
+        {
+          "name": "protocol.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/protocol.py",
+            "git_blob_oid": "44ffe4d949802a745f07c2b2bf30b941d52a7539",
+            "sha256": "065b9f010e48733b54b17ffaa7adc4663983c520ca6d6836972f2a21f0c6b669"
+          }
+        },
+        {
+          "name": "reporting.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/reporting.py",
+            "git_blob_oid": "beca35808414c59c7be441e7aae47d46e1159594",
+            "sha256": "266de663e37e8f1a0350cce914b1691ecd4dfc4d06f5707af58cd9c0e53b2925"
+          }
+        },
+        {
+          "name": "run_gating.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/run_gating.py",
+            "git_blob_oid": "16fc6576862f9cfb892d81e3f192abc0de4db217",
+            "sha256": "faaa032fa5cbc0e9394523a92e0f87558c83b539e619ffd21e23e698fb550957"
+          }
+        },
+        {
+          "name": "runner.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/runner.py",
+            "git_blob_oid": "2d1bee5d2ea2556c0b1822c33de1c502ae2e41c8",
+            "sha256": "b2ac0fe6533149ec55cf0833b9b21131cc9da614c4bad1572249c8c67f325705"
+          }
+        },
+        {
+          "name": "sample.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/sample.py",
+            "git_blob_oid": "da5b9f363d5485ce7145a33aaeb60aae174c6fae",
+            "sha256": "625e82dc95579cb3c87a8621ca79ab871d04bf23fe8783175ca54e5b21ef39d4"
+          }
+        },
+        {
+          "name": "train_content.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/train_content.py",
+            "git_blob_oid": "ea4795e86e497eb95e049886a0b90a50b3751b35",
+            "sha256": "9addc1ca4e6a22b57e049c08c2d71847485f30f2f717f589ea5f4ca618b73d0f"
+          }
+        },
+        {
+          "name": "train.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/train.py",
+            "git_blob_oid": "bca8319270d2ef6076cd7d6fa997eef867b7564a",
+            "sha256": "b0f3c16d13ef94e503307187371d4db1219d91f66908dd06e0be2efc1c62bc4a"
+          }
+        },
+        {
+          "name": "training_baselines.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/training_baselines.py",
+            "git_blob_oid": "73e61741a1c09dd4074d29bc232c9ee09eb6790e",
+            "sha256": "5626e65a891512b6048fe57afcc095ca96c07c231ea25e9ba3a940cac4004127"
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "r05-ranker-20260916",
+      "archive_path": "docs/experiments/archive/r05-ranker-20260916.json",
+      "original_git_base_commit": "3e1cde0b640c2b613fbd04f360b9588998dd0d06",
+      "original_working_tree_dirty": true,
+      "reconstructed_source_tree_sha256": "3b8c6a9a43bb2ce08ff3ac75f9b7b3e2f971eed0a6f58c52d11af3fde545a5e1",
+      "configuration": {
+        "type": "git",
+        "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+        "path": "research/configs/r05-ranker.json",
+        "git_blob_oid": "d9e20da18af77079e388061731ea1096554c3b05",
+        "sha256": "7fcbe756ebe87f3c63fb71d79d7393029ad851a512c9fefc9e26a0bcf75c7878"
+      },
+      "source_files": [
+        {
+          "name": "__init__.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/__init__.py",
+            "git_blob_oid": "3e9a467659d6595ff616a6a891cbba996877d8d6",
+            "sha256": "1c6825b36a5c1d097a10d1ed268f22e148e9efe16e82998b1feb3006e043d078"
+          }
+        },
+        {
+          "name": "baselines.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/baselines.py",
+            "git_blob_oid": "afc3e6ade239317748ff3200eca086ff6780729c",
+            "sha256": "ba83384655e0a61a1f4323cd5f79984a3e912b967931a00eb766dc05f346ed79"
+          }
+        },
+        {
+          "name": "content_data.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/content_data.py",
+            "git_blob_oid": "04e70042f35dab26f35c978a81e5777d0822a676",
+            "sha256": "fd77b44136671e3964414ee73fca7f7bc2b3a197407d87fc8b36d35f8170ca9d"
+          }
+        },
+        {
+          "name": "content_report.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/content_report.py",
+            "git_blob_oid": "c10f2db922f922e81d428169f472c676bb803b6a",
+            "sha256": "0bfb8a6dcf3d5a74c9bf8c996f3aef114e007a165d582a4694c57a09743ea843"
+          }
+        },
+        {
+          "name": "content.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/content.py",
+            "git_blob_oid": "f2ac24de22ab0cf0bcc4f6e657addbe422e12c2c",
+            "sha256": "9a159ada0f4ad7dec25092fc1312a45841ccec0b76d5487e4e08d313673e686e"
+          }
+        },
+        {
+          "name": "data.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/data.py",
+            "git_blob_oid": "8aa89571fe8b201db11617b78845ef50255b2938",
+            "sha256": "1fc50e8989451d2d5431de6ba44e0f1f562e1d1e4382ca1e0910dded3efd5ddf"
+          }
+        },
+        {
+          "name": "download.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/download.py",
+            "git_blob_oid": "fd59619942e4ee230ff8aab5c53c2d5c600115ea",
+            "sha256": "46ea0d53c36f611952cf060cb0808f8bfddb9639aa22dc2a44f7cb24bc0f438d"
+          }
+        },
+        {
+          "name": "evaluation.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/evaluation.py",
+            "git_blob_oid": "0e8c3540b2ba68addfc96e0ccbf1fae3a4627edd",
+            "sha256": "7b6e20d6e35d71ff997ba54f1102117cafbd91286be3d909a73957a67f0f932e"
+          }
+        },
+        {
+          "name": "gating_report.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/gating_report.py",
+            "git_blob_oid": "d139fb7478bc7c993e3db1fd16dd73652c4f8bc4",
+            "sha256": "ccd9c3a6575cc933801bbeea406a846302ca25cd3cca451219e426df7bbbeb28"
+          }
+        },
+        {
+          "name": "gating.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/gating.py",
+            "git_blob_oid": "6f1b98dc4d9dbbde78fa16e30c91fe8aebe4f67d",
+            "sha256": "2aa7d939dd4869cac381fd44b8259f83c88ada4cb6ad338ee627e78060fd48a5"
+          }
+        },
+        {
+          "name": "neural.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/neural.py",
+            "git_blob_oid": "b38e93b55c722c4d9efb966b2cc3b20482c2a217",
+            "sha256": "245ab6db379b1a89057aed6ef6c323cd4e6ad4ea31770aa17e234e3f5f9f37c9"
+          }
+        },
+        {
+          "name": "protocol.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/protocol.py",
+            "git_blob_oid": "44ffe4d949802a745f07c2b2bf30b941d52a7539",
+            "sha256": "065b9f010e48733b54b17ffaa7adc4663983c520ca6d6836972f2a21f0c6b669"
+          }
+        },
+        {
+          "name": "ranker_data.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/ranker_data.py",
+            "git_blob_oid": "cd7d5e4da2e09fb47f24f27e6134970d1e133fea",
+            "sha256": "82245ee87887aa0081604e94d327db5cf635447da4f2c0435946943db225580d"
+          }
+        },
+        {
+          "name": "ranker_report.py",
+          "recovery": {
+          "type": "vendored_base64",
+          "path": "research/provenance/legacy-source/ed395c1eb5ec33565ccde80f9155d13a474329b06950e1d79bb3345352229fe8.b64",
+            "sha256": "ed395c1eb5ec33565ccde80f9155d13a474329b06950e1d79bb3345352229fe8"
+          }
+        },
+        {
+          "name": "ranker.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/ranker.py",
+            "git_blob_oid": "2c925a519396583ea859480d205e785f37626b12",
+            "sha256": "1bea3cb481aba8236b45cc79dfa569f2450850c624ce793e41da5057f05e3df8"
+          }
+        },
+        {
+          "name": "reporting.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/reporting.py",
+            "git_blob_oid": "beca35808414c59c7be441e7aae47d46e1159594",
+            "sha256": "266de663e37e8f1a0350cce914b1691ecd4dfc4d06f5707af58cd9c0e53b2925"
+          }
+        },
+        {
+          "name": "run_gating.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/run_gating.py",
+            "git_blob_oid": "16fc6576862f9cfb892d81e3f192abc0de4db217",
+            "sha256": "faaa032fa5cbc0e9394523a92e0f87558c83b539e619ffd21e23e698fb550957"
+          }
+        },
+        {
+          "name": "runner.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/runner.py",
+            "git_blob_oid": "2d1bee5d2ea2556c0b1822c33de1c502ae2e41c8",
+            "sha256": "b2ac0fe6533149ec55cf0833b9b21131cc9da614c4bad1572249c8c67f325705"
+          }
+        },
+        {
+          "name": "sample.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/sample.py",
+            "git_blob_oid": "da5b9f363d5485ce7145a33aaeb60aae174c6fae",
+            "sha256": "625e82dc95579cb3c87a8621ca79ab871d04bf23fe8783175ca54e5b21ef39d4"
+          }
+        },
+        {
+          "name": "train_content.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/train_content.py",
+            "git_blob_oid": "ea4795e86e497eb95e049886a0b90a50b3751b35",
+            "sha256": "9addc1ca4e6a22b57e049c08c2d71847485f30f2f717f589ea5f4ca618b73d0f"
+          }
+        },
+        {
+          "name": "train_ranker.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/train_ranker.py",
+            "git_blob_oid": "f731f6e6999461d7cdb1523379e78de630a02c08",
+            "sha256": "c2a3fa52371c12c148b454e70af243767d4525f74df2fbc1328262530d7bea53"
+          }
+        },
+        {
+          "name": "train.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/train.py",
+            "git_blob_oid": "bca8319270d2ef6076cd7d6fa997eef867b7564a",
+            "sha256": "b0f3c16d13ef94e503307187371d4db1219d91f66908dd06e0be2efc1c62bc4a"
+          }
+        },
+        {
+          "name": "training_baselines.py",
+          "recovery": {
+            "type": "git",
+            "commit": "82fc48db23e608b80c6c65d9c811b733101437dc",
+            "path": "src/evorec/research/training_baselines.py",
+            "git_blob_oid": "73e61741a1c09dd4074d29bc232c9ee09eb6790e",
+            "sha256": "5626e65a891512b6048fe57afcc095ca96c07c231ea25e9ba3a940cac4004127"
+          }
+        }
+      ]
+    }
+  ]
+}

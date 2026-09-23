@@ -2,7 +2,6 @@
 import argparse
 import json
 import shutil
-import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,7 +16,7 @@ from evorec.research.ranker import ResidualListRanker, SCALAR_NAMES, listwise_lo
 from evorec.research.ranker_data import read
 from evorec.research.r06_data import load_inputs, prepare_training, cache_pair, record, group_masks
 from evorec.research.replicate_ranker import checked_file
-from evorec.research.runner import file_sha, git_snapshot, peak_memory_bytes
+from evorec.research.runner import clean_experiment_snapshot, file_sha, peak_memory_bytes
 from evorec.research.train import write_trace
 
 
@@ -32,14 +31,7 @@ def save(series, output):
 
 
 def code_snapshot():
-    scopes = ["src", "research/configs", "tests", "scripts"]
-    changed = subprocess.check_output(["git", "diff", "HEAD", "--name-only", "--", *scopes], text=True).splitlines()
-    untracked = subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard", "--", *scopes], text=True).splitlines()
-    if changed or untracked:
-        raise ValueError("commit experiment code, configuration and tests before running")
-    return {**git_snapshot(), "experiment_paths_clean": True,
-            "unrelated_worktree_changes": subprocess.check_output(
-                ["git", "-c", "core.quotePath=false", "status", "--porcelain"], text=True, encoding="utf-8").splitlines()}
+    return clean_experiment_snapshot()
 
 
 def extended_metrics(protocol, queries, rankings):

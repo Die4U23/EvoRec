@@ -18,7 +18,7 @@ from evorec.research.content import ContentProtocol, ContentFeatures, ContentTow
 from evorec.research.content_report import report
 from evorec.research.neural import configure_seed
 from evorec.research.protocol import summarize
-from evorec.research.runner import file_sha, git_snapshot, peak_memory_bytes
+from evorec.research.runner import clean_experiment_snapshot, file_sha, peak_memory_bytes
 from evorec.research.train import evaluate_baseline, write_trace
 from evorec.research.training_baselines import RecentPopular, CollaborativeBlend
 
@@ -144,6 +144,7 @@ def run(config_path, output):
     config = json.loads(config_path.read_text())
     if config["stage"] != "R03-content":
         raise ValueError("unexpected stage")
+    provenance = clean_experiment_snapshot()
     configure_seed(config["seeds"][0])
     if not torch.cuda.is_available():
         raise RuntimeError("this series requires CUDA")
@@ -159,7 +160,7 @@ def run(config_path, output):
               "protocol": protocol.fingerprint, "configuration": config,
               "data_provenance": protocol.manifest, "metadata_provenance": protocol.metadata_manifest,
               "device": torch.cuda.get_device_name(), "torch": torch.__version__,
-              "code": {**git_snapshot(), "source_sha256": {p.name: file_sha(p) for p in source.glob("*.py")}},
+              "code": {**provenance, "source_sha256": {p.name: file_sha(p) for p in source.glob("*.py")}},
               "baselines": [], "trials": [], "test_results": []}
     try:
         features, feature_manifest = ContentFeatures.fit(protocol, output/"content-encoder")
