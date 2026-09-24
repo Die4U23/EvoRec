@@ -50,6 +50,14 @@ def test_postgres_session_and_recommendation_survive_new_app_instance():
             assert result["actual_strategy"] == "popular"
             assert result["fallback_reason"] == "strategy_not_loaded_in_postgres_demo"
             assert len(result["items"]) == 2
+            replay_headers = {**headers, "Idempotency-Key": result["request_id"]}
+            repeated = await client.post(
+                "/api/v1/recommendations", headers=replay_headers,
+                json={"session_id": session["session_id"], "expected_history_version": 0,
+                      "strategy": "dense", "k": 2},
+            )
+            assert repeated.status_code == 200
+            assert repeated.json() == result
             detail = {
                 "event_id": str(uuid4()),
                 "session_id": session["session_id"],

@@ -1,17 +1,45 @@
 {
   "components": {
     "schemas": {
+      "BundleRegistrationResponse": {
+        "properties": {
+          "bundle_id": {
+            "format": "uuid",
+            "title": "Bundle Id",
+            "type": "string"
+          },
+          "item_count": {
+            "title": "Item Count",
+            "type": "integer"
+          },
+          "manifest_sha256": {
+            "title": "Manifest Sha256",
+            "type": "string"
+          },
+          "replayed": {
+            "title": "Replayed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bundle_id",
+          "manifest_sha256",
+          "item_count",
+          "replayed"
+        ],
+        "title": "BundleRegistrationResponse",
+        "type": "object"
+      },
       "Capabilities": {
         "properties": {
           "catalog_publication": {
-            "const": false,
             "default": false,
             "title": "Catalog Publication",
             "type": "boolean"
           },
           "frontend": {
-            "const": false,
-            "default": false,
+            "const": true,
+            "default": true,
             "title": "Frontend",
             "type": "boolean"
           },
@@ -46,6 +74,161 @@
           }
         },
         "title": "Capabilities",
+        "type": "object"
+      },
+      "CatalogImportInput": {
+        "additionalProperties": false,
+        "properties": {
+          "batch_id": {
+            "format": "uuid",
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogItem"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": "0.1",
+            "default": "0.1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch_id",
+          "items"
+        ],
+        "title": "CatalogImportInput",
+        "type": "object"
+      },
+      "CatalogImportResponse": {
+        "properties": {
+          "batch_id": {
+            "format": "uuid",
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "item_count": {
+            "title": "Item Count",
+            "type": "integer"
+          },
+          "replayed": {
+            "title": "Replayed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "batch_id",
+          "item_count",
+          "replayed"
+        ],
+        "title": "CatalogImportResponse",
+        "type": "object"
+      },
+      "CatalogItem": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 10000,
+            "title": "Description",
+            "type": "string"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "item_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "title": "Item Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "0.1",
+            "default": "0.1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "title",
+          "category"
+        ],
+        "title": "CatalogItem",
+        "type": "object"
+      },
+      "CatalogItemResponse": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "title",
+          "category",
+          "description",
+          "image_url",
+          "is_active"
+        ],
+        "title": "CatalogItemResponse",
         "type": "object"
       },
       "ErrorDetail": {
@@ -251,6 +434,29 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "ItemDeactivationResponse": {
+        "properties": {
+          "exclusion_version": {
+            "title": "Exclusion Version",
+            "type": "integer"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "is_active",
+          "exclusion_version"
+        ],
+        "title": "ItemDeactivationResponse",
+        "type": "object"
+      },
       "Liveness": {
         "properties": {
           "component": {
@@ -272,6 +478,126 @@
           }
         },
         "title": "Liveness",
+        "type": "object"
+      },
+      "PendingPublication": {
+        "properties": {
+          "operation_id": {
+            "format": "uuid",
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "status"
+        ],
+        "title": "PendingPublication",
+        "type": "object"
+      },
+      "PublicationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_active_bundle_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Active Bundle Id"
+          },
+          "operation_id": {
+            "format": "uuid",
+            "title": "Operation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "expected_active_bundle_id"
+        ],
+        "title": "PublicationInput",
+        "type": "object"
+      },
+      "PublicationResponse": {
+        "properties": {
+          "active_bundle_id": {
+            "format": "uuid",
+            "title": "Active Bundle Id",
+            "type": "string"
+          },
+          "operation_id": {
+            "format": "uuid",
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "replayed": {
+            "title": "Replayed",
+            "type": "boolean"
+          },
+          "status": {
+            "const": "completed",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "active_bundle_id",
+          "status",
+          "replayed"
+        ],
+        "title": "PublicationResponse",
+        "type": "object"
+      },
+      "PublicationStateResponse": {
+        "properties": {
+          "active_bundle_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Bundle Id"
+          },
+          "admission_open": {
+            "title": "Admission Open",
+            "type": "boolean"
+          },
+          "exclusion_version": {
+            "title": "Exclusion Version",
+            "type": "integer"
+          },
+          "pending_operation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingPublication"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "active_bundle_id",
+          "exclusion_version",
+          "admission_open",
+          "pending_operation"
+        ],
+        "title": "PublicationStateResponse",
         "type": "object"
       },
       "Readiness": {
@@ -535,8 +861,8 @@
             "type": "string"
           },
           "phase": {
-            "const": "M1-persistent-demo",
-            "default": "M1-persistent-demo",
+            "const": "M23-local-managed-demo",
+            "default": "M23-local-managed-demo",
             "title": "Phase",
             "type": "string"
           },
@@ -595,12 +921,355 @@
     }
   },
   "info": {
-    "description": "M1 推荐演示。未配置 PostgreSQL：会话和推荐结果只保存在当前进程。真实模型运行时尚未接入，因此业务就绪仍为 false。",
+    "description": "本地推荐与管理演示。未配置 PostgreSQL：会话和推荐结果只保存在当前进程。受控 CPU bundle 可发布；真实 R06 研究模型尚未在线接入。",
     "title": "EvoRec Demo API",
     "version": "0.0.1"
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/bundles/{bundle_id}/publish": {
+      "post": {
+        "operationId": "publish_bundle_api_v1_admin_bundles__bundle_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicationInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Bundle",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/bundles/{bundle_id}/register": {
+      "post": {
+        "operationId": "register_bundle_api_v1_admin_bundles__bundle_id__register_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BundleRegistrationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Bundle",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/catalog/imports": {
+      "post": {
+        "operationId": "import_catalog_api_v1_admin_catalog_imports_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogImportInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Catalog",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/items/{item_id}/deactivate": {
+      "post": {
+        "operationId": "deactivate_item_api_v1_admin_items__item_id__deactivate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemDeactivationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deactivate Item",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/publication": {
+      "get": {
+        "operationId": "publication_state_api_v1_admin_publication_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publication State",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/publication/recover": {
+      "post": {
+        "operationId": "recover_publication_api_v1_admin_publication_recover_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recover Publication",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/feedback": {
       "post": {
         "operationId": "feedback_api_v1_feedback_post",
@@ -690,6 +1359,73 @@
         ]
       }
     },
+    "/api/v1/items": {
+      "get": {
+        "operationId": "list_items_api_v1_items_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogItemResponse"
+                  },
+                  "title": "Response List Items Api V1 Items Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Items",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/items/{item_id}": {
+      "get": {
+        "operationId": "get_item_api_v1_items__item_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogItemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Item",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
     "/api/v1/recommendations": {
       "post": {
         "operationId": "recommend_api_v1_recommendations_post",
@@ -708,6 +1444,23 @@
                 }
               ],
               "title": "X-Session-Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
             }
           }
         ],

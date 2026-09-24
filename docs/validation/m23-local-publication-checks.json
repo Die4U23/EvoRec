@@ -1,0 +1,20 @@
+{
+  "date": "2026-09-24",
+  "scope": "single-process local controlled CPU bundle publication, recovery, catalog API, recommendation idempotency, and Web page",
+  "database": "local PostgreSQL; integration tests use isolated temporary schemas",
+  "migration_check": "database schema is current",
+  "pytest": {
+    "command": "python -m pytest -q --junitxml tmp/m23-final2-tests.xml --basetemp tmp/pytest-m23-final2-20260924 -p no:cacheprovider",
+    "tests": 193,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "web_script_syntax": "node --check passed",
+  "diff_whitespace_check": "git diff --check passed",
+  "limits": [
+    "No real R06 research weights were loaded by this service test.",
+    "No multi-process publication or public-network deployment was tested.",
+    "The HTML page was syntax-checked and route-smoke-tested, not visually browser-tested."
+  ]
+}

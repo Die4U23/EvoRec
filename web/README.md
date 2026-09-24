@@ -1,6 +1,8 @@
-# 前端框架规划
+# 本地 Web 演示与前端规划
 
-技术栈：React、TypeScript、Vite、Ant Design、ECharts。当前只有页面与接口规划，尚无可运行前端。
+`web/index.html` 是可运行的零构建本地页面，由服务的 `/app` 提供，覆盖会话、推荐、详情反馈、商品导入/下架与受控 bundle 登记/发布/恢复。管理员令牌只存在当前页面内存中；页面不直接访问 PostgreSQL 或模型文件。它不是公开部署界面，也不展示离线研究指标为线上效果。
+
+React、TypeScript、Vite、Ant Design、ECharts 仍是后续更完整前端的技术选项；当前先用原生 HTML/JS 验证 API 流程，避免把尚未实现的页面规划宣称为交付。
 
 | 页面 | 核心状态 | 依赖 |
 | --- | --- | --- |

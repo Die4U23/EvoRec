@@ -1,4 +1,4 @@
-"""A testable recommendation workflow; no public business route is wired yet."""
+"""A testable recommendation workflow used by both local API backends."""
 
 import asyncio
 

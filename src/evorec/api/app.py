@@ -1,21 +1,30 @@
-"""Status API plus the selectable in-memory/PostgreSQL M1 demonstration."""
+"""API for the local recommendation and controlled catalog workflow."""
 
+import asyncio
+import hmac
+import os
+from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, Header
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel, ConfigDict
+import psycopg
 
 from evorec import __version__
 from evorec.application.health import ReadinessQuery
 from evorec.bootstrap import DemoApplication, build_demo_application
-from evorec.contracts import FeedbackInput, RecommendationInput
+from evorec.contracts import CatalogImportInput, FeedbackInput, RecommendationInput
 from evorec.domain.errors import (
     AccessDenied,
     FeedbackSourceMismatch,
     HistoryConflict,
     IdempotencyConflict,
+    IdempotencyInProgress,
+    IdempotencyReplay,
+    ManagementError,
     ResourceNotFound,
     SessionEpochConflict,
 )
@@ -45,15 +54,15 @@ class Capabilities(BaseModel):
     input_contracts: Literal[True] = True
     persistence: bool = False
     recommendations: Literal[True] = True
-    catalog_publication: Literal[False] = False
+    catalog_publication: bool = False
     model_training: Literal[False] = False
-    frontend: Literal[False] = False
+    frontend: Literal[True] = True
 
 
 class SystemInfo(BaseModel):
     name: Literal["EvoRec"] = "EvoRec"
     version: str = __version__
-    phase: Literal["M1-persistent-demo"] = "M1-persistent-demo"
+    phase: Literal["M23-local-managed-demo"] = "M23-local-managed-demo"
     capabilities: Capabilities
 
 
@@ -95,6 +104,59 @@ class FeedbackResponse(BaseModel):
     history_version: int
     replayed: bool
     exposure_event_id: UUID | None
+
+
+class PublicationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    operation_id: UUID
+    expected_active_bundle_id: UUID | None
+
+
+class CatalogItemResponse(BaseModel):
+    item_id: str
+    title: str
+    category: str
+    description: str
+    image_url: str | None
+    is_active: bool
+
+
+class CatalogImportResponse(BaseModel):
+    batch_id: UUID
+    item_count: int
+    replayed: bool
+
+
+class ItemDeactivationResponse(BaseModel):
+    item_id: str
+    is_active: bool
+    exclusion_version: int
+
+
+class BundleRegistrationResponse(BaseModel):
+    bundle_id: UUID
+    manifest_sha256: str
+    item_count: int
+    replayed: bool
+
+
+class PendingPublication(BaseModel):
+    operation_id: UUID
+    status: str
+
+
+class PublicationStateResponse(BaseModel):
+    active_bundle_id: UUID | None
+    exclusion_version: int
+    admission_open: bool
+    pending_operation: PendingPublication | None
+
+
+class PublicationResponse(BaseModel):
+    operation_id: UUID
+    active_bundle_id: UUID
+    status: Literal["completed"]
+    replayed: bool
 
 
 class ErrorDetail(BaseModel):
@@ -184,14 +246,42 @@ def create_app(
         if demo.persistent
         else "未配置 PostgreSQL：会话和推荐结果只保存在当前进程。"
     )
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        if demo.manager is not None:
+            try:
+                await asyncio.to_thread(demo.manager.recover)
+            except psycopg.Error:
+                pass  # Liveness remains available; readiness reports the database failure.
+        yield
+
     app = FastAPI(
         title="EvoRec Demo API",
         version=__version__,
         description=(
-            f"M1 推荐演示。{storage_description}"
-            "真实模型运行时尚未接入，因此业务就绪仍为 false。"
+            f"本地推荐与管理演示。{storage_description}"
+            "受控 CPU bundle 可发布；真实 R06 研究模型尚未在线接入。"
         ),
+        lifespan=lifespan,
     )
+
+    @app.exception_handler(psycopg.Error)
+    async def database_error(_, __):
+        return _error(503, "database_unavailable", "database is unavailable", retryable=True)
+
+    def admin_guard(token: str | None) -> JSONResponse | None:
+        if demo.manager is None:
+            return _error(503, "database_not_configured", "PostgreSQL is required")
+        expected = os.getenv("EVOREC_ADMIN_TOKEN")
+        if not expected or len(expected) < 32:
+            return _error(503, "admin_not_configured", "administrator token is not configured")
+        if not token or not hmac.compare_digest(token, expected):
+            return _error(403, "admin_access_denied", "administrator token is invalid")
+        return None
+
+    def management_error(exc: ManagementError) -> JSONResponse:
+        return _error(exc.status_code, exc.code, str(exc),
+                      retryable=exc.status_code == 503)
 
     @app.get("/health/live", response_model=Liveness, tags=["health"])
     def live() -> Liveness:
@@ -208,7 +298,17 @@ def create_app(
 
     @app.get("/api/v1/system", response_model=SystemInfo, tags=["system"])
     def system() -> SystemInfo:
-        return SystemInfo(capabilities=Capabilities(persistence=demo.persistent))
+        configured_token = os.getenv("EVOREC_ADMIN_TOKEN") or ""
+        publishing = bool(demo.manager and demo.manager.managed_root
+                          and demo.manager.managed_root.is_dir()
+                          and len(configured_token) >= 32)
+        return SystemInfo(capabilities=Capabilities(
+            persistence=demo.persistent, catalog_publication=publishing,
+        ))
+
+    @app.get("/app", tags=["web"], include_in_schema=False)
+    def web_page() -> FileResponse:
+        return FileResponse(Path(__file__).resolve().parents[3] / "web" / "index.html")
 
     @app.post(
         "/api/v1/sessions", response_model=SessionCreatedResponse, status_code=201, tags=["demo"],
@@ -270,8 +370,9 @@ def create_app(
     async def recommend(
         payload: RecommendationInput,
         session_token: str | None = Header(default=None, alias="X-Session-Token"),
+        idempotency_key: UUID | None = Header(default=None, alias="Idempotency-Key"),
     ):
-        request_id = uuid4()
+        request_id = idempotency_key or uuid4()
         if not session_token:
             return _error(
                 401, "session_access_denied", "session token is required", request_id,
@@ -293,6 +394,18 @@ def create_app(
             return _error(401, "session_access_denied", str(exc), request_id)
         except HistoryConflict as exc:
             return _error(409, "history_conflict", str(exc), request_id)
+        except IdempotencyReplay as exc:
+            return _recommendation_response(exc.result)
+        except IdempotencyInProgress as exc:
+            return _error(409, "recommendation_in_progress", str(exc), request_id, retryable=True)
+        except IdempotencyConflict as exc:
+            return _error(409, "recommendation_idempotency_conflict", str(exc), request_id)
+        except RuntimeError:
+            return _error(503, "catalog_unavailable", "catalog is not ready", request_id,
+                          retryable=True)
+        except psycopg.Error:
+            return _error(503, "database_unavailable", "database is unavailable", request_id,
+                          retryable=True)
         except TimeoutError:
             return _error(
                 504, "recommendation_timeout", "recommendation deadline exceeded",
@@ -342,6 +455,108 @@ def create_app(
             return _error(409, "session_epoch_conflict", str(exc), payload.request_id)
         except FeedbackSourceMismatch as exc:
             return _error(409, "feedback_source_conflict", str(exc), payload.request_id)
+
+    @app.get("/api/v1/items", response_model=list[CatalogItemResponse], tags=["catalog"])
+    async def list_items():
+        if demo.manager is None:
+            return _error(503, "database_not_configured", "PostgreSQL is required")
+        try:
+            return await asyncio.to_thread(demo.manager.list_items)
+        except psycopg.Error:
+            return _error(503, "database_unavailable", "database is unavailable", retryable=True)
+
+    @app.get("/api/v1/items/{item_id}", response_model=CatalogItemResponse, tags=["catalog"])
+    async def get_item(item_id: str):
+        if demo.manager is None:
+            return _error(503, "database_not_configured", "PostgreSQL is required")
+        try:
+            return await asyncio.to_thread(demo.manager.get_item, item_id)
+        except ManagementError as exc:
+            return management_error(exc)
+
+    @app.post("/api/v1/admin/catalog/imports", response_model=CatalogImportResponse,
+              tags=["admin"])
+    async def import_catalog(
+        payload: CatalogImportInput,
+        admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        try:
+            return await asyncio.to_thread(demo.manager.import_items, payload)
+        except ManagementError as exc:
+            return management_error(exc)
+
+    @app.post("/api/v1/admin/items/{item_id}/deactivate",
+              response_model=ItemDeactivationResponse, tags=["admin"])
+    async def deactivate_item(
+        item_id: str,
+        admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        try:
+            return await asyncio.to_thread(demo.manager.deactivate_item, item_id)
+        except ManagementError as exc:
+            return management_error(exc)
+
+    @app.post("/api/v1/admin/bundles/{bundle_id}/register",
+              response_model=BundleRegistrationResponse, tags=["admin"])
+    async def register_bundle(
+        bundle_id: UUID,
+        admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        try:
+            return await asyncio.to_thread(demo.manager.register_bundle, bundle_id)
+        except ManagementError as exc:
+            return management_error(exc)
+
+    @app.get("/api/v1/admin/publication", response_model=PublicationStateResponse,
+             tags=["admin"])
+    async def publication_state(
+        admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        return await asyncio.to_thread(demo.manager.publication_state)
+
+    @app.post("/api/v1/admin/bundles/{bundle_id}/publish",
+              response_model=PublicationResponse, tags=["admin"])
+    async def publish_bundle(
+        bundle_id: UUID,
+        payload: PublicationInput,
+        admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        try:
+            return await asyncio.to_thread(
+                demo.manager.publish, payload.operation_id, bundle_id,
+                payload.expected_active_bundle_id,
+            )
+        except ManagementError as exc:
+            return management_error(exc)
+        except psycopg.Error:
+            return _error(503, "publication_uncertain", "check publication state before retrying",
+                          retryable=True)
+
+    @app.post("/api/v1/admin/publication/recover",
+              response_model=PublicationStateResponse, tags=["admin"])
+    async def recover_publication(
+        admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        await asyncio.to_thread(demo.manager.recover)
+        return await asyncio.to_thread(demo.manager.publication_state)
 
     return app
 

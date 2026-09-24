@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EvoRec · 本地演示</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #182631; background: #f3f6f4; }
+    body { max-width: 1100px; margin: auto; padding: 28px 20px 80px; }
+    header { border-bottom: 2px solid #145b48; padding-bottom: 16px; margin-bottom: 24px; }
+    h1 { margin: 0; font-size: 2rem; } h2 { margin-top: 0; font-size: 1.2rem; }
+    p, small { color: #53646c; line-height: 1.5; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 18px; }
+    section { background: white; border: 1px solid #dce5df; border-radius: 12px; padding: 20px; }
+    label { display: block; font-weight: 600; margin: 12px 0 5px; }
+    input, select, button { box-sizing: border-box; font: inherit; }
+    input, select { width: 100%; padding: 9px; border: 1px solid #a9bcb2; border-radius: 6px; }
+    button { background: #145b48; color: white; border: 0; border-radius: 6px; padding: 9px 13px; margin: 9px 6px 0 0; cursor: pointer; }
+    button.secondary { background: #596a71; } button:disabled { opacity: .5; cursor: not-allowed; }
+    .item { padding: 11px 0; border-top: 1px solid #e2e9e4; }
+    .item strong { display: block; } .item small { display: block; }
+    #message { min-height: 24px; color: #9b3323; font-weight: 600; }
+    code { overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>EvoRec</h1>
+    <p>本地推荐与商品管理演示。结果来自服务 API；受控 CPU bundle 不代表 R06 研究模型已上线。</p>
+    <div id="system">正在读取服务状态…</div>
+    <div id="message" role="status" aria-live="polite"></div>
+  </header>
+  <main class="grid">
+    <section>
+      <h2>推荐体验</h2>
+      <button id="new-session">创建会话</button>
+      <button id="reset-session" class="secondary">重置会话</button>
+      <p id="session">尚未创建会话。</p>
+      <label for="strategy">策略</label>
+      <select id="strategy"><option value="popular">热门</option><option value="dense">受控稠密模型</option><option value="adaptive">自适应（可能回退）</option></select>
+      <label for="count">推荐数量</label><input id="count" type="number" min="1" max="50" value="5">
+      <button id="recommend">获取推荐</button>
+      <div id="recommendations"></div>
+    </section>
+    <section>
+      <h2>商品目录</h2>
+      <button id="refresh-items">刷新商品</button>
+      <div id="items"></div>
+    </section>
+    <section>
+      <h2>管理操作</h2>
+      <p>仅供本地单实例演示。管理员令牌只保存在当前页面内存中。</p>
+      <label for="admin-token">管理员令牌</label><input id="admin-token" type="password" autocomplete="off">
+      <label for="item-id">商品 ID</label><input id="item-id" placeholder="new-item">
+      <label for="item-title">标题</label><input id="item-title" placeholder="商品标题">
+      <label for="item-category">分类</label><input id="item-category" placeholder="demo">
+      <button id="import-item">导入商品</button>
+      <button id="deactivate" class="secondary">下架商品</button>
+      <label for="bundle-id">受管 bundle UUID</label><input id="bundle-id" placeholder="预先放入受管目录的 bundle ID">
+      <button id="register-bundle">校验并登记</button>
+      <button id="publish-bundle">发布</button>
+      <button id="recover" class="secondary">检查／恢复发布</button>
+      <p id="publication">尚未读取发布状态。</p>
+    </section>
+  </main>
+  <script>
+    const el = id => document.getElementById(id);
+    let session = null, latest = null;
+    const message = value => { el('message').textContent = value; };
+    async function api(path, options = {}) {
+      const response = await fetch(path, {...options, headers: {'Content-Type': 'application/json', ...(options.headers || {})}});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error?.message || `HTTP ${response.status}`);
+      return data;
+    }
+    async function run(action) { try { message(''); await action(); } catch (error) { message(error.message); } }
+    const auth = () => ({'X-Session-Token': session.access_token});
+    const admin = () => ({'X-Admin-Token': el('admin-token').value});
+    function showSession() {
+      el('session').textContent = session ? `会话 ${session.session_id} · 历史版本 ${session.history_version}` : '尚未创建会话。';
+    }
+    async function refreshItems() {
+      const items = await api('/api/v1/items');
+      el('items').replaceChildren();
+      for (const item of items) {
+        const row = document.createElement('div'); row.className = 'item';
+        const title = document.createElement('strong'); title.textContent = item.title;
+        const detail = document.createElement('small'); detail.textContent = `${item.item_id} · ${item.category} · ${item.is_active ? '可用' : '已下架'}`;
+        row.append(title, detail); el('items').append(row);
+      }
+      if (!items.length) el('items').textContent = '暂无商品。';
+    }
+    async function publication() {
+      const state = await api('/api/v1/admin/publication', {headers: admin()});
+      el('publication').textContent = `活动 bundle：${state.active_bundle_id || '无'} · 接收：${state.admission_open ? '开放' : '关闭'} · 下架版本：${state.exclusion_version}`;
+      return state;
+    }
+    el('new-session').onclick = () => run(async () => { session = await api('/api/v1/sessions', {method: 'POST'}); latest = null; showSession(); });
+    el('reset-session').onclick = () => run(async () => {
+      if (!session) throw new Error('请先创建会话');
+      const fresh = await api(`/api/v1/sessions/${session.session_id}/reset`, {method: 'POST', headers: auth()});
+      session = {...session, ...fresh}; latest = null; el('recommendations').replaceChildren(); showSession();
+    });
+    el('recommend').onclick = () => run(async () => {
+      if (!session) throw new Error('请先创建会话');
+      const key = crypto.randomUUID();
+      latest = await api('/api/v1/recommendations', {method: 'POST', headers: {...auth(), 'Idempotency-Key': key},
+        body: JSON.stringify({session_id: session.session_id, expected_history_version: session.history_version,
+          strategy: el('strategy').value, k: Number(el('count').value)})});
+      const list = el('recommendations'); list.replaceChildren();
+      const note = document.createElement('p'); note.textContent = `请求 ${latest.request_id} · 实际策略 ${latest.actual_strategy}${latest.fallback_reason ? ' · 回退：' + latest.fallback_reason : ''}`; list.append(note);
+      const recommendationId = latest.request_id;
+      const recommendationSessionId = session.session_id;
+      for (const item of latest.items) {
+        const row = document.createElement('div'); row.className = 'item';
+        const title = document.createElement('strong'); title.textContent = item.item_id;
+        const meta = document.createElement('small'); meta.textContent = `分数 ${item.score.toFixed(4)} · ${item.source}`;
+        const detail = document.createElement('button'); detail.textContent = '查看详情';
+        detail.onclick = () => run(async () => {
+          const result = await api('/api/v1/feedback', {method: 'POST', headers: auth(), body: JSON.stringify({
+            event_id: crypto.randomUUID(), session_id: recommendationSessionId, request_id: recommendationId,
+            item_id: item.item_id, kind: 'detail_view', observed_at: new Date().toISOString()})});
+          session.history_version = result.history_version; showSession(); message('详情反馈已记录');
+        });
+        row.append(title, meta, detail); list.append(row);
+      }
+    });
+    el('refresh-items').onclick = () => run(refreshItems);
+    el('import-item').onclick = () => run(async () => {
+      const item = {item_id: el('item-id').value, title: el('item-title').value, category: el('item-category').value};
+      await api('/api/v1/admin/catalog/imports', {method: 'POST', headers: admin(), body: JSON.stringify({batch_id: crypto.randomUUID(), items: [item]})});
+      await refreshItems(); message('商品已导入；进入推荐还需包含于活动 bundle');
+    });
+    el('deactivate').onclick = () => run(async () => {
+      await api(`/api/v1/admin/items/${encodeURIComponent(el('item-id').value)}/deactivate`, {method: 'POST', headers: admin()});
+      await refreshItems(); message('商品已下架');
+    });
+    el('register-bundle').onclick = () => run(async () => {
+      await api(`/api/v1/admin/bundles/${encodeURIComponent(el('bundle-id').value)}/register`, {method: 'POST', headers: admin()});
+      message('bundle 已完成受控校验并登记');
+    });
+    el('publish-bundle').onclick = () => run(async () => {
+      const state = await publication();
+      await api(`/api/v1/admin/bundles/${encodeURIComponent(el('bundle-id').value)}/publish`, {method: 'POST', headers: admin(),
+        body: JSON.stringify({operation_id: crypto.randomUUID(), expected_active_bundle_id: state.active_bundle_id})});
+      await publication(); message('发布已记录并完成运行时对齐');
+    });
+    el('recover').onclick = () => run(async () => {
+      await api('/api/v1/admin/publication/recover', {method: 'POST', headers: admin()}); await publication();
+    });
+    run(async () => { const system = await api('/api/v1/system'); el('system').textContent = `服务版本 ${system.version} · 持久化 ${system.capabilities.persistence ? '已配置' : '未配置'} · 发布 ${system.capabilities.catalog_publication ? '可用' : '未配置'}`; });
+  </script>
+</body>
+</html>

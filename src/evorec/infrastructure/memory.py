@@ -17,6 +17,8 @@ from evorec.domain.errors import (
     FeedbackSourceMismatch,
     HistoryConflict,
     IdempotencyConflict,
+    IdempotencyInProgress,
+    IdempotencyReplay,
     ResourceNotFound,
     SessionEpochConflict,
     SnapshotMismatch,
@@ -61,6 +63,7 @@ class InMemoryDemoBackend:
         self._session_tokens: dict[UUID, str] = {}
         self._favorite_items: dict[UUID, frozenset[str]] = {}
         self._request_states: dict[UUID, str] = {}
+        self._request_commands: dict[UUID, tuple[UUID, int, Strategy, int]] = {}
         self._request_bindings: dict[UUID, RequestBinding] = {}
         self._results: dict[UUID, RecommendationResult] = {}
         self._feedback: dict[UUID, tuple[str, FeedbackResult]] = {}
@@ -220,12 +223,25 @@ class InMemoryDemoBackend:
                 self._session_tokens[command.session_id], self._token_sha256(command.session_token)
             ):
                 raise AccessDenied("session token is invalid")
+            if command.request_id in self._request_states:
+                expected = (command.session_id, command.expected_history_version,
+                            command.strategy, command.k)
+                if self._request_commands[command.request_id] != expected:
+                    raise IdempotencyConflict("recommendation key was used for different input")
+                state = self._request_states[command.request_id]
+                if state == "completed":
+                    raise IdempotencyReplay(self._results[command.request_id])
+                if state == "accepted":
+                    raise IdempotencyInProgress("recommendation is still in progress")
+                raise IdempotencyConflict("recommendation key belongs to a failed request")
             if session.history_version != command.expected_history_version:
                 raise HistoryConflict("history changed before admission")
-            if command.request_id in self._request_states:
-                raise SnapshotMismatch("request ID has already been admitted")
             context = RequestContext(command.request_id, session, self.catalog)
             self._request_states[command.request_id] = "accepted"
+            self._request_commands[command.request_id] = (
+                command.session_id, command.expected_history_version,
+                command.strategy, command.k,
+            )
             self._request_bindings[command.request_id] = context.binding
 
         try:
