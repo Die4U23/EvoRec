@@ -49,6 +49,8 @@ jobs:
             tests/test_repository_hygiene.py
           python -c 'import xml.etree.ElementTree as ET; suite = ET.parse("service-tests.xml").getroot().find("testsuite"); assert int(suite.attrib["skipped"]) == 0, "service tests must not skip"'
       - name: Check exported API contracts
+        env:
+          EVOREC_DATABASE_URL: ""
         run: |
           python scripts/export_contracts.py
           git diff --exit-code -- docs/contracts
