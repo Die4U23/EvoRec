@@ -1,0 +1,54 @@
+name: Service integration
+
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+
+jobs:
+  service-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: evorec_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d evorec_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      EVOREC_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/evorec_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install service and test dependencies
+        run: |
+          python -m pip install -r requirements-dev.lock.txt
+          python -m pip install --no-deps -e .
+      - name: Check dependencies and migrations
+        run: |
+          python -m pip check
+          python scripts/migrate_database.py
+          python scripts/migrate_database.py --check
+      - name: Run service tests against PostgreSQL
+        run: |
+          python -m pytest -q -ra --junitxml=service-tests.xml \
+            tests/test_api.py tests/test_architecture.py \
+            tests/test_bundle_validation.py tests/test_contracts.py \
+            tests/test_feedback.py tests/test_management.py \
+            tests/test_migrations.py tests/test_model_runtime.py \
+            tests/test_postgres_api.py tests/test_recommendation.py \
+            tests/test_repository_hygiene.py
+          python -c 'import xml.etree.ElementTree as ET; suite = ET.parse("service-tests.xml").getroot().find("testsuite"); assert int(suite.attrib["skipped"]) == 0, "service tests must not skip"'
+      - name: Check exported API contracts
+        run: |
+          python scripts/export_contracts.py
+          git diff --exit-code -- docs/contracts
