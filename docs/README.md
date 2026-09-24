@@ -17,7 +17,7 @@
 | 数据、接口与数据库 | [数据设计](03-data-design.md)、[接口约定](04-api-contract.md)、[机器可读契约](contracts/README.md)、[正式数据库迁移](../db/migrations/0001_m1_core.sql) | `db/schema.design.sql` 是早期草案，不是迁移脚本。 |
 | 研究协议与实验结果 | [研究路线草案](05-research-protocol.md)、[实验索引](experiments/README.md) | 各轮冻结协议和报告优先于早期总路线。 |
 | 交付与仓库规则 | [仓库政策](08-repository-policy.md)、[验证与发布框架](07-validation-release.md) | 发布框架含未完成验收项，不代表已经上线。 |
-| 产品原始材料 | [PRD](../EvoRec_PRD.md)、[展示版 PRD](../EvoRec_展示版PRD.md)、[技术栈选型](../EvoRec_技术栈选型报告.md) | 需求与选型依据，不代表当前实现状态。 |
+| 产品原始材料 | [产品文档索引](product/README.md) | PRD 与选型依据，不代表当前实现状态。 |
 
 ## 历史计划与专题记录
 
