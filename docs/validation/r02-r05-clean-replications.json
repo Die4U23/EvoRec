@@ -1,0 +1,68 @@
+{
+  "status": "passed",
+  "code_commit": "7186c874cfa9a6a7c4129704afb75e54fbee76a2",
+  "replications": [
+    {
+      "stage": "R02",
+      "original_run": "r02-training-20260915",
+      "replication_run": "r02-clean-replication-20260923",
+      "replication_series_sha256": "5c71883e9d34ddee1da39832d68cfd8dcd4cb87685e762e1516de426e023f196",
+      "independent_audit_json_sha256": "e8721b509ba6159136cac4f66daefcc5a87c9aadf2368967eaaa962bac84ca92",
+      "source_files_verified_against_commit": 31,
+      "training_epochs": 39,
+      "test_methods_with_identical_quality_metrics": 8,
+      "selection_and_seed_summary_identical": true,
+      "protocol_id_identical": true,
+      "working_tree_dirty_at_start": false,
+      "experiment_paths_clean_at_start": true
+    },
+    {
+      "stage": "R03",
+      "original_run": "r03-content-20260915",
+      "replication_run": "r03-verified-clean-replication-20260924",
+      "replication_series_sha256": "8a59c0716318b5b0dd16c7dbb7347e8af24149a2c383326ab31ef6e175493f83",
+      "independent_audit_json_sha256": "821aafaee1f9229ca362034615a713c32c20a31e46e737c972db78759cbbb0f6",
+      "source_files_verified_against_commit": 31,
+      "training_epochs": 48,
+      "test_methods_with_identical_quality_metrics": 12,
+      "selection_and_seed_summary_identical": true,
+      "protocol_id_identical": true,
+      "working_tree_dirty_at_start": false,
+      "experiment_paths_clean_at_start": true
+    },
+    {
+      "stage": "R04",
+      "original_run": "r04-gating-20260915",
+      "replication_run": "r04-verified-clean-replication-20260924",
+      "replication_series_sha256": "a92b83579e04cb4cfb96444db96096013e04736deac49d4e322bcf82b7961242",
+      "independent_audit_json_sha256": "f4ad8863e63e32b4415e2252de5f2e1b9ec9d6afe23b6b675326409b3dee027c",
+      "source_files_verified_against_commit": 31,
+      "training_epochs": 0,
+      "test_methods_with_identical_quality_metrics": 10,
+      "selection_and_seed_summary_identical": true,
+      "protocol_id_identical": false,
+      "working_tree_dirty_at_start": false,
+      "experiment_paths_clean_at_start": true
+    },
+    {
+      "stage": "R05",
+      "original_run": "r05-ranker-20260916",
+      "replication_run": "r05-verified-clean-replication-20260924",
+      "replication_series_sha256": "8f129a7ca805f726280c3d272b826ac2ab78b561b962cc30af80b121e5345759",
+      "independent_audit_json_sha256": "0384cb194a0817b157398ff5d344b86738aebaabacf24f6652f942dd5ab24e73",
+      "source_files_verified_against_commit": 31,
+      "training_epochs": 35,
+      "test_methods_with_identical_quality_metrics": 8,
+      "selection_and_seed_summary_identical": true,
+      "protocol_id_identical": true,
+      "working_tree_dirty_at_start": false,
+      "experiment_paths_clean_at_start": true
+    }
+  ],
+  "limits": [
+    "Original runs retain working_tree_dirty=true; the clean replications are new runs.",
+    "Original tests had already been inspected, so this is reproducibility evidence rather than a new sealed test.",
+    "Dependency installation was reused from the local research environment; a fresh-machine rebuild remains unverified.",
+    "Offline wall time and serialized container hashes may differ while quality metrics remain identical."
+  ]
+}

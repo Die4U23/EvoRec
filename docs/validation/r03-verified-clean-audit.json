@@ -1,0 +1,103 @@
+{
+  "status": "passed",
+  "checked_at": "2026-09-24T05:38:08.441976+00:00",
+  "protocol_id": "b84be690895554be",
+  "series_sha256": "8a59c0716318b5b0dd16c7dbb7347e8af24149a2c383326ab31ef6e175493f83",
+  "audit_script_sha256": "2774d8b4c6b8c9b4c2e829829d9d026fa81f1de97639b69e63bb7e3d5040cde3",
+  "test_queries": 12804,
+  "trace_records_checked": 153648,
+  "candidate_eligibility_checks": 30729600,
+  "checks": [
+    "sample/catalog/source/config fingerprints",
+    "independent strict-time query reconstruction",
+    "identical query order across methods",
+    "no seen/unavailable/duplicate candidates",
+    "independent per-request and all five cohort metrics/coverage",
+    "validation-only selection and best epochs",
+    "checkpoint hashes and recorded reload equality",
+    "three-seed mean and sample standard deviation",
+    "metadata and frozen encoder fingerprints",
+    "independent training-only TF-IDF document frequencies",
+    "checkpoint binding to exact content vectors",
+    "validation-only fusion and overall method selection"
+  ],
+  "traces": [
+    {
+      "name": "Popular",
+      "rows": 12804,
+      "sha256": "2a3679749247e065e04f6cf1a3035d78149e2f2cb921a6a379b6f0a7849f45b5",
+      "model_cold_candidates": 0
+    },
+    {
+      "name": "RecentPopular-365d",
+      "rows": 12804,
+      "sha256": "09242054656023491cf6082966abc20f85d3befbfc61df66799f7de29cca502c",
+      "model_cold_candidates": 0
+    },
+    {
+      "name": "CF-blend-a0.25",
+      "rows": 12804,
+      "sha256": "8db17d3a323ec5e588f85cb12621ddfdf91723f74685b3f3bc5d246420e1e164",
+      "model_cold_candidates": 0
+    },
+    {
+      "name": "Content-SVD",
+      "rows": 12804,
+      "sha256": "503204c221725c5ce1a79a2d87b3e0888346658ade67f99dfbd7f9e948effc71",
+      "model_cold_candidates": 777263
+    },
+    {
+      "name": "Content-RRF-a0.25",
+      "rows": 12804,
+      "sha256": "46a6f5757d55902df1ee3885a5da09a3979a4528c1b054380f5a06483f5cee1b",
+      "model_cold_candidates": 77456
+    },
+    {
+      "name": "Content-RRF-a0.5",
+      "rows": 12804,
+      "sha256": "07fa9b3ce2eb5e07c75b5216a244f8fcdd1b3167591eb5576890059d2994689f",
+      "model_cold_candidates": 388932
+    },
+    {
+      "name": "content-tower-s17",
+      "rows": 12804,
+      "sha256": "42d715c155c308f681fbdb2858b099f6c6defed0880f03c26915629185065a8f",
+      "model_cold_candidates": 672978
+    },
+    {
+      "name": "Tower-RRF-a0.5-s17",
+      "rows": 12804,
+      "sha256": "9ed74a40f53cf8489c98986d30f9596f5a7198b34b80e9c6d9ccee686fc958a8",
+      "model_cold_candidates": 330917
+    },
+    {
+      "name": "content-tower-s29",
+      "rows": 12804,
+      "sha256": "e3ffdb3b35249fadd9ec3e296fc35ad5b2d3d3a48a543efd630c30537dc67527",
+      "model_cold_candidates": 683965
+    },
+    {
+      "name": "Tower-RRF-a0.5-s29",
+      "rows": 12804,
+      "sha256": "aa5adf4c0d5d8643ad9a3e8a4e29fe2e64d747fe2149501dadf33727bb1c82f9",
+      "model_cold_candidates": 337319
+    },
+    {
+      "name": "content-tower-s43",
+      "rows": 12804,
+      "sha256": "c48f23d89dd0f65ae17f6b1140df30ac39eadd63792f8ff306740f744bcbd8a8",
+      "model_cold_candidates": 682634
+    },
+    {
+      "name": "Tower-RRF-a0.5-s43",
+      "rows": 12804,
+      "sha256": "b52d1f5cc69d074eca501a707d1baaafdcf701b8877f5a2c50e60bc0d9063700",
+      "model_cold_candidates": 338474
+    }
+  ],
+  "limits": [
+    "static metadata timestamps unavailable; content access is an auxiliary assumption",
+    "does not establish statistical significance or online performance",
+    "checkpoint inference equality was measured by the training run; this audit verifies its evidence and hashes"
+  ]
+}
