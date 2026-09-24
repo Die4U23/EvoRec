@@ -35,13 +35,15 @@ def test_liveness_does_not_claim_business_readiness():
     }
 
 
-def test_unimplemented_capabilities_are_not_advertised_as_available():
+def test_capabilities_do_not_claim_unconfigured_persistence_or_publication():
     system = request("GET", "/api/v1/system").json()
-    assert system["phase"] == "M1-persistent-demo"
+    assert system["phase"] == "M23-local-managed-demo"
     assert system["capabilities"]["recommendations"] is True
-    for capability in ["catalog_publication", "persistence", "model_training", "frontend"]:
+    for capability in ["catalog_publication", "persistence", "model_training"]:
         assert system["capabilities"][capability] is False
-    assert request("POST", "/api/v1/admin/catalog/imports", json={}).status_code == 404
+    assert system["capabilities"]["frontend"] is True
+    assert request("POST", "/api/v1/admin/catalog/imports", json={}).status_code == 422
+    assert request("GET", "/app").status_code == 200
 
 
 def test_openapi_describes_actual_routes_and_503_readiness():
@@ -50,7 +52,11 @@ def test_openapi_describes_actual_routes_and_503_readiness():
         "/health/live", "/health/ready", "/api/v1/system",
         "/api/v1/sessions", "/api/v1/sessions/{session_id}",
         "/api/v1/sessions/{session_id}/reset", "/api/v1/recommendations",
-        "/api/v1/feedback",
+        "/api/v1/feedback", "/api/v1/items", "/api/v1/items/{item_id}",
+        "/api/v1/admin/catalog/imports", "/api/v1/admin/items/{item_id}/deactivate",
+        "/api/v1/admin/bundles/{bundle_id}/register",
+        "/api/v1/admin/bundles/{bundle_id}/publish",
+        "/api/v1/admin/publication", "/api/v1/admin/publication/recover",
     }
     responses = schema["paths"]["/health/ready"]["get"]["responses"]
     assert "503" in responses
@@ -117,6 +123,38 @@ def test_memory_demo_session_recommendation_and_stale_history_conflict():
             assert stale.status_code == 409
             assert stale.json()["error"]["code"] == "history_conflict"
             assert stale.json()["error"]["request_id"]
+
+    asyncio.run(exercise())
+
+
+def test_recommendation_idempotency_key_replays_without_reranking():
+    async def exercise():
+        app = memory_app()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            session = (await client.post("/api/v1/sessions")).json()
+            key = str(uuid4())
+            headers = {"X-Session-Token": session["access_token"], "Idempotency-Key": key}
+            payload = {"session_id": session["session_id"], "expected_history_version": 0,
+                       "strategy": "popular", "k": 2}
+            first = await client.post("/api/v1/recommendations", headers=headers, json=payload)
+            assert first.status_code == 200
+            assert first.json()["request_id"] == key
+            repeated = await client.post("/api/v1/recommendations", headers=headers, json=payload)
+            assert repeated.status_code == 200
+            assert repeated.json() == first.json()
+            changed = await client.post(
+                "/api/v1/recommendations", headers=headers, json={**payload, "k": 1},
+            )
+            assert changed.status_code == 409
+            assert changed.json()["error"]["code"] == "recommendation_idempotency_conflict"
+            unauthorized = await client.post(
+                "/api/v1/recommendations",
+                headers={"X-Session-Token": "wrong", "Idempotency-Key": key}, json=payload,
+            )
+            assert unauthorized.status_code == 401
+            await client.post(f"/api/v1/sessions/{session['session_id']}/reset", headers=headers)
+            after_reset = await client.post("/api/v1/recommendations", headers=headers, json=payload)
+            assert after_reset.json() == first.json()
 
     asyncio.run(exercise())
 

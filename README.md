@@ -4,7 +4,7 @@
 
 项目由 **Die4U23** 发起并主导。项目目标与总体方向由作者提出，研究范围、优先级和推进取舍由作者决定；具体方案通过实验迭代。实现、测试与文档整理使用 AI 编程助手辅助，算法结论以仓库中的可复查证据为准。
 
-**已完成：M1 持久化推荐演示 + R01–R06 离线实验。** 服务可创建、查询和重置带访问令牌的会话，并通过既有 `Recommend` 用例返回可追溯的热门推荐；配置数据库后，会话、请求和结果写入 PostgreSQL。真实模型运行时尚未接入。R06 完成多兴趣召回、六次排序训练、完整候选与模型重放及 50 项配对区间。
+**已完成：本地持久化推荐演示 + R01–R06 离线实验。** 服务可创建、查询和重置带访问令牌的会话，并通过既有 `Recommend` 用例返回可追溯推荐；配置数据库后，会话、请求和结果写入 PostgreSQL。受控 CPU bundle 可登记、发布与重启恢复，真实 R06 模型仍未接入。R06 完成多兴趣召回、六次排序训练、完整候选与模型重放及 50 项配对区间。
 
 [R06 图表报告](docs/experiments/r06-multi-interest/report.html) · [运行与复核](research/R06-multi-interest-guide.md) · [预登记协议](docs/experiments/r06-multi-interest-protocol.md)
 
@@ -59,7 +59,7 @@ tests/                契约、应用用例、服务与分层边界检查
 db/                   PostgreSQL 正式迁移及保留的早期设计草案
 src/evorec/research/   数据采样、统计基线、GPU 序列训练、时间评价与持续报告
 research/             实验配置与运行说明
-web/                  前端页面与状态规划，尚未实现
+web/                  零构建的本地推荐与管理页面
 cpp/                  C++ 性能扩展的接入条件
 ops/                  开发运行与部署边界说明
 scripts/              契约导出等工程工具
@@ -67,7 +67,7 @@ datasets/             本地数据区域，内容不进入版本控制
 artifacts/            模型、索引与结果区域，内容不进入版本控制
 ```
 
-## 运行 M1 演示
+## 运行本地服务演示
 
 服务环境使用 Python 3.12；算法基线使用独立环境。以下操作在项目根目录执行。
 
@@ -80,15 +80,17 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m uvicorn evorec.api.app:app --host 127.0.0.1 --port 8000
 ```
 
-如果项目内已有安装完成的 `.venv`，先运行两项环境检查再启动服务。锁文件包含服务测试和 PostgreSQL 所需的 Psycopg binary/pool；驱动存在不代表本机已经安装或启动 PostgreSQL。没有设置 `EVOREC_DATABASE_URL` 时，服务使用进程内后端。需要持久化时，将 `.env.example` 复制为被忽略的 `.env` 并替换密码，再把变量载入当前进程；不要提交真实凭据。Linux 对应解释器为 `.venv/bin/python`。首次安装仍需联网取得依赖及构建工具；此版本只在当前 Windows / Python 3.12 环境验证。
+如果项目内已有安装完成的 `.venv`，先运行两项环境检查再启动服务。锁文件包含服务测试和 PostgreSQL 所需的 Psycopg binary/pool；驱动存在不代表本机已经安装或启动 PostgreSQL。没有设置 `EVOREC_DATABASE_URL` 时，服务使用进程内后端。需要持久化时，将 `.env.example` 复制为被忽略的 `.env` 并替换密码；管理操作还需设置至少 32 字符的随机 `EVOREC_ADMIN_TOKEN` 和受管目录 `EVOREC_BUNDLE_ROOT`，再把变量载入当前进程。不要提交真实凭据。Linux 对应解释器为 `.venv/bin/python`。首次安装仍需联网取得依赖及构建工具；此版本只在当前 Windows / Python 3.12 环境验证。
 
 - `GET /health/live`：进程存活，返回 200。
-- `GET /health/ready`：检查数据库发布屏障，并如实报告真实模型运行时尚未加载；当前仍返回 503。
+- `GET /health/ready`：检查数据库发布屏障和活动受控运行时；仅配置旧演示种子时仍返回 503，发布受控 bundle 且恢复对齐后可以返回 200。
 - `GET /api/v1/system`：返回真实版本、阶段与能力状态；配置数据库后 persistence 为 true。
 - `POST /api/v1/sessions`：创建空会话；访问令牌只在创建响应中返回。
 - `GET /api/v1/sessions/{id}`、`POST /api/v1/sessions/{id}/reset`：通过 `X-Session-Token` 查询或重置会话。
-- `POST /api/v1/recommendations`：通过同一令牌执行快照绑定、回退、过滤、Top-K 与结果记录；未加载的策略明确回退到演示热门路径。
+- `POST /api/v1/recommendations`：通过同一令牌执行快照绑定、回退、过滤、Top-K 与结果记录；可选 UUID `Idempotency-Key` 对相同输入重放原结果，不同输入返回 409。受控 bundle 的 `dense` 路径是可移植 CPU 基线，不是 R06 研究模型。
 - `POST /api/v1/feedback`：校验反馈来自该会话真实返回的商品；按 `event_id` 幂等记录，并在有效状态变化时推进历史版本。
+- `GET /app`：本地 Web 页面；`GET /api/v1/items` 与 `GET /api/v1/items/{id}` 读取商品。
+- `/api/v1/admin/`：使用 `X-Admin-Token` 导入商品、下架、登记受控 bundle、按预期活动版本发布并恢复。未配置令牌时拒绝管理操作。
 - `GET /openapi.json`：当前已经实现的接口说明。交互文档入口 `/docs` 的页面资源可能需要网络。
 
 检查与契约导出：
@@ -105,9 +107,9 @@ python -m venv .venv
 .\.venv\Scripts\python.exe scripts/load_bundle.py artifacts artifacts/<bundle-uuid>
 ```
 
-第一条命令只验证清单结构、受管路径、封闭文件集合、SHA-256、商品映射和向量字节契约。第二条再次校验完整性，在资源上限内加载白名单 JSON/float32 CPU 运行时并回放黄金样本；它仍不会切换活动版本或使就绪检查通过。格式与边界见[产物区域说明](artifacts/README.md)。
+第一条命令只验证清单结构、受管路径、封闭文件集合、SHA-256、商品映射和向量字节契约。第二条再次校验完整性，在资源上限内加载白名单 JSON/float32 CPU 运行时并回放黄金样本；仅运行这两条检查不会切换活动版本。正式管理发布还要求先导入商品、登记 bundle，并持久记录发布操作。格式与边界见[产物区域说明](artifacts/README.md)。
 
-本机 PostgreSQL 已准备好且 `.env` 配置完成时，可以应用并验证 M11 核心迁移：
+本机 PostgreSQL 已准备好且 `.env` 配置完成时，可以应用并验证迁移：
 
 ```powershell
 $env:EVOREC_DATABASE_URL = (Get-Content .env | Select-String '^EVOREC_DATABASE_URL=').Line.Split('=', 2)[1]
@@ -119,13 +121,13 @@ $env:EVOREC_DATABASE_URL = (Get-Content .env | Select-String '^EVOREC_DATABASE_U
 Remove-Item Env:EVOREC_DATABASE_URL
 ```
 
-迁移按文件校验 SHA-256，并通过 PostgreSQL advisory lock 串行执行；已应用文件发生变化时拒绝继续。验证脚本使用临时 UUID 数据检查版本冲突、请求幂等、非法分数和会话行锁，结束后清理测试数据。演示种子脚本可重复执行；它写入明确标记的本地演示商品和活动 bundle，不能当作真实模型产物。
+迁移按文件校验 SHA-256，并通过 PostgreSQL advisory lock 串行执行；已应用文件发生变化时拒绝继续。验证脚本使用临时 UUID 数据检查版本冲突、请求幂等、非法分数和会话行锁，结束后清理测试数据。演示种子脚本会将演示 bundle 设为活动版本，仅应在初始本地演示时运行；发布真实受控 bundle 后不要再次运行它。受控发布使用 `db/migrations/0002_m23_publication.sql` 的操作记录与接收屏障，重启会核对数据库指针和受管产物再恢复接收。
 
-商品详情和管理接口仍未注册。配置数据库后，HTTP 会话、推荐请求、商品位置和反馈可跨应用实例恢复；未配置时仍使用进程内后端。`/health/ready` 因真实模型运行时未加载继续返回 503。当前不下载模型、不公开部署服务。
+商品查询、JSON 批次导入、下架、受控 bundle 登记/发布与恢复已注册；没有后台任务队列、文件上传、真实 R06 模型适配或公网身份系统。只在单实例、本地可信环境演示，不能把管理令牌当作公网授权体系。`dense` 路径超过 bundle 排序预算时只使用确定性的有界候选子集，并明确标记 `candidate_budget_truncated`；不据此宣称全库在线检索质量。
 
 ## 下一项工作
 
-R06 已完成并保留未获支持的结果。研究上先解释无历史冷目标不可达与候选增益未转化为排名增益的原因，再登记后续实验；工程上详情点击曝光补记、bundle 首层校验和可移植受控加载边界已经落地，下一步接入真实冻结模型、持久发布恢复，并单独设计客户端推荐幂等键。每阶段分别提交协议、实现和结果，独立开发使用 codex/ 分支。
+R06 已完成并保留未获支持的结果。研究上先解释无历史冷目标不可达与候选增益未转化为排名增益的原因，再登记后续实验；工程上下一步是接入真实冻结模型、完善后台任务/租约、运行时版本回收、管理员身份与公网安全，以及真正的前端构建与部署。每阶段继续区分实现、测试和线上证据。
 
 实验运行入口见 [研究工作区](research/README.md)；本机测试临时目录权限的处理方式也记录在该页。
 

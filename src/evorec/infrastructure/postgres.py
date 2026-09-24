@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import secrets
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import psycopg
@@ -16,6 +17,8 @@ from evorec.domain.errors import (
     FeedbackSourceMismatch,
     HistoryConflict,
     IdempotencyConflict,
+    IdempotencyInProgress,
+    IdempotencyReplay,
     ResourceNotFound,
     SessionEpochConflict,
     SnapshotMismatch,
@@ -39,12 +42,23 @@ from evorec.domain.models import (
     detail_exposure_payload_sha256,
 )
 
+if TYPE_CHECKING:
+    from evorec.infrastructure.management import CatalogManager
+    from evorec.infrastructure.model_runtime import RuntimeBundle
+
 
 class PostgresDemoBackend:
     """Persist sessions, admitted requests, and completed recommendation items."""
 
     def __init__(self, database_url: str) -> None:
         self.database_url = database_url
+        self.runtime: RuntimeBundle | None = None
+        self.runtimes: dict[str, RuntimeBundle] = {}
+        self.manager: CatalogManager | None = None
+
+    def activate_runtime(self, runtime: "RuntimeBundle") -> None:
+        self.runtimes[runtime.bundle_id] = runtime
+        self.runtime = runtime
 
     @staticmethod
     def _token_sha256(access_token: str) -> str:
@@ -138,6 +152,8 @@ class PostgresDemoBackend:
 
     @asynccontextmanager
     async def acquire(self, command: RecommendationCommand):
+        if self.manager is not None:
+            await asyncio.to_thread(self.manager.ensure_ready)
         context = await asyncio.to_thread(self._admit, command)
         try:
             yield context
@@ -160,6 +176,44 @@ class PostgresDemoBackend:
                 raise ResourceNotFound("session does not exist")
             self._authorize(session_row, command.session_token)
             session = self._snapshot(session_row)
+            previous = connection.execute(
+                """
+                SELECT session_id, session_epoch, history_version, bundle_id,
+                       exclusion_version, requested_strategy, requested_k,
+                       actual_strategy, fallback_reason, status
+                FROM recommendation_requests WHERE request_id = %s FOR UPDATE
+                """,
+                (command.request_id,),
+            ).fetchone()
+            if previous is not None:
+                if (previous["session_id"] != command.session_id
+                        or previous["history_version"] != command.expected_history_version
+                        or previous["requested_strategy"] != command.strategy
+                        or previous["requested_k"] != command.k):
+                    raise IdempotencyConflict("recommendation key was used for different input")
+                if previous["status"] == "accepted":
+                    raise IdempotencyInProgress("recommendation is still in progress")
+                if previous["status"] != "completed":
+                    raise IdempotencyConflict("recommendation key belongs to a failed request")
+                items = connection.execute(
+                    """
+                    SELECT item_id, score, source FROM request_items
+                    WHERE request_id = %s ORDER BY position
+                    """,
+                    (command.request_id,),
+                ).fetchall()
+                binding = RequestBinding(
+                    command.request_id, previous["session_id"], previous["session_epoch"],
+                    previous["history_version"], previous["bundle_id"],
+                    previous["exclusion_version"],
+                )
+                raise IdempotencyReplay(RecommendationResult(
+                    binding, Strategy(previous["requested_strategy"]),
+                    Strategy(previous["actual_strategy"]),
+                    tuple(ScoredCandidate(row["item_id"], row["score"], row["source"])
+                          for row in items),
+                    previous["fallback_reason"],
+                ))
             if session.history_version != command.expected_history_version:
                 raise HistoryConflict("history changed before admission")
 
@@ -463,6 +517,23 @@ class PostgresDemoBackend:
     async def rank(self, context: RequestContext, command: RecommendationCommand) -> RankedBatch:
         actual = command.strategy
         fallback = None
+        runtime = self.runtimes.get(str(context.catalog.bundle_id))
+        if (runtime is not None and runtime.bundle_id == str(context.catalog.bundle_id)
+                and command.strategy == Strategy.DENSE):
+            candidate_ids = tuple(sorted(context.catalog.eligible_items))[:runtime.ranking_budget]
+            limited = len(context.catalog.eligible_items) > runtime.ranking_budget
+            if candidate_ids:
+                history = tuple(item for item in context.session.history
+                                if item in runtime.item_ids)
+                scores = runtime.score(history, candidate_ids)
+                candidates = tuple(
+                    ScoredCandidate(item_id, score, "controlled-cpu-dot-product")
+                    for item_id, score in zip(candidate_ids, scores, strict=True)
+                )
+            else:
+                candidates = ()
+            return RankedBatch(context.binding, Strategy.DENSE, candidates,
+                               "candidate_budget_truncated" if limited else None)
         if command.strategy == Strategy.ADAPTIVE:
             actual = Strategy.POPULAR
         elif command.strategy != Strategy.POPULAR:
@@ -547,16 +618,18 @@ class PostgresDemoBackend:
 
 
 class PostgresDemoReadiness:
-    def __init__(self, database_url: str) -> None:
-        self.database_url = database_url
+    def __init__(self, backend: PostgresDemoBackend) -> None:
+        self.backend = backend
 
     async def check(self) -> ReadinessReport:
         return await asyncio.to_thread(self._check)
 
     def _check(self) -> ReadinessReport:
-        blockers: list[str] = ["model_runtime_not_loaded"]
+        blockers: list[str] = []
         try:
-            with psycopg.connect(self.database_url) as connection:
+            if self.backend.manager is not None:
+                self.backend.manager.recover()
+            with psycopg.connect(self.backend.database_url) as connection:
                 cursor = connection.execute(
                     """
                     SELECT active_bundle_id, admission_open
@@ -566,6 +639,9 @@ class PostgresDemoReadiness:
                 row = cursor.fetchone()
         except psycopg.Error:
             return ReadinessReport(("database_not_connected", "model_runtime_not_loaded"))
+        if (row is None or self.backend.runtime is None
+                or str(row[0]) != self.backend.runtime.bundle_id):
+            blockers.append("model_runtime_not_loaded")
         if row is None or row[0] is None:
             blockers.append("catalog_bundle_not_loaded")
         if row is None or not row[1]:

@@ -25,9 +25,30 @@ class IdempotencyConflict(Exception):
     """An idempotency key was already used for different semantic content."""
 
 
+class IdempotencyInProgress(Exception):
+    """An identical recommendation is still being computed."""
+
+
+class IdempotencyReplay(Exception):
+    """Return a previously completed recommendation without running it again."""
+
+    def __init__(self, result: object):
+        super().__init__("recommendation already completed")
+        self.result = result
+
+
 class SessionEpochConflict(Exception):
     """Feedback belongs to a request admitted before the current reset epoch."""
 
 
 class FeedbackSourceMismatch(Exception):
     """Feedback does not refer to an item returned to the same session."""
+
+
+class ManagementError(Exception):
+    """Stable catalog or publication failure without storage details."""
+
+    def __init__(self, code: str, message: str, status_code: int = 409):
+        super().__init__(message)
+        self.code = code
+        self.status_code = status_code
