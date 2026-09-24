@@ -149,12 +149,15 @@ class SessionSnapshot:
     history_version: int
     history: tuple[str, ...]
     hidden_items: frozenset[str]
+    favorite_items: frozenset[str] = frozenset()
+    profile_id: str = "new"
 
     def __post_init__(self) -> None:
         if self.epoch < 0 or self.history_version < 0:
             raise ValueError("session versions cannot be negative")
         object.__setattr__(self, "history", tuple(self.history))
         object.__setattr__(self, "hidden_items", frozenset(self.hidden_items))
+        object.__setattr__(self, "favorite_items", frozenset(self.favorite_items))
 
 
 @dataclass(frozen=True)

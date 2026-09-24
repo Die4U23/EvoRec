@@ -72,6 +72,13 @@ class SessionResponse(BaseModel):
     history_version: int
     history: list[str]
     hidden_items: list[str]
+    favorite_items: list[str]
+    profile_id: str
+
+
+class SessionCreateInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    profile_id: Literal["new", "sample"] = "new"
 
 
 class SessionCreatedResponse(SessionResponse):
@@ -177,6 +184,8 @@ def _session_response(snapshot: SessionSnapshot) -> SessionResponse:
         history_version=snapshot.history_version,
         history=list(snapshot.history),
         hidden_items=sorted(snapshot.hidden_items),
+        favorite_items=sorted(snapshot.favorite_items),
+        profile_id=snapshot.profile_id,
     )
 
 
@@ -313,8 +322,13 @@ def create_app(
     @app.post(
         "/api/v1/sessions", response_model=SessionCreatedResponse, status_code=201, tags=["demo"],
     )
-    async def create_session() -> SessionCreatedResponse:
-        return _created_session_response(await demo.backend.create_session())
+    async def create_session(payload: SessionCreateInput | None = None):
+        try:
+            return _created_session_response(
+                await demo.backend.create_session((payload or SessionCreateInput()).profile_id)
+            )
+        except ValueError as exc:
+            return _error(409, "sample_profile_unavailable", str(exc))
 
     @app.get(
         "/api/v1/sessions/{session_id}", response_model=SessionResponse, tags=["demo"],
@@ -459,7 +473,7 @@ def create_app(
     @app.get("/api/v1/items", response_model=list[CatalogItemResponse], tags=["catalog"])
     async def list_items():
         if demo.manager is None:
-            return _error(503, "database_not_configured", "PostgreSQL is required")
+            return demo.backend.list_items()
         try:
             return await asyncio.to_thread(demo.manager.list_items)
         except psycopg.Error:
@@ -468,7 +482,8 @@ def create_app(
     @app.get("/api/v1/items/{item_id}", response_model=CatalogItemResponse, tags=["catalog"])
     async def get_item(item_id: str):
         if demo.manager is None:
-            return _error(503, "database_not_configured", "PostgreSQL is required")
+            item = demo.backend.get_item(item_id)
+            return item if item is not None else _error(404, "item_not_found", "item does not exist")
         try:
             return await asyncio.to_thread(demo.manager.get_item, item_id)
         except ManagementError as exc:

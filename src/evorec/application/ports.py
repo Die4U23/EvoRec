@@ -18,7 +18,7 @@ from evorec.domain.models import (
 
 
 class SessionPort(Protocol):
-    async def create_session(self) -> CreatedSession:
+    async def create_session(self, profile_id: str = "new") -> CreatedSession:
         """Create a session and return its access token exactly once."""
         ...
 
@@ -27,7 +27,7 @@ class SessionPort(Protocol):
         ...
 
     async def reset_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
-        """Atomically advance epoch and history version and clear explicit state."""
+        """Atomically advance epoch and restore the selected profile's initial state."""
         ...
 
 
