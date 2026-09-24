@@ -43,18 +43,7 @@ R06 测试现已查看，后续调参需要新协议。静态商品元数据缺�
 
 ## 从这里开始
 
-| 想了解什么 | 入口 |
-| --- | --- |
-| 整体架构与实现过程 | [从数据、模型到服务的完整讲解](docs/10-architecture-and-implementation.md) |
-| 完整项目如何推进 | [项目框架与交付路线](docs/01-project-framework.md) |
-| 模块怎样连接 | [系统架构](docs/02-architecture.md)、[架构决策](docs/architecture/decisions.md) |
-| 数据与接口如何约定 | [数据设计](docs/03-data-design.md)、[接口约定](docs/04-api-contract.md) |
-| 算法怎样研究和评价 | [研究协议](docs/05-research-protocol.md)、[R01 实验报告](docs/experiments/r01-feasibility-report.md) |
-| 任务依赖与需求覆盖 | [交付计划](docs/06-delivery-plan.md) |
-| 怎样证明可以发布 | [验证与发布](docs/07-validation-release.md) |
-| 当前完成到哪里 | [进度与验证记录](docs/STATUS.md) |
-| 原始产品方案 | [展示版 PRD](EvoRec_展示版PRD.md) |
-| 为什么选择这些技术 | [技术栈选型报告](EvoRec_技术栈选型报告.md) |
+先看[文档导航](docs/README.md)：按当前状态、系统设计、研究实验和验证证据分层查找。常用的三个直接入口是[架构与实现过程](docs/10-architecture-and-implementation.md)、[当前进度](docs/STATUS.md)和[实验索引](docs/experiments/README.md)。早期计划与原始 PRD 在导航中保留，但不作为当前完成度的依据。
 
 ## 工程布局
 
