@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from evorec.api.app import create_app
+from evorec.infrastructure.demo_catalog import DEMO_ITEMS
 from scripts.seed_demo_catalog import main as seed_demo_catalog
 
 
@@ -34,8 +35,9 @@ def test_sample_feedback_undo_and_reset(persistent, isolated_database, monkeypat
             })
             assert first.status_code == 200, first.text
             recommendation = first.json()
-            assert len(recommendation["items"]) == 2
+            assert len(recommendation["items"]) == 10
             ids = {item["item_id"] for item in recommendation["items"]}
+            assert len(ids) == 10
             assert "demo-coop" not in ids
             item_id = next(iter(ids))
             other_id = next(iter(ids - {item_id}))
@@ -65,17 +67,20 @@ def test_sample_feedback_undo_and_reset(persistent, isolated_database, monkeypat
             assert state["hidden_items"] == [other_id]
             after_hide = await client.post("/api/v1/recommendations", headers=headers, json={
                 "session_id": session["session_id"], "expected_history_version": state["history_version"],
-                "strategy": "popular", "k": 10,
+                "strategy": "popular", "k": 50,
             })
-            assert after_hide.status_code == 200 and after_hide.json()["items"] == []
+            assert after_hide.status_code == 200
+            assert len(after_hide.json()["items"]) == len(DEMO_ITEMS) - 3
+            assert other_id not in {item["item_id"] for item in after_hide.json()["items"]}
             await feedback("hide_set", False, other_id)
             state = (await client.get(f"/api/v1/sessions/{session['session_id']}", headers=headers)).json()
             assert state["hidden_items"] == []
             after_undo = await client.post("/api/v1/recommendations", headers=headers, json={
                 "session_id": session["session_id"], "expected_history_version": state["history_version"],
-                "strategy": "popular", "k": 10,
+                "strategy": "popular", "k": 50,
             })
-            assert [item["item_id"] for item in after_undo.json()["items"]] == [other_id]
+            assert len(after_undo.json()["items"]) == len(DEMO_ITEMS) - 2
+            assert other_id in {item["item_id"] for item in after_undo.json()["items"]}
             reset = await client.post(f"/api/v1/sessions/{session['session_id']}/reset", headers=headers)
             assert reset.status_code == 200
             assert reset.json()["history"] == ["demo-coop"]
@@ -102,7 +107,13 @@ def test_new_user_starts_empty_and_missing_item_is_404(monkeypatch):
         ) as client:
             session = (await client.post("/api/v1/sessions", json={"profile_id": "new"})).json()
             assert session["history"] == session["favorite_items"] == []
-            assert len((await client.get("/api/v1/items")).json()) == 3
+            assert len((await client.get("/api/v1/items")).json()) == len(DEMO_ITEMS)
+            recommended = await client.post("/api/v1/recommendations", json={
+                "session_id": session["session_id"], "expected_history_version": 0,
+                "strategy": "popular", "k": 10,
+            }, headers={"X-Session-Token": session["access_token"]})
+            assert recommended.status_code == 200
+            assert len(recommended.json()["items"]) == 10
             assert (await client.get("/api/v1/items/does-not-exist")).status_code == 404
             assert (await client.post("/api/v1/sessions", json={"profile_id": "unknown"})).status_code == 422
 
@@ -122,3 +133,26 @@ def test_sample_requires_active_demo_item(isolated_database):
             assert new_user.json()["profile_id"] == "new"
 
     asyncio.run(exercise())
+
+
+def test_demo_seed_is_repeatable_and_matches_memory(isolated_database, monkeypatch):
+    seed_demo_catalog()
+    seed_demo_catalog()
+
+    async def listed_items():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=create_app()), base_url="http://test"
+        ) as client:
+            response = await client.get("/api/v1/items")
+            assert response.status_code == 200
+            return response.json()
+
+    persisted = asyncio.run(listed_items())
+    monkeypatch.delenv("EVOREC_DATABASE_URL", raising=False)
+    in_memory = asyncio.run(listed_items())
+    assert {item["item_id"]: (item["title"], item["category"], item["description"])
+            for item in persisted} == {
+        item["item_id"]: (item["title"], item["category"], item["description"])
+        for item in in_memory
+    }
+    assert len(persisted) == len(in_memory) == len(DEMO_ITEMS)

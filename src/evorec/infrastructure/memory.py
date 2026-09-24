@@ -41,18 +41,24 @@ from evorec.domain.models import (
     detail_exposure_payload_sha256,
 )
 from evorec.domain.session_profiles import initial_history
+from evorec.infrastructure.demo_catalog import DEMO_ITEMS
 
 
 _DEMO_SCORES = {
-    "demo-coop": 0.95,
-    "demo-racing": 0.85,
-    "demo-strategy": 0.75,
+    item_id: 1.0 - position / 100
+    for position, (item_id, _, _, _) in enumerate(DEMO_ITEMS)
 }
-_DEMO_ITEMS = (
-    {"item_id": "demo-coop", "title": "Co-op Demo", "category": "demo", "description": "合作体验示例商品", "image_url": None, "is_active": True},
-    {"item_id": "demo-racing", "title": "Racing Demo", "category": "demo", "description": "竞速体验示例商品", "image_url": None, "is_active": True},
-    {"item_id": "demo-strategy", "title": "Strategy Demo", "category": "demo", "description": "策略体验示例商品", "image_url": None, "is_active": True},
-)
+_DEMO_ITEM_DETAILS = {
+    item_id: {
+        "item_id": item_id,
+        "title": title,
+        "category": category,
+        "description": description,
+        "image_url": None,
+        "is_active": True,
+    }
+    for item_id, title, category, description in DEMO_ITEMS
+}
 
 
 class InMemoryDemoBackend:
@@ -220,10 +226,11 @@ class InMemoryDemoBackend:
             return feedback
 
     def list_items(self) -> list[dict[str, object]]:
-        return [dict(item) for item in _DEMO_ITEMS]
+        return [dict(item) for item in _DEMO_ITEM_DETAILS.values()]
 
     def get_item(self, item_id: str) -> dict[str, object] | None:
-        return next((dict(item) for item in _DEMO_ITEMS if item["item_id"] == item_id), None)
+        item = _DEMO_ITEM_DETAILS.get(item_id)
+        return dict(item) if item is not None else None
 
     @asynccontextmanager
     async def acquire(self, command: RecommendationCommand):

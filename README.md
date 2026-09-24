@@ -89,7 +89,7 @@ python -m venv .venv
 - `GET /api/v1/sessions/{id}`、`POST /api/v1/sessions/{id}/reset`：通过 `X-Session-Token` 查询或重置会话。
 - `POST /api/v1/recommendations`：通过同一令牌执行快照绑定、回退、过滤、Top-K 与结果记录；可选 UUID `Idempotency-Key` 对相同输入重放原结果，不同输入返回 409。受控 bundle 的 `dense` 路径是可移植 CPU 基线，不是 R06 研究模型。
 - `POST /api/v1/feedback`：校验反馈来自该会话真实返回的商品；按 `event_id` 幂等记录，并在有效状态变化时推进历史版本。
-- `GET /app`：本地 Web 页面，选择用户后自动推荐，支持详情、收藏切换、隐藏撤销和重置；`GET /api/v1/items` 与 `GET /api/v1/items/{id}` 读取商品，进程内模式提供三件演示商品。
+- `GET /app`：本地 Web 页面，选择用户后自动推荐，支持详情、收藏切换、隐藏撤销和重置；`GET /api/v1/items` 与 `GET /api/v1/items/{id}` 读取商品，进程内模式提供 24 件明确标记的虚构演示商品。更新代码后需重启服务，旧会话不迁移。
 - `/api/v1/admin/`：使用 `X-Admin-Token` 导入商品、下架、登记受控 bundle、按预期活动版本发布并恢复。未配置令牌时拒绝管理操作。
 - `GET /openapi.json`：当前已经实现的接口说明。交互文档入口 `/docs` 的页面资源可能需要网络。
 
