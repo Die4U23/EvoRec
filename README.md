@@ -95,6 +95,8 @@ python -m venv .venv
 
 检查与契约导出：
 
+完整测试现在把 PostgreSQL 集成测试视为必需项：先为当前进程设置 `EVOREC_DATABASE_URL`，测试会在该数据库中创建并清理独立的临时 schema；未设置或无法连接时明确失败，不再静默跳过。仅验证服务代码时可运行 `.github/workflows/service-integration.yml` 中列出的轻量测试集合，CI 会启动一次性 PostgreSQL 服务。
+
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe scripts/export_contracts.py

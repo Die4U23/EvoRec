@@ -1,5 +1,4 @@
 import asyncio
-import os
 from dataclasses import replace
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
@@ -17,13 +16,14 @@ from evorec.domain.models import (
     Strategy,
 )
 from evorec.infrastructure.postgres import PostgresDemoBackend
+from scripts.seed_demo_catalog import main as seed_demo_catalog
 
 
-DATABASE_URL = os.getenv("EVOREC_DATABASE_URL")
-pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="EVOREC_DATABASE_URL is not configured")
-
-
-def test_postgres_session_and_recommendation_survive_new_app_instance():
+def test_postgres_session_and_recommendation_survive_new_app_instance(
+    isolated_database, monkeypatch,
+):
+    monkeypatch.delenv("EVOREC_BUNDLE_ROOT", raising=False)
+    seed_demo_catalog()
     async def exercise():
         first_app = create_app()
         async with httpx.AsyncClient(
@@ -124,7 +124,7 @@ def test_postgres_session_and_recommendation_survive_new_app_instance():
                 items=tuple(ScoredCandidate(**item) for item in result["items"]),
                 fallback_reason=result["fallback_reason"],
             )
-            recorder = PostgresDemoBackend(DATABASE_URL)
+            recorder = PostgresDemoBackend(isolated_database)
             await recorder.save(persisted_result)
             changed_item = replace(
                 persisted_result.items[0], score=persisted_result.items[0].score + 0.01,
@@ -154,7 +154,7 @@ def test_postgres_session_and_recommendation_survive_new_app_instance():
             )
             assert denied.status_code == 401
 
-        with psycopg.connect(DATABASE_URL) as connection:
+        with psycopg.connect(isolated_database) as connection:
             row = connection.execute(
                 """
                 SELECT status, actual_strategy,
@@ -177,21 +177,6 @@ def test_postgres_session_and_recommendation_survive_new_app_instance():
             ).fetchone()
             assert row == (
                 "completed", "popular", 2, 4, True, "exposure", "detail_view_backfill",
-            )
-            connection.execute(
-                "DELETE FROM session_item_states WHERE session_id = %s",
-                (session["session_id"],),
-            )
-            connection.execute(
-                "DELETE FROM feedback_events WHERE session_id = %s",
-                (session["session_id"],),
-            )
-            connection.execute(
-                "DELETE FROM recommendation_requests WHERE request_id = %s",
-                (result["request_id"],),
-            )
-            connection.execute(
-                "DELETE FROM sessions WHERE session_id = %s", (session["session_id"],),
             )
 
     asyncio.run(exercise())

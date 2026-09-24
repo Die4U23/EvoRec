@@ -1,0 +1,28 @@
+{
+  "date": "2026-09-24",
+  "purpose": "Prevent database tests from passing by skip or local seed state",
+  "full_suite": {
+    "environment": "Windows Python 3.12 research environment with local PostgreSQL",
+    "tests": 195,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "report": "tmp/m23-reliable-tests.xml"
+  },
+  "service_only_suite": {
+    "environment": "Windows lightweight service environment with local PostgreSQL",
+    "result": "98 selected tests passed; no skips"
+  },
+  "negative_gate_check": {
+    "condition": "EVOREC_DATABASE_URL unset",
+    "result": "database integration test setup failed with exit code 1"
+  },
+  "repeatability": "concurrent publication test passed three independent runs",
+  "ci": "GitHub Actions service-integration workflow added; remote result pending",
+  "limits": [
+    "Integration tests use fresh PostgreSQL schemas but not a fresh PostgreSQL server per test.",
+    "Fault tests inject failure and construct durable states; they do not kill a live process.",
+    "Concurrency tests run within one application process, not across multiple service instances.",
+    "No browser visual or real R06 model acceptance test was performed."
+  ]
+}
