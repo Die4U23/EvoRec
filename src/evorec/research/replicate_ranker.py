@@ -3,7 +3,6 @@ import argparse
 import hashlib
 import json
 import shutil
-import subprocess
 import time
 from pathlib import Path
 
@@ -20,7 +19,7 @@ from evorec.research.ranker import (
 from evorec.research.ranker_data import load_protocols, read
 from evorec.research.replication_report import render
 from evorec.research.reporting import write_atomic
-from evorec.research.runner import file_sha, git_snapshot, peak_memory_bytes
+from evorec.research.runner import clean_experiment_snapshot, file_sha, peak_memory_bytes
 from evorec.research.train import write_trace
 from evorec.research.train_ranker import now
 
@@ -153,19 +152,7 @@ def run(config_path, output):
     for name in ("ranker.py", "ranker_data.py", "train_ranker.py"):
         if file_sha(Path(__file__).parent / name) != original["code"]["source_sha256"][name]:
             raise ValueError("original ranking implementation drift")
-    provenance = git_snapshot()
-    scoped_paths = ["src/evorec/research", "research/configs", "tests"]
-    changed = subprocess.check_output(
-        ["git", "diff", "HEAD", "--name-only", "--", *scoped_paths], text=True).splitlines()
-    untracked = subprocess.check_output(
-        ["git", "ls-files", "--others", "--exclude-standard", "--", *scoped_paths],
-        text=True).splitlines()
-    if changed or untracked:
-        raise ValueError("commit experiment implementation and tests before training")
-    provenance["experiment_paths_clean"] = True
-    provenance["unrelated_worktree_changes"] = subprocess.check_output(
-        ["git", "-c", "core.quotePath=false", "status", "--porcelain"], text=True,
-        encoding="utf-8").splitlines()
+    provenance = clean_experiment_snapshot()
     if not torch.cuda.is_available():
         raise RuntimeError("registered training requires CUDA")
     _, protocol, overlaps = load_protocols(source_config)

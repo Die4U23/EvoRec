@@ -21,7 +21,7 @@ from evorec.research.baselines import ItemCF, Popular
 from evorec.research.neural import NeuralPredictor, SequenceModel, configure_seed, padded
 from evorec.research.protocol import AvailableAt, Protocol, summarize, trace_records
 from evorec.research.reporting import update_report
-from evorec.research.runner import file_sha, git_snapshot, peak_memory_bytes
+from evorec.research.runner import clean_experiment_snapshot, file_sha, peak_memory_bytes
 from evorec.research.training_baselines import CollaborativeBlend, RecentPopular
 
 
@@ -144,6 +144,7 @@ def run(config_path, output):
     config = json.loads(config_path.read_text())
     if config["stage"] != "R02-R03-training":
         raise ValueError("unexpected training stage")
+    provenance = clean_experiment_snapshot()
     protocol = Protocol(config)
     output.mkdir(parents=True, exist_ok=False)
     source_dir = output / "source"
@@ -160,7 +161,7 @@ def run(config_path, output):
         "configuration": config, "data_provenance": protocol.manifest, "statistics": protocol.statistics,
         "device": torch.cuda.get_device_name(0), "torch": torch.__version__, "torch_cuda": torch.version.cuda,
         "environment_note": "research venv inherits existing system packages; service venv is unchanged",
-        "code": {**git_snapshot(), "source_sha256": {p.name: file_sha(p) for p in sorted(source_dir.glob("*.py"))}},
+        "code": {**provenance, "source_sha256": {p.name: file_sha(p) for p in sorted(source_dir.glob("*.py"))}},
         "baselines": [], "trials": [], "test_results": None,
     }
     try:

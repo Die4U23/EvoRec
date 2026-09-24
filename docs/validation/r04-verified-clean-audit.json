@@ -1,0 +1,109 @@
+{
+  "status": "passed",
+  "checked_at": "2026-09-24T05:58:39.486466+00:00",
+  "protocol_id": "143c41104f4278b2",
+  "series_sha256": "a92b83579e04cb4cfb96444db96096013e04736deac49d4e322bcf82b7961242",
+  "audit_script_sha256": "a8822cee57755fd7d7b20d9e21e3de8959aac5d97467a96c342cf060e8a756f8",
+  "trace_records_checked": 196730,
+  "candidate_eligibility_checks": 39346000,
+  "gate_records_reconstructed": 146879,
+  "validation_queries": 11460,
+  "test_queries": 12797,
+  "checks": [
+    "strict-time histories from R04; cold membership from frozen R03",
+    "R01/R02/R03 user disjointness",
+    "five cohort metrics and coverage",
+    "source/config/sample/metadata/encoder/checkpoint fingerprints",
+    "independent history signals and exact policy reconstruction",
+    "validation-only quality floor and tie-break",
+    "three-seed mean/sample SD"
+  ],
+  "traces": [
+    {
+      "split": "validation",
+      "name": "Content-SVD",
+      "rows": 11460
+    },
+    {
+      "split": "validation",
+      "name": "fixed-s17",
+      "rows": 11460
+    },
+    {
+      "split": "validation",
+      "name": "reserve-1-s17",
+      "rows": 11460
+    },
+    {
+      "split": "validation",
+      "name": "reserve-2-s17",
+      "rows": 11460
+    },
+    {
+      "split": "validation",
+      "name": "gated-1-s17",
+      "rows": 11460
+    },
+    {
+      "split": "validation",
+      "name": "gated-2-s17",
+      "rows": 11460
+    },
+    {
+      "split": "test",
+      "name": "Popular",
+      "rows": 12797
+    },
+    {
+      "split": "test",
+      "name": "CF-blend-a0.25",
+      "rows": 12797
+    },
+    {
+      "split": "test",
+      "name": "Content-SVD",
+      "rows": 12797
+    },
+    {
+      "split": "test",
+      "name": "fixed-s17",
+      "rows": 12797
+    },
+    {
+      "split": "test",
+      "name": "reserve-1-s17",
+      "rows": 12797
+    },
+    {
+      "split": "test",
+      "name": "reserve-2-s17",
+      "rows": 12797
+    },
+    {
+      "split": "test",
+      "name": "gated-1-s17",
+      "rows": 12797
+    },
+    {
+      "split": "test",
+      "name": "gated-2-s17",
+      "rows": 12797
+    },
+    {
+      "split": "test",
+      "name": "fixed-s29",
+      "rows": 12797
+    },
+    {
+      "split": "test",
+      "name": "fixed-s43",
+      "rows": 12797
+    }
+  ],
+  "limits": [
+    "static metadata assumption",
+    "no statistical significance test",
+    "rule gate only; retrieval costs are not avoided",
+    "no online performance claim"
+  ]
+}

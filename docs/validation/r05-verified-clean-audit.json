@@ -1,0 +1,240 @@
+{
+  "status": "passed",
+  "checked_at": "2026-09-24T06:22:21.856590+00:00",
+  "protocol_id": "2624e6561e71af4b",
+  "series_sha256": "8f129a7ca805f726280c3d272b826ac2ab78b561b962cc30af80b121e5345759",
+  "audit_script_sha256": "2284f6abfc59edc492dedde5b1b6655615f1e7d9ff27520621389ada1d9d72f5",
+  "ranking_records_checked": 182771,
+  "ranking_candidate_checks": 36554200,
+  "pool_records_checked": 45580,
+  "pool_candidate_checks": 15220569,
+  "cached_feature_rows_checked": 28144,
+  "training_examples_checked": 3851,
+  "checks": [
+    "independent strict-time queries and training-prefix signatures",
+    "user disjointness R01-R04",
+    "pre-2017 text fit and independent IDF",
+    "hash-sampled training requests and real candidate target positions",
+    "pool legality and cached context/content/cold/age/history features",
+    "all five cohort metrics and coverage",
+    "validation checkpoint selection and default method gate",
+    "checkpoint hashes/feature binding/recorded reload equality",
+    "three-seed mean and sample SD"
+  ],
+  "slice_results": [
+    {
+      "split": "validation",
+      "name": "RRF",
+      "slices": {
+        "cold_with_history": {
+          "n": 1591,
+          "hits20": 5
+        },
+        "cold_without_history": {
+          "n": 2425,
+          "hits20": 0
+        }
+      }
+    },
+    {
+      "split": "validation",
+      "name": "CF-blend",
+      "slices": {
+        "cold_with_history": {
+          "n": 1591,
+          "hits20": 0
+        },
+        "cold_without_history": {
+          "n": 2425,
+          "hits20": 0
+        }
+      }
+    },
+    {
+      "split": "validation",
+      "name": "Content-SVD",
+      "slices": {
+        "cold_with_history": {
+          "n": 1591,
+          "hits20": 13
+        },
+        "cold_without_history": {
+          "n": 2425,
+          "hits20": 0
+        }
+      }
+    },
+    {
+      "split": "validation",
+      "name": "ListMLP-s17",
+      "slices": {
+        "cold_with_history": {
+          "n": 1591,
+          "hits20": 7
+        },
+        "cold_without_history": {
+          "n": 2425,
+          "hits20": 0
+        }
+      }
+    },
+    {
+      "split": "validation",
+      "name": "ColdListMLP-s17",
+      "slices": {
+        "cold_with_history": {
+          "n": 1591,
+          "hits20": 20
+        },
+        "cold_without_history": {
+          "n": 2425,
+          "hits20": 0
+        }
+      }
+    },
+    {
+      "split": "validation",
+      "name": "ListMLP-s29",
+      "slices": {
+        "cold_with_history": {
+          "n": 1591,
+          "hits20": 8
+        },
+        "cold_without_history": {
+          "n": 2425,
+          "hits20": 0
+        }
+      }
+    },
+    {
+      "split": "validation",
+      "name": "ListMLP-s43",
+      "slices": {
+        "cold_with_history": {
+          "n": 1591,
+          "hits20": 10
+        },
+        "cold_without_history": {
+          "n": 2425,
+          "hits20": 0
+        }
+      }
+    },
+    {
+      "split": "test",
+      "name": "RRF",
+      "slices": {
+        "cold_with_history": {
+          "n": 3139,
+          "hits20": 6
+        },
+        "cold_without_history": {
+          "n": 3949,
+          "hits20": 0
+        }
+      }
+    },
+    {
+      "split": "test",
+      "name": "CF-blend",
+      "slices": {
+        "cold_with_history": {
+          "n": 3139,
+          "hits20": 0
+        },
+        "cold_without_history": {
+          "n": 3949,
+          "hits20": 0
+        }
+      }
+    },
+    {
+      "split": "test",
+      "name": "Content-SVD",
+      "slices": {
+        "cold_with_history": {
+          "n": 3139,
+          "hits20": 16
+        },
+        "cold_without_history": {
+          "n": 3949,
+          "hits20": 0
+        }
+      }
+    },
+    {
+      "split": "test",
+      "name": "ListMLP-s17",
+      "slices": {
+        "cold_with_history": {
+          "n": 3139,
+          "hits20": 11
+        },
+        "cold_without_history": {
+          "n": 3949,
+          "hits20": 0
+        }
+      }
+    },
+    {
+      "split": "test",
+      "name": "ColdListMLP-s17",
+      "slices": {
+        "cold_with_history": {
+          "n": 3139,
+          "hits20": 26
+        },
+        "cold_without_history": {
+          "n": 3949,
+          "hits20": 0
+        }
+      }
+    },
+    {
+      "split": "test",
+      "name": "ListMLP-s29",
+      "slices": {
+        "cold_with_history": {
+          "n": 3139,
+          "hits20": 8
+        },
+        "cold_without_history": {
+          "n": 3949,
+          "hits20": 0
+        }
+      }
+    },
+    {
+      "split": "test",
+      "name": "ListMLP-s43",
+      "slices": {
+        "cold_with_history": {
+          "n": 3139,
+          "hits20": 14
+        },
+        "cold_without_history": {
+          "n": 3949,
+          "hits20": 0
+        }
+      }
+    },
+    {
+      "split": "test",
+      "name": "R03-Tower-RRF-s17",
+      "slices": {
+        "cold_with_history": {
+          "n": 3139,
+          "hits20": 2
+        },
+        "cold_without_history": {
+          "n": 3949,
+          "hits20": 0
+        }
+      }
+    }
+  ],
+  "limits": [
+    "retrieval ranks are not re-inferred by this audit; source snapshots and target-blind unit tests cover construction",
+    "static metadata assumption; no statistical significance or online claim"
+  ]
+}

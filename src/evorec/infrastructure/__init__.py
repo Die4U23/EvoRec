@@ -1,1 +1,1 @@
-"""Concrete adapters. Database and model adapters will be added after validation."""
+"""Concrete database, validation, and controlled model-loading adapters."""

@@ -16,7 +16,7 @@ from evorec.research.content import ContentProtocol, ContentFeatures, ContentPre
 from evorec.research.gating import history_signal, apply_policy, select_policy
 from evorec.research.neural import configure_seed
 from evorec.research.protocol import summarize
-from evorec.research.runner import file_sha, git_snapshot, peak_memory_bytes
+from evorec.research.runner import clean_experiment_snapshot, file_sha, peak_memory_bytes
 from evorec.research.train import evaluate_baseline, write_trace
 from evorec.research.train_content import load_tower, diagnostics
 from evorec.research.training_baselines import RecentPopular, CollaborativeBlend
@@ -60,6 +60,7 @@ class FrozenPolicyProtocol(ContentProtocol):
 
 def run(config_path, output):
     config = read(config_path)
+    provenance = clean_experiment_snapshot()
     if config["stage"] != "R04-gating" or config["selection"]["seed"] != config["seeds"][0]:
         raise ValueError("unexpected experiment")
     frozen_dir = Path(config["frozen_run"])
@@ -106,7 +107,7 @@ def run(config_path, output):
                    "encoder": frozen["content_encoder"], "feature_fingerprint": features.fingerprint,
                    "inference_source_sha256": checked_sources},
         "device": torch.cuda.get_device_name(), "torch": torch.__version__,
-        "code": {**git_snapshot(), "source_sha256": {p.name: file_sha(p) for p in (output/"source").glob("*.py")}},
+        "code": {**provenance, "source_sha256": {p.name: file_sha(p) for p in (output/"source").glob("*.py")}},
         "validation_results": [], "test_results": [],
     }
     save(series, output)

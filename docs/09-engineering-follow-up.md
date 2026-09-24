@@ -6,7 +6,7 @@
 
 分层目录、不可变请求快照、依赖接口与推荐编排已经存在。Recommend.execute 已使用 asyncio.timeout 和 AdmissionPort 的异步上下文，检查快照绑定并在返回成功前保存结果。AdmissionPort / RankingPort / ResultRecorderPort 已声明远端任务独立租约、取消职责和提交结果不确定时的对账要求。
 
-[ADR-002 / ADR-003 / ADR-006](architecture/decisions.md)仍明确：真实 bundle 校验和加载、数据库事务、发布协调与任务队列待实现。现有测试替身不能证明 PostgreSQL、跨进程取消或崩溃恢复正确。因此不沿用原文把设计全部评价成完成能力的说法。
+[ADR-002 / ADR-003 / ADR-006](architecture/decisions.md)仍明确：bundle 首层校验和白名单 CPU 受控加载边界已经实现，但 R06 真实模型适配、发布协调与任务队列仍待实现。现有测试和可移植基线不能证明真实模型兼容、跨进程取消或崩溃恢复正确。因此不把设计或边界验证评价成完整线上能力。
 
 ## 采纳与修正
 

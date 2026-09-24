@@ -18,7 +18,7 @@ from evorec.research.ranker import (ResidualListRanker,listwise_loss,predict,loa
 from evorec.research.ranker_data import (read,load_protocols,fit_early_encoder,prepare_training,
                                         prepare_pool,write_pool_trace,pool_diagnostics)
 from evorec.research.ranker_report import report
-from evorec.research.runner import file_sha,git_snapshot,peak_memory_bytes
+from evorec.research.runner import clean_experiment_snapshot,file_sha,peak_memory_bytes
 from evorec.research.train import write_trace
 from evorec.research.train_content import load_tower
 from evorec.research.training_baselines import RecentPopular
@@ -101,6 +101,7 @@ def fit(protocol,features,train,targets,cold,validation,pool,setting,seed,series
 def run(config_path,output):
     config=read(config_path)
     if config["stage"]!="R05-ranker": raise ValueError("unexpected stage")
+    provenance=clean_experiment_snapshot()
     configure_seed(config["seeds"][0])
     if not torch.cuda.is_available(): raise RuntimeError("registered run requires CUDA")
     parent,protocol,overlaps=load_protocols(config)
@@ -111,7 +112,7 @@ def run(config_path,output):
             "protocol_id":protocol.protocol_id,"protocol":protocol.fingerprint,"user_overlaps":overlaps,
             "data_provenance":protocol.manifest,"model_training_provenance":parent.manifest,
             "metadata_provenance":protocol.metadata_manifest,
-            "code":{**git_snapshot(),"source_sha256":{p.name:file_sha(p) for p in (output/"source").glob("*.py")}},
+            "code":{**provenance,"source_sha256":{p.name:file_sha(p) for p in (output/"source").glob("*.py")}},
             "device":torch.cuda.get_device_name(),"torch":torch.__version__,"trials":[],
             "validation_results":[],"test_results":[]}
     save(series,output)

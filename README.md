@@ -113,9 +113,10 @@ python -m venv .venv
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/validate_bundle.py artifacts artifacts/<bundle-uuid>
+.\.venv\Scripts\python.exe scripts/load_bundle.py artifacts artifacts/<bundle-uuid>
 ```
 
-该命令只验证清单结构、受管路径、封闭文件集合、SHA-256、商品映射和向量字节契约；不会加载模型、切换活动版本或使就绪检查通过。清单字段与商品集合指纹规则见[产物区域说明](artifacts/README.md)。
+第一条命令只验证清单结构、受管路径、封闭文件集合、SHA-256、商品映射和向量字节契约。第二条再次校验完整性，在资源上限内加载白名单 JSON/float32 CPU 运行时并回放黄金样本；它仍不会切换活动版本或使就绪检查通过。格式与边界见[产物区域说明](artifacts/README.md)。
 
 本机 PostgreSQL 已准备好且 `.env` 配置完成时，可以应用并验证 M11 核心迁移：
 
@@ -135,7 +136,7 @@ Remove-Item Env:EVOREC_DATABASE_URL
 
 ## 下一项工作
 
-R06 已完成并保留未获支持的结果。研究上先解释无历史冷目标不可达与候选增益未转化为排名增益的原因，再登记后续实验；工程上详情点击曝光补记与 bundle 首层校验已经落地，下一步推进受控模型加载、持久发布恢复，并单独设计客户端推荐幂等键。每阶段分别提交协议、实现和结果，独立开发使用 codex/ 分支。
+R06 已完成并保留未获支持的结果。研究上先解释无历史冷目标不可达与候选增益未转化为排名增益的原因，再登记后续实验；工程上详情点击曝光补记、bundle 首层校验和可移植受控加载边界已经落地，下一步接入真实冻结模型、持久发布恢复，并单独设计客户端推荐幂等键。每阶段分别提交协议、实现和结果，独立开发使用 codex/ 分支。
 
 实验运行入口见 [研究工作区](research/README.md)；本机测试临时目录权限的处理方式也记录在该页。
 

@@ -208,7 +208,15 @@ def test_runner_rejects_checksum_mismatch_before_creating_run(tmp_path):
     assert not output.exists()
 
 
-def test_recorded_run_matches_the_saved_request_trace(tmp_path):
+def test_recorded_run_matches_the_saved_request_trace(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "evorec.research.runner.clean_experiment_snapshot",
+        lambda: {
+            "git_base_commit": "test-commit",
+            "working_tree_dirty": False,
+            "experiment_paths_clean": True,
+        },
+    )
     dataset = tmp_path / "sample.csv"
     dataset.write_text(
         "user_id,parent_asin,rating,timestamp\n"

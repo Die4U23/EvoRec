@@ -59,6 +59,8 @@ R01 仅读取前缀，不保证整个 gzip CRC；R02 读取完整文件至 EOF �
 
 每轮完成后更新最新报告，保留运行目录内的完整系列记录、源代码快照、配置、最佳模型和逐请求轨迹。HTML 每 30 秒刷新；任务完成后不会自动开始下一轮。一个最新报告目录只供一个训练进程写入，避免并行实验互相覆盖。
 
+所有记录型实验现在会在创建输出目录前检查 Git：`src/evorec/research`、`research/configs`、`tests` 或 `scripts` 有未提交变更就拒绝运行。忽略的数据和实验产物可以保留；范围外变更会写入运行来源记录。R02–R05 原运行仍如实标记为脏工作区，其精确源码与配置由[历史复原清单](provenance/r02-r05-source-reconstruction.json)和[检查结果](../docs/validation/r02-r05-provenance-reconstruction.json)补充，不冒充原始干净提交。另有四轮从已提交代码启动的[干净工作区复验](../docs/experiments/r02-r05-clean-replication.md)，其结果与原运行分开记录。
+
 已完成运行目录为 artifacts/runs/r02-training-20260915，共 4 次训练、39 个 epoch。学习率选中 0.0003，三种子最佳轮次分别为 9、11、6。测试已查看，后续调参不能再把它宣称为未见测试；新的研究迭代先登记新的时间窗口或独立留出协议。
 
 ## 重建展示与独立审计
