@@ -41,6 +41,7 @@ from evorec.domain.models import (
     detail_exposure_event_id,
     detail_exposure_payload_sha256,
 )
+from evorec.domain.session_profiles import initial_history
 
 if TYPE_CHECKING:
     from evorec.infrastructure.management import CatalogManager
@@ -72,6 +73,8 @@ class PostgresDemoBackend:
             history_version=row["history_version"],
             history=tuple(row["history"]),
             hidden_items=frozenset(row["hidden_items"]),
+            favorite_items=frozenset(row["favorite_items"]),
+            profile_id=row["seed_user_id"] or "new",
         )
 
     @staticmethod
@@ -85,16 +88,28 @@ class PostgresDemoBackend:
     def _connect(self) -> psycopg.Connection:
         return psycopg.connect(self.database_url, row_factory=dict_row)
 
-    async def create_session(self) -> CreatedSession:
-        return await asyncio.to_thread(self._create_session)
+    async def create_session(self, profile_id: str = "new") -> CreatedSession:
+        return await asyncio.to_thread(self._create_session, profile_id)
 
-    def _create_session(self) -> CreatedSession:
-        snapshot = SessionSnapshot(uuid4(), 0, 0, (), frozenset())
+    def _create_session(self, profile_id: str = "new") -> CreatedSession:
+        history = initial_history(profile_id)
+        snapshot = SessionSnapshot(uuid4(), 0, 0, history, frozenset(), profile_id=profile_id)
         access_token = secrets.token_urlsafe(32)
         with self._connect() as connection:
+            if history:
+                available = connection.execute(
+                    """SELECT 1 FROM catalog_control c
+                       JOIN bundle_items bi ON bi.bundle_id = c.active_bundle_id
+                       JOIN items i ON i.item_id = bi.item_id
+                       WHERE c.singleton = 1 AND bi.item_id = %s AND i.is_active""",
+                    (history[0],),
+                ).fetchone()
+                if available is None:
+                    raise ValueError("sample profile requires the active demo catalog")
             connection.execute(
-                "INSERT INTO sessions (session_id, owner_token_sha256) VALUES (%s, %s)",
-                (snapshot.session_id, self._token_sha256(access_token)),
+                "INSERT INTO sessions (session_id, owner_token_sha256, seed_user_id, history) "
+                "VALUES (%s, %s, %s, %s)",
+                (snapshot.session_id, self._token_sha256(access_token), profile_id, Jsonb(list(history))),
             )
         return CreatedSession(snapshot, access_token)
 
@@ -106,7 +121,7 @@ class PostgresDemoBackend:
             cursor = connection.execute(
                 """
                 SELECT session_id, owner_token_sha256, epoch, history_version,
-                       history, hidden_items
+                       history, hidden_items, favorite_items, seed_user_id
                 FROM sessions WHERE session_id = %s
                 """,
                 (session_id,),
@@ -123,24 +138,25 @@ class PostgresDemoBackend:
     def _reset_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
         with self._connect() as connection:
             cursor = connection.execute(
-                "SELECT owner_token_sha256 FROM sessions WHERE session_id = %s FOR UPDATE",
+                "SELECT owner_token_sha256, seed_user_id FROM sessions WHERE session_id = %s FOR UPDATE",
                 (session_id,),
             )
             owner = cursor.fetchone()
             if owner is None:
                 raise ResourceNotFound("session does not exist")
             self._authorize(owner, access_token)
+            history = initial_history(owner["seed_user_id"] or "new")
             cursor = connection.execute(
                 """
                 UPDATE sessions
                 SET epoch = epoch + 1, history_version = history_version + 1,
-                    history = '[]'::jsonb, hidden_items = '[]'::jsonb,
+                    history = %s, hidden_items = '[]'::jsonb,
                     favorite_items = '[]'::jsonb, updated_at = now()
                 WHERE session_id = %s
                 RETURNING session_id, owner_token_sha256, epoch, history_version,
-                          history, hidden_items
+                          history, hidden_items, favorite_items, seed_user_id
                 """,
-                (session_id,),
+                (Jsonb(list(history)), session_id),
             )
             row = cursor.fetchone()
             connection.execute(
@@ -166,7 +182,7 @@ class PostgresDemoBackend:
             cursor = connection.execute(
                 """
                 SELECT session_id, owner_token_sha256, epoch, history_version,
-                       history, hidden_items
+                       history, hidden_items, favorite_items, seed_user_id
                 FROM sessions WHERE session_id = %s FOR UPDATE
                 """,
                 (command.session_id,),
@@ -430,6 +446,8 @@ class PostgresDemoBackend:
                 else:
                     favorites.discard(command.item_id)
                 changed = before != command.desired_state
+                if changed and command.desired_state:
+                    history.append(command.item_id)
 
             outcome_version = session["history_version"] + int(changed)
             if changed:

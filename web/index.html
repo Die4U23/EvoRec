@@ -12,43 +12,62 @@
     p, small { color: #53646c; line-height: 1.5; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 18px; }
     section { background: white; border: 1px solid #dce5df; border-radius: 12px; padding: 20px; }
+    .recommend-section { grid-column: span 2; }
+    #recommendations { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
+    #recommendations > .status { grid-column: 1 / -1; }
+    #recommendations > .item { margin: 0; }
+    #items { max-height: 670px; overflow: auto; }
     label { display: block; font-weight: 600; margin: 12px 0 5px; }
     input, select, button { box-sizing: border-box; font: inherit; }
     input, select { width: 100%; padding: 9px; border: 1px solid #a9bcb2; border-radius: 6px; }
     button { background: #145b48; color: white; border: 0; border-radius: 6px; padding: 9px 13px; margin: 9px 6px 0 0; cursor: pointer; }
     button.secondary { background: #596a71; } button:disabled { opacity: .5; cursor: not-allowed; }
-    .item { padding: 11px 0; border-top: 1px solid #e2e9e4; }
-    .item strong { display: block; } .item small { display: block; }
+    .item { padding: 14px; border: 1px solid #e2e9e4; border-radius: 9px; margin: 10px 0; }
+    .item strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .item small { display: block; }
+    .item img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 6px; }
+    .placeholder { display: grid; place-items: center; height: 110px; background: #edf3ee; color: #53646c; border-radius: 6px; }
+    .wide { grid-column: 1 / -1; }
+    .status { background: #edf3ee; padding: 10px; border-radius: 6px; }
+    .skeleton { min-height: 80px; background: #edf3ee; animation: pulse 1s ease-in-out infinite alternate; }
+    @keyframes pulse { to { opacity: .45; } }
     #message { min-height: 24px; color: #9b3323; font-weight: 600; }
     code { overflow-wrap: anywhere; }
+    @media (max-width: 760px) { .recommend-section, .wide { grid-column: auto; } }
   </style>
 </head>
 <body>
   <header>
     <h1>EvoRec</h1>
-    <p>本地推荐与商品管理演示。结果来自服务 API；受控 CPU bundle 不代表 R06 研究模型已上线。</p>
+    <p>本地推荐与商品管理演示。内置商品为虚构演示数据；受控 CPU bundle 不代表 R06 研究模型已上线。</p>
     <div id="system">正在读取服务状态…</div>
     <div id="message" role="status" aria-live="polite"></div>
   </header>
   <main class="grid">
-    <section>
+    <section class="recommend-section">
       <h2>推荐体验</h2>
-      <button id="new-session">创建会话</button>
+      <label for="profile">体验身份</label>
+      <select id="profile"><option value="sample">示例用户（已有合作商品浏览历史）</option><option value="new">新用户（无历史，从热门开始）</option></select>
+      <button id="new-session">开始体验</button>
       <button id="reset-session" class="secondary">重置会话</button>
       <p id="session">尚未创建会话。</p>
+      <p>示例用户初始浏览了 Co-op Demo；重置会恢复此历史。新用户直接走热门推荐。</p>
       <label for="strategy">策略</label>
       <select id="strategy"><option value="popular">热门</option><option value="dense">受控稠密模型</option><option value="adaptive">自适应（可能回退）</option></select>
-      <label for="count">推荐数量</label><input id="count" type="number" min="1" max="50" value="5">
+      <label for="count">推荐数量</label><input id="count" type="number" min="1" max="50" value="10">
       <button id="recommend">获取推荐</button>
       <div id="recommendations"></div>
+      <div id="undo" role="status" aria-live="polite"></div>
+      <div id="detail"></div>
     </section>
     <section>
       <h2>商品目录</h2>
       <button id="refresh-items">刷新商品</button>
-      <div id="items"></div>
+      <div id="items" role="region" aria-label="商品目录列表" tabindex="0"></div>
     </section>
-    <section>
-      <h2>管理操作</h2>
+    <section class="wide">
+      <details>
+      <summary>管理操作（本地演示）</summary>
       <p>仅供本地单实例演示。管理员令牌只保存在当前页面内存中。</p>
       <label for="admin-token">管理员令牌</label><input id="admin-token" type="password" autocomplete="off">
       <label for="item-id">商品 ID</label><input id="item-id" placeholder="new-item">
@@ -61,11 +80,14 @@
       <button id="publish-bundle">发布</button>
       <button id="recover" class="secondary">检查／恢复发布</button>
       <p id="publication">尚未读取发布状态。</p>
+      </details>
     </section>
   </main>
   <script>
     const el = id => document.getElementById(id);
-    let session = null, latest = null;
+    let session = null, latest = null, catalog = new Map(), pendingRecommendation = null;
+    const pendingFeedback = new Map();
+    const hiddenUndo = new Map();
     const message = value => { el('message').textContent = value; };
     async function api(path, options = {}) {
       const response = await fetch(path, {...options, headers: {'Content-Type': 'application/json', ...(options.headers || {})}});
@@ -73,14 +95,17 @@
       if (!response.ok) throw new Error(data.error?.message || `HTTP ${response.status}`);
       return data;
     }
-    async function run(action) { try { message(''); await action(); } catch (error) { message(error.message); } }
+    async function run(action) { try { message(''); await action(); } catch (error) { message(`操作失败：${error.message}。可重试。`); } }
     const auth = () => ({'X-Session-Token': session.access_token});
     const admin = () => ({'X-Admin-Token': el('admin-token').value});
     function showSession() {
-      el('session').textContent = session ? `会话 ${session.session_id} · 历史版本 ${session.history_version}` : '尚未创建会话。';
+      const title = id => catalog.get(id)?.title || id;
+      el('session').textContent = session ? `${session.profile_id === 'sample' ? '示例用户' : '新用户'} · 已看过 ${[...new Set(session.history)].map(title).join('、') || '暂无'} · 收藏 ${session.favorite_items.map(title).join('、') || '暂无'} · 版本 ${session.history_version}` : '尚未创建会话。';
     }
     async function refreshItems() {
       const items = await api('/api/v1/items');
+      catalog = new Map(items.map(item => [item.item_id, item]));
+      showSession();
       el('items').replaceChildren();
       for (const item of items) {
         const row = document.createElement('div'); row.className = 'item';
@@ -95,36 +120,105 @@
       el('publication').textContent = `活动 bundle：${state.active_bundle_id || '无'} · 接收：${state.admission_open ? '开放' : '关闭'} · 下架版本：${state.exclusion_version}`;
       return state;
     }
-    el('new-session').onclick = () => run(async () => { session = await api('/api/v1/sessions', {method: 'POST'}); latest = null; showSession(); });
+    async function syncSession() {
+      const fresh = await api(`/api/v1/sessions/${session.session_id}`, {headers: auth()});
+      session = {...session, ...fresh}; showSession();
+    }
+    function clearResults() {
+      latest = null; pendingRecommendation = null; pendingFeedback.clear(); hiddenUndo.clear();
+      el('recommendations').replaceChildren(); el('undo').replaceChildren(); el('detail').replaceChildren();
+    }
+    async function sendFeedback(itemId, kind, desiredState) {
+      const key = `${latest.request_id}:${itemId}:${kind}:${desiredState}`;
+      let payload = pendingFeedback.get(key);
+      if (!payload) {
+        payload = {event_id: crypto.randomUUID(), session_id: session.session_id,
+          request_id: latest.request_id, item_id: itemId, kind,
+          observed_at: new Date().toISOString()};
+        if (desiredState !== undefined) payload.desired_state = desiredState;
+        pendingFeedback.set(key, payload);
+      }
+      const result = await api('/api/v1/feedback', {method: 'POST', headers: auth(), body: JSON.stringify(payload)});
+      pendingFeedback.delete(key);
+      session.history_version = result.history_version;
+      await syncSession();
+      return result;
+    }
+    function card(item) {
+      const data = catalog.get(item.item_id);
+      const row = document.createElement('article'); row.className = 'item';
+      const picture = data?.image_url && /^https?:\/\//i.test(data.image_url) ? document.createElement('img') : document.createElement('div');
+      if (picture.tagName === 'IMG') { picture.src = data.image_url; picture.alt = data.title; }
+      else { picture.className = 'placeholder'; picture.textContent = '暂无图片'; }
+      const title = document.createElement('strong'); title.textContent = data?.title || item.item_id;
+      const meta = document.createElement('small'); meta.textContent = `${data?.category || '未知分类'} · ${item.item_id}`;
+      const detail = document.createElement('button'); detail.textContent = '查看详情';
+      detail.onclick = () => run(async () => {
+        const full = await api(`/api/v1/items/${encodeURIComponent(item.item_id)}`);
+        await sendFeedback(item.item_id, 'detail_view');
+        const panel = el('detail'); panel.replaceChildren();
+        const heading = document.createElement('h2'); heading.textContent = full.title;
+        const description = document.createElement('p'); description.textContent = full.description || '暂无描述';
+        panel.append(heading, description); message('已记录详情浏览');
+      });
+      const favorite = document.createElement('button'); favorite.className = 'secondary';
+      favorite.textContent = session.favorite_items.includes(item.item_id) ? '取消收藏' : '收藏';
+      favorite.onclick = () => run(async () => {
+        const desired = !session.favorite_items.includes(item.item_id);
+        await sendFeedback(item.item_id, 'favorite_set', desired);
+        favorite.textContent = desired ? '取消收藏' : '收藏'; message(desired ? '已收藏' : '已取消收藏');
+      });
+      const hide = document.createElement('button'); hide.className = 'secondary'; hide.textContent = '隐藏';
+      hide.onclick = () => run(async () => {
+        await sendFeedback(item.item_id, 'hide_set', true);
+        row.remove(); hiddenUndo.set(item.item_id, item); renderUndo(); message('已隐藏，下一次推荐将排除此商品');
+      });
+      row.append(picture, title, meta, detail, favorite, hide);
+      return row;
+    }
+    function renderUndo() {
+      const area = el('undo'); area.replaceChildren();
+      for (const [id, item] of hiddenUndo) {
+        const button = document.createElement('button'); button.textContent = `撤销隐藏 ${catalog.get(id)?.title || id}`;
+        button.onclick = () => run(async () => {
+          await sendFeedback(id, 'hide_set', false); hiddenUndo.delete(id);
+          el('recommendations').append(card(item)); renderUndo(); message('已撤销隐藏');
+        });
+        area.append(button);
+      }
+    }
+    async function recommend() {
+      if (!session) throw new Error('请先开始体验');
+      if (!pendingRecommendation) pendingRecommendation = {
+        key: crypto.randomUUID(), payload: {session_id: session.session_id,
+          expected_history_version: session.history_version, strategy: el('strategy').value,
+          k: Number(el('count').value)}
+      };
+      const list = el('recommendations'); list.replaceChildren();
+      for (let i = 0; i < 3; i++) { const skeleton = document.createElement('div'); skeleton.className = 'item skeleton'; list.append(skeleton); }
+      try {
+        latest = await api('/api/v1/recommendations', {method: 'POST',
+          headers: {...auth(), 'Idempotency-Key': pendingRecommendation.key},
+          body: JSON.stringify(pendingRecommendation.payload)});
+        pendingRecommendation = null; hiddenUndo.clear(); renderUndo();
+        list.replaceChildren();
+        const note = document.createElement('p'); note.className = 'status';
+        note.textContent = `实际策略：${latest.actual_strategy}${latest.fallback_reason ? '（回退原因：' + latest.fallback_reason + '）' : ''}。返回 ${latest.items.length}/${Number(el('count').value)} 项。${latest.items.length < Number(el('count').value) ? '商品不足，不补造重复结果。' : ''}`;
+        list.append(note);
+        for (const item of latest.items) list.append(card(item));
+        if (!latest.items.length) { const empty = document.createElement('p'); empty.textContent = '暂无可推荐商品。可重置会话或检查商品目录。'; list.append(empty); }
+      } catch (error) { list.replaceChildren(); throw new Error(`暂时无法生成推荐，请稍后重试：${error.message}`); }
+    }
+    el('new-session').onclick = () => run(async () => {
+      session = await api('/api/v1/sessions', {method: 'POST', body: JSON.stringify({profile_id: el('profile').value})});
+      clearResults(); showSession(); await refreshItems(); await recommend();
+    });
     el('reset-session').onclick = () => run(async () => {
       if (!session) throw new Error('请先创建会话');
       const fresh = await api(`/api/v1/sessions/${session.session_id}/reset`, {method: 'POST', headers: auth()});
-      session = {...session, ...fresh}; latest = null; el('recommendations').replaceChildren(); showSession();
+      session = {...session, ...fresh}; clearResults(); showSession(); await recommend();
     });
-    el('recommend').onclick = () => run(async () => {
-      if (!session) throw new Error('请先创建会话');
-      const key = crypto.randomUUID();
-      latest = await api('/api/v1/recommendations', {method: 'POST', headers: {...auth(), 'Idempotency-Key': key},
-        body: JSON.stringify({session_id: session.session_id, expected_history_version: session.history_version,
-          strategy: el('strategy').value, k: Number(el('count').value)})});
-      const list = el('recommendations'); list.replaceChildren();
-      const note = document.createElement('p'); note.textContent = `请求 ${latest.request_id} · 实际策略 ${latest.actual_strategy}${latest.fallback_reason ? ' · 回退：' + latest.fallback_reason : ''}`; list.append(note);
-      const recommendationId = latest.request_id;
-      const recommendationSessionId = session.session_id;
-      for (const item of latest.items) {
-        const row = document.createElement('div'); row.className = 'item';
-        const title = document.createElement('strong'); title.textContent = item.item_id;
-        const meta = document.createElement('small'); meta.textContent = `分数 ${item.score.toFixed(4)} · ${item.source}`;
-        const detail = document.createElement('button'); detail.textContent = '查看详情';
-        detail.onclick = () => run(async () => {
-          const result = await api('/api/v1/feedback', {method: 'POST', headers: auth(), body: JSON.stringify({
-            event_id: crypto.randomUUID(), session_id: recommendationSessionId, request_id: recommendationId,
-            item_id: item.item_id, kind: 'detail_view', observed_at: new Date().toISOString()})});
-          session.history_version = result.history_version; showSession(); message('详情反馈已记录');
-        });
-        row.append(title, meta, detail); list.append(row);
-      }
-    });
+    el('recommend').onclick = () => run(recommend);
     el('refresh-items').onclick = () => run(refreshItems);
     el('import-item').onclick = () => run(async () => {
       const item = {item_id: el('item-id').value, title: el('item-title').value, category: el('item-category').value};

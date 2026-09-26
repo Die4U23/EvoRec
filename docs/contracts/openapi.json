@@ -753,6 +753,22 @@
         "title": "RecommendationResponse",
         "type": "object"
       },
+      "SessionCreateInput": {
+        "additionalProperties": false,
+        "properties": {
+          "profile_id": {
+            "default": "new",
+            "enum": [
+              "new",
+              "sample"
+            ],
+            "title": "Profile Id",
+            "type": "string"
+          }
+        },
+        "title": "SessionCreateInput",
+        "type": "object"
+      },
       "SessionCreatedResponse": {
         "properties": {
           "access_token": {
@@ -762,6 +778,13 @@
           "epoch": {
             "title": "Epoch",
             "type": "integer"
+          },
+          "favorite_items": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Favorite Items",
+            "type": "array"
           },
           "hidden_items": {
             "items": {
@@ -780,6 +803,10 @@
           "history_version": {
             "title": "History Version",
             "type": "integer"
+          },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string"
           },
           "session_id": {
             "format": "uuid",
@@ -793,6 +820,8 @@
           "history_version",
           "history",
           "hidden_items",
+          "favorite_items",
+          "profile_id",
           "access_token"
         ],
         "title": "SessionCreatedResponse",
@@ -803,6 +832,13 @@
           "epoch": {
             "title": "Epoch",
             "type": "integer"
+          },
+          "favorite_items": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Favorite Items",
+            "type": "array"
           },
           "hidden_items": {
             "items": {
@@ -822,6 +858,10 @@
             "title": "History Version",
             "type": "integer"
           },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string"
+          },
           "session_id": {
             "format": "uuid",
             "title": "Session Id",
@@ -833,7 +873,9 @@
           "epoch",
           "history_version",
           "history",
-          "hidden_items"
+          "hidden_items",
+          "favorite_items",
+          "profile_id"
         ],
         "title": "SessionResponse",
         "type": "object"
@@ -1545,6 +1587,23 @@
     "/api/v1/sessions": {
       "post": {
         "operationId": "create_session_api_v1_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SessionCreateInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "content": {
@@ -1555,6 +1614,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Create Session",

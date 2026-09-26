@@ -40,12 +40,24 @@ from evorec.domain.models import (
     detail_exposure_event_id,
     detail_exposure_payload_sha256,
 )
+from evorec.domain.session_profiles import initial_history
+from evorec.infrastructure.demo_catalog import DEMO_ITEMS
 
 
 _DEMO_SCORES = {
-    "demo-coop": 0.95,
-    "demo-racing": 0.85,
-    "demo-strategy": 0.75,
+    item_id: 1.0 - position / 100
+    for position, (item_id, _, _, _) in enumerate(DEMO_ITEMS)
+}
+_DEMO_ITEM_DETAILS = {
+    item_id: {
+        "item_id": item_id,
+        "title": title,
+        "category": category,
+        "description": description,
+        "image_url": None,
+        "is_active": True,
+    }
+    for item_id, title, category, description in DEMO_ITEMS
 }
 
 
@@ -61,7 +73,6 @@ class InMemoryDemoBackend:
         self._lock = asyncio.Lock()
         self._sessions: dict[UUID, SessionSnapshot] = {}
         self._session_tokens: dict[UUID, str] = {}
-        self._favorite_items: dict[UUID, frozenset[str]] = {}
         self._request_states: dict[UUID, str] = {}
         self._request_commands: dict[UUID, tuple[UUID, int, Strategy, int]] = {}
         self._request_bindings: dict[UUID, RequestBinding] = {}
@@ -77,13 +88,12 @@ class InMemoryDemoBackend:
     def _token_sha256(access_token: str) -> str:
         return hashlib.sha256(access_token.encode("utf-8")).hexdigest()
 
-    async def create_session(self) -> CreatedSession:
-        snapshot = SessionSnapshot(uuid4(), 0, 0, (), frozenset())
+    async def create_session(self, profile_id: str = "new") -> CreatedSession:
+        snapshot = SessionSnapshot(uuid4(), 0, 0, initial_history(profile_id), frozenset(), profile_id=profile_id)
         access_token = secrets.token_urlsafe(32)
         async with self._lock:
             self._sessions[snapshot.session_id] = snapshot
             self._session_tokens[snapshot.session_id] = self._token_sha256(access_token)
-            self._favorite_items[snapshot.session_id] = frozenset()
         return CreatedSession(snapshot, access_token)
 
     async def get_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
@@ -112,11 +122,11 @@ class InMemoryDemoBackend:
                 current,
                 epoch=current.epoch + 1,
                 history_version=current.history_version + 1,
-                history=(),
+                history=initial_history(current.profile_id),
                 hidden_items=frozenset(),
+                favorite_items=frozenset(),
             )
             self._sessions[session_id] = reset
-            self._favorite_items[session_id] = frozenset()
             return reset
 
     async def record_feedback(self, command: FeedbackCommand) -> FeedbackResult:
@@ -147,7 +157,7 @@ class InMemoryDemoBackend:
 
             history = session.history
             hidden = session.hidden_items
-            favorites = self._favorite_items[command.session_id]
+            favorites = session.favorite_items
             changed = False
             if command.kind == FeedbackKind.DETAIL_VIEW:
                 history = (*history, command.item_id)
@@ -170,6 +180,8 @@ class InMemoryDemoBackend:
                     updated.discard(command.item_id)
                 favorites = frozenset(updated)
                 changed = before != command.desired_state
+                if changed and command.desired_state:
+                    history = (*history, command.item_id)
 
             if changed:
                 session = replace(
@@ -177,9 +189,10 @@ class InMemoryDemoBackend:
                     history_version=session.history_version + 1,
                     history=history,
                     hidden_items=hidden,
+                    favorite_items=favorites,
                 )
                 self._sessions[command.session_id] = session
-                self._favorite_items[command.session_id] = favorites
+
             exposure_event_id = None
             if command.kind == FeedbackKind.DETAIL_VIEW:
                 exposure_event_id = detail_exposure_event_id(command.event_id)
@@ -211,6 +224,13 @@ class InMemoryDemoBackend:
             )
             self._feedback[command.event_id] = (command.payload_sha256, feedback)
             return feedback
+
+    def list_items(self) -> list[dict[str, object]]:
+        return [dict(item) for item in _DEMO_ITEM_DETAILS.values()]
+
+    def get_item(self, item_id: str) -> dict[str, object] | None:
+        item = _DEMO_ITEM_DETAILS.get(item_id)
+        return dict(item) if item is not None else None
 
     @asynccontextmanager
     async def acquire(self, command: RecommendationCommand):
