@@ -12,6 +12,11 @@
     p, small { color: #53646c; line-height: 1.5; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 18px; }
     section { background: white; border: 1px solid #dce5df; border-radius: 12px; padding: 20px; }
+    .recommend-section { grid-column: span 2; }
+    #recommendations { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
+    #recommendations > .status { grid-column: 1 / -1; }
+    #recommendations > .item { margin: 0; }
+    #items { max-height: 670px; overflow: auto; }
     label { display: block; font-weight: 600; margin: 12px 0 5px; }
     input, select, button { box-sizing: border-box; font: inherit; }
     input, select { width: 100%; padding: 9px; border: 1px solid #a9bcb2; border-radius: 6px; }
@@ -28,6 +33,7 @@
     @keyframes pulse { to { opacity: .45; } }
     #message { min-height: 24px; color: #9b3323; font-weight: 600; }
     code { overflow-wrap: anywhere; }
+    @media (max-width: 760px) { .recommend-section, .wide { grid-column: auto; } }
   </style>
 </head>
 <body>
@@ -38,7 +44,7 @@
     <div id="message" role="status" aria-live="polite"></div>
   </header>
   <main class="grid">
-    <section>
+    <section class="recommend-section">
       <h2>推荐体验</h2>
       <label for="profile">体验身份</label>
       <select id="profile"><option value="sample">示例用户（已有合作商品浏览历史）</option><option value="new">新用户（无历史，从热门开始）</option></select>
@@ -57,7 +63,7 @@
     <section>
       <h2>商品目录</h2>
       <button id="refresh-items">刷新商品</button>
-      <div id="items"></div>
+      <div id="items" role="region" aria-label="商品目录列表" tabindex="0"></div>
     </section>
     <section class="wide">
       <details>
