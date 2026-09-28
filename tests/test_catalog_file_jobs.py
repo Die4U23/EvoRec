@@ -192,3 +192,64 @@ def test_killed_validation_worker_retries_same_file_without_partial_import(isola
         if worker.poll() is None:
             worker.kill()
             worker.communicate(timeout=5)
+
+
+def test_second_worker_does_not_requeue_a_live_validation(isolated_database, tmp_path):
+    service = build_demo_application().manager.file_jobs
+    batch = uuid4()
+    service.enqueue(batch, b"item_id,title,category\nconcurrent,Concurrent,test\n", "text/csv")
+    release = tmp_path / "release-worker"
+    paused_worker = (
+        "import time\n"
+        "from pathlib import Path\n"
+        "from evorec.api.catalog_file import parse_catalog_file as real_parse\n"
+        "import scripts.catalog_worker as worker\n"
+        "def pause(data, media_type, batch_id):\n"
+        f"    release = Path({str(release)!r})\n"
+        "    deadline = time.monotonic() + 15\n"
+        "    while not release.exists() and time.monotonic() < deadline:\n"
+        "        time.sleep(0.05)\n"
+        "    if not release.exists():\n"
+        "        raise RuntimeError('worker release timed out')\n"
+        "    return real_parse(data, media_type, batch_id)\n"
+        "worker.parse_catalog_file = pause\n"
+        "raise SystemExit(worker.main())\n"
+    )
+    first = subprocess.Popen(
+        [sys.executable, "-c", paused_worker, "--once"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if service.get(batch)["status"] == "validating":
+                break
+            if first.poll() is not None:
+                stdout, stderr = first.communicate()
+                pytest.fail(f"first worker exited before validating: {stdout} {stderr}")
+            time.sleep(0.05)
+        else:
+            pytest.fail("first worker did not enter validation")
+
+        second = subprocess.run(
+            [sys.executable, "-m", "scripts.catalog_worker", "--once"],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        assert second.returncode == 0, second.stderr + second.stdout
+        assert service.get(batch)["status"] == "validating"
+        assert service.get(batch)["attempts"] == 1
+        with psycopg.connect(isolated_database) as connection:
+            assert connection.execute("SELECT count(*) FROM items").fetchone()[0] == 0
+
+        release.touch()
+        stdout, stderr = first.communicate(timeout=20)
+        assert first.returncode == 0, stderr + stdout
+        assert service.get(batch)["status"] == "imported"
+        assert service.get(batch)["attempts"] == 1
+        with psycopg.connect(isolated_database) as connection:
+            assert connection.execute("SELECT count(*) FROM items").fetchone()[0] == 1
+    finally:
+        release.touch()
+        if first.poll() is None:
+            first.kill()
+            first.communicate(timeout=5)
