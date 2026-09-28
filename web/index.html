@@ -64,6 +64,9 @@
       <h2>商品目录</h2>
       <button id="refresh-items">刷新商品</button>
       <div id="items" role="region" aria-label="商品目录列表" tabindex="0"></div>
+      <p id="items-page" role="status"></p>
+      <button id="items-previous" class="secondary" disabled>上一页</button>
+      <button id="items-next" class="secondary" disabled>下一页</button>
     </section>
     <section class="wide">
       <details>
@@ -75,6 +78,25 @@
       <label for="item-category">分类</label><input id="item-category" placeholder="demo">
       <button id="import-item">导入商品</button>
       <button id="deactivate" class="secondary">下架商品</button>
+      <label for="catalog-file">批量导入 CSV / JSON 文件</label>
+      <input id="catalog-file" type="file" accept=".csv,.json,text/csv,application/json">
+      <button id="import-file">提交文件校验任务</button>
+      <p id="import-status" role="status">文件导入后仅进入商品目录，尚未生成内容索引或发布。</p>
+      <ol id="import-errors" aria-label="文件导入错误"></ol>
+      <h3>处理与发布</h3>
+      <p>根据标题和类别构建内容匹配基线，支持当前商品库最多 5,000 件；内容相近不等于真实偏好预测。处理完成后可预览，再确认发布。</p>
+      <label for="catalog-batch">导入批次 ID</label><input id="catalog-batch" placeholder="导入成功后自动填入">
+      <button id="lookup-import" class="secondary">查询导入批次</button>
+      <label for="catalog-build">构建 ID（可保存以便恢复查询）</label><input id="catalog-build" placeholder="首次处理时自动生成">
+      <button id="process-catalog">处理／重试当前构建</button>
+      <button id="new-catalog-build" class="secondary">按最新商品库重新构建</button>
+      <button id="refresh-build" class="secondary">查询状态与预览</button>
+      <p id="build-status" role="status">尚未开始处理。</p>
+      <div id="build-preview" role="region" aria-label="待发布商品预览"></div>
+      <button id="preview-previous" class="secondary" disabled>上一页</button>
+      <button id="preview-next" class="secondary" disabled>下一页</button>
+      <button id="publish-catalog" disabled>确认发布当前预览</button>
+      <h3>高级版本操作</h3>
       <label for="bundle-id">受管 bundle UUID</label><input id="bundle-id" placeholder="预先放入受管目录的 bundle ID">
       <button id="register-bundle">校验并登记</button>
       <button id="publish-bundle">发布</button>
@@ -86,13 +108,20 @@
   <script>
     const el = id => document.getElementById(id);
     let session = null, latest = null, catalog = new Map(), pendingRecommendation = null;
+    let itemsOffset = 0;
+    const itemsPageSize = 20;
+    let pendingCatalogFile = null;
+    let currentBuild = null, buildPreviewOffset = 0, pendingBuildPublication = null, processingCatalog = false, buildPollTimer = null, importPollTimer = null;
     const pendingFeedback = new Map();
     const hiddenUndo = new Map();
     const message = value => { el('message').textContent = value; };
     async function api(path, options = {}) {
       const response = await fetch(path, {...options, headers: {'Content-Type': 'application/json', ...(options.headers || {})}});
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error?.message || `HTTP ${response.status}`);
+      if (!response.ok) {
+        const stale = ['publication_version_conflict', 'build_base_conflict'].includes(data.error?.code);
+        throw new Error(stale ? '活动商品库已经变化，请按最新商品库重新构建' : data.error?.message || `HTTP ${response.status}`);
+      }
       return data;
     }
     async function run(action) { try { message(''); await action(); } catch (error) { message(`操作失败：${error.message}。可重试。`); } }
@@ -102,9 +131,11 @@
       const title = id => catalog.get(id)?.title || id;
       el('session').textContent = session ? `${session.profile_id === 'sample' ? '示例用户' : '新用户'} · 已看过 ${[...new Set(session.history)].map(title).join('、') || '暂无'} · 收藏 ${session.favorite_items.map(title).join('、') || '暂无'} · 版本 ${session.history_version}` : '尚未创建会话。';
     }
-    async function refreshItems() {
-      const items = await api('/api/v1/items');
-      catalog = new Map(items.map(item => [item.item_id, item]));
+    async function refreshItems({offset = 0} = {}) {
+      const page = await api(`/api/v1/items?offset=${offset}&limit=${itemsPageSize + 1}`);
+      const items = page.slice(0, itemsPageSize);
+      itemsOffset = offset;
+      for (const item of items) catalog.set(item.item_id, item);
       showSession();
       el('items').replaceChildren();
       for (const item of items) {
@@ -113,12 +144,162 @@
         const detail = document.createElement('small'); detail.textContent = `${item.item_id} · ${item.category} · ${item.is_active ? '可用' : '已下架'}`;
         row.append(title, detail); el('items').append(row);
       }
-      if (!items.length) el('items').textContent = '暂无商品。';
+      if (!items.length) el('items').textContent = offset ? '这一页没有商品，请返回上一页。' : '暂无商品。';
+      el('items-page').textContent = items.length ? `显示第 ${offset + 1}–${offset + items.length} 件商品` : '当前页无商品';
+      el('items-previous').disabled = offset === 0;
+      el('items-next').disabled = page.length <= itemsPageSize;
     }
     async function publication() {
       const state = await api('/api/v1/admin/publication', {headers: admin()});
       el('publication').textContent = `活动 bundle：${state.active_bundle_id || '无'} · 接收：${state.admission_open ? '开放' : '关闭'} · 下架版本：${state.exclusion_version}`;
       return state;
+    }
+    function selectImport(batchId) {
+      stopImportPolling();
+      stopBuildPolling();
+      el('catalog-batch').value = batchId;
+      el('catalog-build').value = '';
+      currentBuild = null; pendingBuildPublication = null; buildPreviewOffset = 0;
+      el('build-preview').replaceChildren(); el('publish-catalog').disabled = true;
+      el('build-status').textContent = '批次已导入，可以开始处理。';
+    }
+    function stopImportPolling() {
+      if (importPollTimer !== null) clearInterval(importPollTimer);
+      importPollTimer = null;
+    }
+    function showFileJob(state) {
+      if (el('catalog-batch').value.trim() !== state.batch_id) return;
+      el('import-errors').replaceChildren();
+      for (const issue of state.row_errors) {
+        const row = document.createElement('li');
+        row.textContent = `第 ${issue.row || '文件'} 行 · ${issue.field}：${issue.reason}`;
+        el('import-errors').append(row);
+      }
+      const phase = {queued: '待校验（请启动后台 worker）', validating: '校验中',
+                     imported: `已导入 ${state.item_count} 件；尚未生成内容索引或发布`,
+                     failed: `校验失败：${state.error_code}；修正文件后重新选择，新文件会使用新批次 ID`}[state.status];
+      el('import-status').textContent = `批次 ${state.batch_id} · ${phase} · 尝试 ${state.attempts} 次`;
+      if (state.status === 'imported') {
+        selectImport(state.batch_id);
+        pendingCatalogFile = null;
+        el('catalog-file').value = '';
+        return refreshItems();
+      }
+      if (state.status === 'failed') { stopImportPolling(); return; }
+      startImportPolling(state.batch_id);
+    }
+    function startImportPolling(batchId) {
+      if (importPollTimer !== null) return;
+      importPollTimer = setInterval(async () => {
+        if (el('catalog-batch').value.trim() !== batchId) { stopImportPolling(); return; }
+        try {
+          const state = await api(`/api/v1/admin/catalog/file-import-jobs/${encodeURIComponent(batchId)}`, {headers: admin()});
+          await showFileJob(state);
+        } catch (_) { /* The batch ID remains available for manual recovery. */ }
+      }, 1000);
+    }
+    async function restoreImport() {
+      const batchId = el('catalog-batch').value.trim();
+      if (!batchId) throw new Error('请先填写导入批次 ID');
+      const jobResponse = await fetch(`/api/v1/admin/catalog/file-import-jobs/${encodeURIComponent(batchId)}`, {headers: admin()});
+      if (jobResponse.status !== 404) {
+        const job = await jobResponse.json();
+        if (!jobResponse.ok) throw new Error(job.error?.message || `HTTP ${jobResponse.status}`);
+        await showFileJob(job);
+        if (job.status !== 'imported') return;
+      }
+      const record = await api(`/api/v1/admin/catalog/imports/${encodeURIComponent(batchId)}`,
+                               {headers: admin()});
+      selectImport(record.batch_id);
+      const phase = !record.snapshot_available ? '旧批次缺少商品快照，无法构建。'
+        : record.latest_build?.publication_status === 'active' ? '最近构建已发布。'
+        : record.latest_build?.publication_status === 'retired' ? '最近构建已被新版本替代。'
+        : record.latest_build?.status === 'ready' ? '最近构建待确认发布。'
+        : '尚需确认构建与发布状态。';
+      el('import-status').textContent = `批次 ${record.batch_id} 已导入 ${record.item_count} 件；${phase}`;
+      if (!record.latest_build) return;
+      el('catalog-build').value = record.latest_build.build_id;
+      if (record.latest_build.status === 'ready') await previewBuild();
+      else {
+        await refreshBuildStatus();
+        if (['queued', 'processing'].includes(record.latest_build.status)) startBuildPolling(record.latest_build.build_id);
+      }
+    }
+    async function refreshBuildStatus() {
+      const id = el('catalog-build').value.trim();
+      if (!id) throw new Error('请先开始处理或填入构建 ID');
+      const state = await api(`/api/v1/admin/catalog/builds/${encodeURIComponent(id)}`, {headers: admin()});
+      if (id !== el('catalog-build').value.trim()) return state;
+      currentBuild = state;
+      el('catalog-batch').value = state.batch_id;
+      const phase = {queued: '排队中（请启动后台 worker）', processing: '处理中', ready: '待确认发布', failed: '处理失败'}[state.status];
+      const published = state.publication_status === 'active' ? '当前已发布' : state.publication_status === 'retired' ? '已被新版本替代' : phase;
+      el('build-status').textContent = `${published} · 已处理 ${state.processed_count}/${state.total_count} · 未完成 ${state.failed_count} · 尝试 ${state.attempts} 次${state.error_code ? ' · 原因：' + state.error_code : ''}`;
+      if (state.status !== 'ready' || state.publication_status !== 'ready') el('publish-catalog').disabled = true;
+      return state;
+    }
+    function stopBuildPolling() {
+      if (buildPollTimer !== null) clearInterval(buildPollTimer);
+      buildPollTimer = null;
+    }
+    function startBuildPolling(buildId) {
+      stopBuildPolling();
+      buildPollTimer = setInterval(async () => {
+        if (el('catalog-build').value.trim() !== buildId) { stopBuildPolling(); return; }
+        try {
+          const state = await refreshBuildStatus();
+          if (state.status === 'ready') {
+            stopBuildPolling(); await previewBuild();
+          } else if (state.status === 'failed') stopBuildPolling();
+        } catch (_) { /* The build ID remains available for manual refresh. */ }
+      }, 1000);
+    }
+    async function previewBuild() {
+      const state = await refreshBuildStatus();
+      const preview = await api(`/api/v1/admin/catalog/builds/${encodeURIComponent(state.build_id)}/items?offset=${buildPreviewOffset}&limit=20`, {headers: admin()});
+      el('build-preview').replaceChildren();
+      const summary = document.createElement('p');
+      const versionPhase = state.publication_status === 'active' ? '当前活动版本。'
+        : state.publication_status === 'retired' ? '此版本已被替代。'
+        : '发布后将使用此完整版本。';
+      summary.textContent = `完整版本共 ${preview.total_count} 件；本页 ${preview.items.length ? preview.offset + 1 : 0}–${preview.offset + preview.items.length} 件。${versionPhase}`;
+      el('build-preview').append(summary);
+      for (const item of preview.items) {
+        const row = document.createElement('div'); row.className = 'item';
+        const title = document.createElement('strong'); title.textContent = item.title;
+        const status = document.createElement('small');
+        status.textContent = `${item.item_id} · ${item.category} · ${!item.is_active ? '已下架，发布后仍不推荐' : item.currently_recommendable ? '当前可推荐' : '发布后可参与推荐'}`;
+        row.append(title, status); el('build-preview').append(row);
+      }
+      el('preview-previous').disabled = buildPreviewOffset === 0;
+      el('preview-next').disabled = preview.offset + preview.items.length >= preview.total_count;
+      el('publish-catalog').disabled = state.status !== 'ready' || state.publication_status !== 'ready';
+    }
+    async function processCatalog() {
+      if (processingCatalog) return;
+      const batch = el('catalog-batch').value.trim();
+      if (!batch) throw new Error('请先导入商品或填写批次 ID');
+      if (!el('catalog-build').value.trim()) el('catalog-build').value = crypto.randomUUID();
+      const buildId = el('catalog-build').value.trim();
+      processingCatalog = true;
+      for (const id of ['process-catalog', 'new-catalog-build', 'catalog-batch', 'catalog-build', 'import-file', 'import-item', 'catalog-file']) el(id).disabled = true;
+      el('publish-catalog').disabled = true;
+      el('build-status').textContent = '正在提交后台构建任务…';
+      try {
+        await api(`/api/v1/admin/catalog/imports/${encodeURIComponent(batch)}/build-jobs`, {
+          method: 'POST', headers: admin(), body: JSON.stringify({build_id: buildId}),
+        });
+      } catch (error) {
+        await refreshBuildStatus().catch(() => {});
+        throw error;
+      } finally {
+        processingCatalog = false;
+        for (const id of ['process-catalog', 'new-catalog-build', 'catalog-batch', 'catalog-build', 'import-file', 'import-item', 'catalog-file']) el(id).disabled = false;
+      }
+      const state = await refreshBuildStatus();
+      if (state.status === 'ready') {
+        stopBuildPolling(); buildPreviewOffset = 0; await previewBuild();
+      } else if (state.status === 'queued' || state.status === 'processing') startBuildPolling(buildId);
     }
     async function syncSession() {
       const fresh = await api(`/api/v1/sessions/${session.session_id}`, {headers: auth()});
@@ -220,10 +401,87 @@
     });
     el('recommend').onclick = () => run(recommend);
     el('refresh-items').onclick = () => run(refreshItems);
+    el('items-previous').onclick = () => run(async () => {
+      if (itemsOffset > 0) await refreshItems({offset: itemsOffset - itemsPageSize});
+    });
+    el('items-next').onclick = () => run(async () => {
+      if (!el('items-next').disabled) await refreshItems({offset: itemsOffset + itemsPageSize});
+    });
     el('import-item').onclick = () => run(async () => {
       const item = {item_id: el('item-id').value, title: el('item-title').value, category: el('item-category').value};
-      await api('/api/v1/admin/catalog/imports', {method: 'POST', headers: admin(), body: JSON.stringify({batch_id: crypto.randomUUID(), items: [item]})});
+      const result = await api('/api/v1/admin/catalog/imports', {method: 'POST', headers: admin(), body: JSON.stringify({batch_id: crypto.randomUUID(), items: [item]})});
+      selectImport(result.batch_id);
       await refreshItems(); message('商品已导入；进入推荐还需包含于活动 bundle');
+    });
+    el('catalog-file').onchange = () => {
+      stopImportPolling();
+      pendingCatalogFile = null;
+      el('import-errors').replaceChildren();
+      el('import-status').textContent = '文件尚未导入；失败后重试会沿用同一批次 ID。';
+    };
+    el('import-file').onclick = () => run(async () => {
+      const file = el('catalog-file').files[0];
+      if (!file) throw new Error('请先选择 CSV 或 JSON 文件');
+      if (file.size > 20_000_000) throw new Error('文件不能超过 20 MB');
+      const name = file.name.toLowerCase();
+      const mediaType = name.endsWith('.csv') ? 'text/csv' : name.endsWith('.json') ? 'application/json' : null;
+      if (!mediaType) throw new Error('仅支持 .csv 或 .json 文件');
+      if (!pendingCatalogFile || pendingCatalogFile.file !== file) {
+        pendingCatalogFile = {file, batchId: crypto.randomUUID()};
+      }
+      const batchId = pendingCatalogFile.batchId;
+      el('import-errors').replaceChildren();
+      el('catalog-batch').value = batchId;
+      el('import-status').textContent = `正在提交批次 ${batchId}…`;
+      const response = await fetch('/api/v1/admin/catalog/file-import-jobs', {
+        method: 'POST', headers: {...admin(), 'X-Batch-Id': batchId, 'Content-Type': mediaType}, body: file,
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        el('import-status').textContent = `批次 ${batchId} 未提交；可重试。`;
+        throw new Error(result.error?.message || `HTTP ${response.status}`);
+      }
+      await showFileJob(result);
+    });
+    el('process-catalog').onclick = () => run(processCatalog);
+    el('lookup-import').onclick = () => run(restoreImport);
+    el('refresh-build').onclick = () => run(previewBuild);
+    el('new-catalog-build').onclick = () => run(async () => {
+      if (processingCatalog) return;
+      stopBuildPolling();
+      el('catalog-build').value = ''; currentBuild = null; pendingBuildPublication = null;
+      await processCatalog();
+    });
+    el('catalog-build').oninput = () => {
+      stopBuildPolling();
+      currentBuild = null; pendingBuildPublication = null; buildPreviewOffset = 0;
+      el('publish-catalog').disabled = true; el('build-preview').replaceChildren();
+    };
+    el('preview-previous').onclick = () => run(async () => { buildPreviewOffset = Math.max(0, buildPreviewOffset - 20); await previewBuild(); });
+    el('preview-next').onclick = () => run(async () => { buildPreviewOffset += 20; await previewBuild(); });
+    el('publish-catalog').onclick = () => run(async () => {
+      const id = el('catalog-build').value.trim();
+      if (!currentBuild || currentBuild.build_id !== id || currentBuild.status !== 'ready') throw new Error('请先完成处理并查询预览');
+      if (!pendingBuildPublication || pendingBuildPublication.buildId !== id) {
+        pendingBuildPublication = {buildId: id, operationId: crypto.randomUUID()};
+      }
+      el('publish-catalog').disabled = true;
+      try {
+        await api(`/api/v1/admin/catalog/builds/${encodeURIComponent(id)}/publish`, {
+          method: 'POST', headers: admin(), body: JSON.stringify({operation_id: pendingBuildPublication.operationId}),
+        });
+        await previewBuild(); await publication(); await refreshItems();
+        message('新商品库已发布，之后的推荐请求使用新版内容索引');
+      } catch (error) {
+        const state = await refreshBuildStatus().catch(() => null);
+        if (state?.publication_status === 'active') {
+          await previewBuild(); await publication(); await refreshItems();
+          message('新商品库已发布，状态已核实');
+          return;
+        }
+        await previewBuild().catch(() => {});
+        throw error;
+      }
     });
     el('deactivate').onclick = () => run(async () => {
       await api(`/api/v1/admin/items/${encodeURIComponent(el('item-id').value)}/deactivate`, {method: 'POST', headers: admin()});

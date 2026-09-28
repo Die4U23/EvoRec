@@ -1,4 +1,6 @@
 """Repository delivery checks must not rely on ignored working-tree files."""
+from pathlib import Path
+
 import pytest
 from scripts.check_repository_hygiene import check
 
@@ -39,3 +41,12 @@ def test_oversized_file_and_invalid_python_are_rejected():
 def test_html_assets_must_be_in_index():
     with pytest.raises(ValueError, match="link missing"):
         check({"report.html": b'<img src="missing.png" alt="plot">'})
+
+
+def test_service_ci_runs_durable_file_job_regressions():
+    workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows"
+                / "service-integration.yml").read_text(encoding="utf-8")
+    service_step = workflow.split("- name: Run service tests against PostgreSQL", 1)[1].split(
+        "- name: Run local page interaction tests", 1,
+    )[0]
+    assert "tests/test_catalog_file_jobs.py" in service_step

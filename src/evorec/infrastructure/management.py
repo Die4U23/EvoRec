@@ -7,9 +7,12 @@ from uuid import UUID
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 from evorec.domain.errors import ManagementError
 from evorec.infrastructure.bundle import BundleValidationError, validate_bundle
+from evorec.infrastructure.catalog_build import CatalogBuildService
+from evorec.infrastructure.catalog_file_job import CatalogFileJobService
 from evorec.infrastructure.model_runtime import ControlledLoadError, RuntimeBundle, load_runtime_bundle
 from evorec.infrastructure.postgres import PostgresDemoBackend
 
@@ -23,18 +26,21 @@ class CatalogManager:
         self.backend = backend
         self.database_url = backend.database_url
         self.managed_root = managed_root
+        self.builds = CatalogBuildService(self)
+        self.file_jobs = CatalogFileJobService(self)
 
     def _connect(self, *, autocommit: bool = False):
         return psycopg.connect(self.database_url, row_factory=dict_row, autocommit=autocommit)
 
-    def import_items(self, payload) -> dict[str, object]:
+    def import_items(self, payload, *, row_numbers: dict[str, int] | None = None,
+                     from_job: bool = False) -> dict[str, object]:
         canonical = json.dumps(payload.model_dump(mode="json"), sort_keys=True,
                                separators=(",", ":")).encode("utf-8")
         digest = hashlib.sha256(canonical).hexdigest()
         with self._connect() as connection:
             connection.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                (str(payload.batch_id),),
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                (self.LOCK_NAME,),
             )
             prior = connection.execute(
                 "SELECT payload_sha256, item_count FROM catalog_imports WHERE batch_id = %s FOR UPDATE",
@@ -45,32 +51,69 @@ class CatalogManager:
                     raise ManagementError("import_conflict", "batch ID was used for different items")
                 return {"batch_id": payload.batch_id, "item_count": prior["item_count"],
                         "replayed": True}
+            if not from_job and connection.execute(
+                "SELECT 1 FROM catalog_file_jobs WHERE batch_id = %s", (payload.batch_id,),
+            ).fetchone():
+                raise ManagementError("import_conflict", "batch ID belongs to a file validation job")
+            numbers = row_numbers or {item.item_id: index
+                                      for index, item in enumerate(payload.items, 1)}
+            existing = {row["item_id"] for row in connection.execute(
+                "SELECT item_id FROM items WHERE item_id = ANY(%s)",
+                ([item.item_id for item in payload.items],),
+            ).fetchall()}
+            if existing:
+                raise ManagementError(
+                    "duplicate_item_id", "item_id already exists; whole batch rejected", 409,
+                    rows=[{"row": numbers[item.item_id], "field": "item_id",
+                           "reason": "item_id already exists"}
+                          for item in payload.items if item.item_id in existing],
+                )
             for item in payload.items:
-                connection.execute(
+                inserted = connection.execute(
                     """
                     INSERT INTO items (item_id, title, category, description, image_url)
                     VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (item_id) DO UPDATE SET
-                        title = EXCLUDED.title, category = EXCLUDED.category,
-                        description = EXCLUDED.description, image_url = EXCLUDED.image_url,
-                        updated_at = now()
+                    ON CONFLICT (item_id) DO NOTHING RETURNING item_id
                     """,
                     (item.item_id, item.title, item.category, item.description, item.image_url),
-                )
+                ).fetchone()
+                if inserted is None:
+                    raise ManagementError(
+                        "duplicate_item_id", "item_id already exists; whole batch rejected", 409,
+                        rows=[{"row": numbers[item.item_id], "field": "item_id",
+                               "reason": "item_id already exists"}],
+                    )
             connection.execute(
-                "INSERT INTO catalog_imports (batch_id, payload_sha256, item_count) VALUES (%s, %s, %s)",
-                (payload.batch_id, digest, len(payload.items)),
+                "INSERT INTO catalog_imports (batch_id, payload_sha256, item_count, items_snapshot) "
+                "VALUES (%s, %s, %s, %s)",
+                (payload.batch_id, digest, len(payload.items),
+                 Jsonb([item.model_dump(mode="json") for item in payload.items])),
             )
         return {"batch_id": payload.batch_id, "item_count": len(payload.items),
                 "replayed": False}
 
-    def list_items(self, *, limit: int = 100) -> list[dict[str, object]]:
+    def get_import(self, batch_id: UUID) -> dict[str, object]:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT batch_id, item_count, created_at AS imported_at, "
+                "items_snapshot IS NOT NULL AS snapshot_available "
+                "FROM catalog_imports WHERE batch_id = %s", (batch_id,),
+            ).fetchone()
+            if row is None:
+                raise ManagementError("import_not_found", "catalog import does not exist", 404)
+            latest = connection.execute(
+                "SELECT build_id FROM catalog_builds WHERE batch_id = %s "
+                "ORDER BY created_at DESC, build_id DESC LIMIT 1", (batch_id,),
+            ).fetchone()
+        return {**row, "latest_build": self.builds.get(latest["build_id"]) if latest else None}
+
+    def list_items(self, *, offset: int = 0, limit: int = 100) -> list[dict[str, object]]:
         with self._connect() as connection:
             return list(connection.execute(
                 """
                 SELECT item_id, title, category, description, image_url, is_active
-                FROM items ORDER BY item_id LIMIT %s
-                """, (limit,),
+                FROM items ORDER BY item_id LIMIT %s OFFSET %s
+                """, (limit, offset),
             ).fetchall())
 
     def get_item(self, item_id: str) -> dict[str, object]:
@@ -185,6 +228,20 @@ class CatalogManager:
             ).fetchone()
         return {**control, "pending_operation": pending}
 
+    def rollback(self, operation_id: UUID, bundle_id: UUID,
+                 expected_active_bundle_id: UUID | None) -> dict[str, object]:
+        """Restore a previously published version through the normal guarded switch."""
+        if expected_active_bundle_id is None or bundle_id == expected_active_bundle_id:
+            raise ManagementError("rollback_target_invalid", "rollback requires a different active version")
+        with self._connect() as connection:
+            published = connection.execute(
+                "SELECT 1 FROM publication_operations WHERE target_bundle_id = %s "
+                "AND status = 'completed' LIMIT 1", (bundle_id,),
+            ).fetchone()
+        if published is None:
+            raise ManagementError("rollback_target_unpublished", "target version was never published")
+        return self.publish(operation_id, bundle_id, expected_active_bundle_id)
+
     def publish(self, operation_id: UUID, bundle_id: UUID,
                 expected_active_bundle_id: UUID | None) -> dict[str, object]:
         with self._connect() as connection:
@@ -225,6 +282,18 @@ class CatalogManager:
                 ).fetchone()
                 if unfinished is not None:
                     raise ManagementError("publication_incomplete", "another operation requires recovery", 503)
+                build = connection.execute(
+                    "SELECT status, base_bundle_id FROM catalog_builds WHERE bundle_id = %s", (bundle_id,),
+                ).fetchone()
+                if build is not None:
+                    if build["status"] != "ready":
+                        raise ManagementError("build_not_ready", "catalog build is not ready for publication")
+                    published_before = connection.execute(
+                        "SELECT 1 FROM publication_operations WHERE target_bundle_id = %s "
+                        "AND status = 'completed' LIMIT 1", (bundle_id,),
+                    ).fetchone()
+                    if published_before is None and build["base_bundle_id"] != expected_active_bundle_id:
+                        raise ManagementError("build_base_conflict", "catalog changed; create a new build before publishing")
                 runtime = self._registered_runtime(connection, bundle_id)
                 row = connection.execute(
                     "SELECT manifest_sha256, status FROM bundle_versions WHERE bundle_id = %s",

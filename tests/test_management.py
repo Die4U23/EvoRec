@@ -117,6 +117,33 @@ def test_managed_bundle_publication_recovery_and_catalog_api(isolated_database, 
     asyncio.run(exercise())
 
 
+def test_catalog_listing_pages_all_items_without_duplicates(isolated_database, monkeypatch):
+    monkeypatch.setenv("EVOREC_ADMIN_TOKEN", "local-admin-test-token-32-characters")
+
+    async def exercise():
+        app = create_app()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            items = [{"item_id": f"page-{index:03d}", "title": f"Item {index}",
+                      "category": "test"} for index in range(103)]
+            imported = await client.post(
+                "/api/v1/admin/catalog/imports",
+                headers={"X-Admin-Token": "local-admin-test-token-32-characters"},
+                json={"batch_id": str(uuid4()), "items": items},
+            )
+            assert imported.status_code == 200, imported.text
+            first = await client.get("/api/v1/items?offset=0&limit=100")
+            second = await client.get("/api/v1/items?offset=100&limit=100")
+            assert first.status_code == second.status_code == 200
+            ids = [item["item_id"] for item in first.json() + second.json()]
+            assert ids == [item["item_id"] for item in items]
+            assert len(ids) == len(set(ids)) == 103
+            assert (await client.get("/api/v1/items?offset=103&limit=100")).json() == []
+            assert (await client.get("/api/v1/items?offset=-1")).status_code == 422
+            assert (await client.get("/api/v1/items?limit=101")).status_code == 422
+
+    asyncio.run(exercise())
+
+
 def test_publication_recovers_both_sides_of_pointer_commit(isolated_database, monkeypatch, tmp_path):
     monkeypatch.setenv("EVOREC_ADMIN_TOKEN", "local-admin-test-token-32-characters")
     managed, first, _ = _bundle(tmp_path)
