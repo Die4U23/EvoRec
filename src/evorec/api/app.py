@@ -4,17 +4,21 @@ import asyncio
 import hmac
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict
 import psycopg
 
 from evorec import __version__
 from evorec.application.health import ReadinessQuery
+from evorec.api.catalog_file import (
+    MAX_FILE_BYTES, CatalogFileError, parse_catalog_file,
+)
 from evorec.bootstrap import DemoApplication, build_demo_application
 from evorec.contracts import CatalogImportInput, FeedbackInput, RecommendationInput
 from evorec.domain.errors import (
@@ -134,6 +138,50 @@ class CatalogImportResponse(BaseModel):
     replayed: bool
 
 
+class CatalogBuildInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    build_id: UUID
+
+
+class CatalogBuildPublishInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    operation_id: UUID
+
+
+class CatalogBuildResponse(BaseModel):
+    build_id: UUID
+    batch_id: UUID
+    bundle_id: UUID
+    base_bundle_id: UUID | None
+    status: Literal["queued", "processing", "ready", "failed"]
+    total_count: int
+    processed_count: int
+    failed_count: int
+    attempts: int
+    error_code: str | None
+    publication_status: str | None
+
+
+class CatalogImportStateResponse(BaseModel):
+    batch_id: UUID
+    item_count: int
+    imported_at: datetime
+    snapshot_available: bool
+    latest_build: CatalogBuildResponse | None
+
+
+class CatalogPreviewItem(CatalogItemResponse):
+    currently_recommendable: bool
+    ready_for_publication: bool
+
+
+class CatalogPreviewResponse(BaseModel):
+    build_id: UUID
+    total_count: int
+    offset: int
+    items: list[CatalogPreviewItem]
+
+
 class ItemDeactivationResponse(BaseModel):
     item_id: str
     is_active: bool
@@ -175,6 +223,28 @@ class ErrorDetail(BaseModel):
 
 class ErrorEnvelope(BaseModel):
     error: ErrorDetail
+
+
+class CatalogFileRowError(BaseModel):
+    row: int
+    field: str
+    reason: str
+
+
+class CatalogFileErrorResponse(ErrorEnvelope):
+    rows: list[CatalogFileRowError]
+
+
+class CatalogFileJobResponse(BaseModel):
+    batch_id: UUID
+    status: Literal["queued", "validating", "imported", "failed"]
+    item_count: int
+    error_code: str | None
+    row_errors: list[CatalogFileRowError]
+    attempts: int
+    created_at: datetime
+    updated_at: datetime
+    replayed: bool = False
 
 
 def _session_response(snapshot: SessionSnapshot) -> SessionResponse:
@@ -233,14 +303,15 @@ def _error(
     request_id: UUID | None = None,
     *,
     retryable: bool = False,
+    rows: list[dict[str, object]] | None = None,
 ) -> JSONResponse:
     body = ErrorEnvelope(error=ErrorDetail(
         code=code, message=message, retryable=retryable, request_id=request_id,
     ))
-    return JSONResponse(
-        body.model_dump(mode="json"),
-        status_code=status_code,
-    )
+    data = body.model_dump(mode="json")
+    if rows is not None:
+        data["rows"] = rows
+    return JSONResponse(data, status_code=status_code)
 
 
 def create_app(
@@ -259,6 +330,8 @@ def create_app(
     async def lifespan(_: FastAPI):
         if demo.manager is not None:
             try:
+                await asyncio.to_thread(demo.manager.file_jobs.recover_interrupted)
+                await asyncio.to_thread(demo.manager.builds.recover_interrupted)
                 await asyncio.to_thread(demo.manager.recover)
             except psycopg.Error:
                 pass  # Liveness remains available; readiness reports the database failure.
@@ -290,7 +363,11 @@ def create_app(
 
     def management_error(exc: ManagementError) -> JSONResponse:
         return _error(exc.status_code, exc.code, str(exc),
-                      retryable=exc.status_code == 503)
+                      retryable=exc.status_code == 503, rows=exc.rows)
+
+    management_responses = {
+        code: {"model": ErrorEnvelope} for code in (403, 404, 409, 422, 503)
+    }
 
     @app.get("/health/live", response_model=Liveness, tags=["health"])
     def live() -> Liveness:
@@ -471,11 +548,12 @@ def create_app(
             return _error(409, "feedback_source_conflict", str(exc), payload.request_id)
 
     @app.get("/api/v1/items", response_model=list[CatalogItemResponse], tags=["catalog"])
-    async def list_items():
+    async def list_items(offset: int = Query(default=0, ge=0),
+                         limit: int = Query(default=100, ge=1, le=100)):
         if demo.manager is None:
-            return demo.backend.list_items()
+            return demo.backend.list_items()[offset:offset + limit]
         try:
-            return await asyncio.to_thread(demo.manager.list_items)
+            return await asyncio.to_thread(demo.manager.list_items, offset=offset, limit=limit)
         except psycopg.Error:
             return _error(503, "database_unavailable", "database is unavailable", retryable=True)
 
@@ -500,6 +578,180 @@ def create_app(
             return denied
         try:
             return await asyncio.to_thread(demo.manager.import_items, payload)
+        except ManagementError as exc:
+            return management_error(exc)
+
+    @app.post(
+        "/api/v1/admin/catalog/file-imports",
+        response_model=CatalogImportResponse,
+        responses={
+            403: {"model": ErrorEnvelope},
+            409: {"model": CatalogFileErrorResponse},
+            413: {"model": CatalogFileErrorResponse},
+            422: {"model": CatalogFileErrorResponse},
+            503: {"model": ErrorEnvelope},
+        },
+        openapi_extra={"requestBody": {"required": True, "content": {
+            "text/csv": {"schema": {"type": "string", "format": "binary"}},
+            "application/json": {"schema": {"type": "array", "items": {
+                "$ref": "#/components/schemas/CatalogItem"}}},
+        }}},
+        tags=["admin"],
+    )
+    async def import_catalog_file(
+        request: Request,
+        batch_id: UUID = Header(alias="X-Batch-Id"),
+        admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        data = bytearray()
+        async for chunk in request.stream():
+            if len(chunk) > MAX_FILE_BYTES - len(data):
+                return _error(413, "file_too_large", "catalog file exceeds 20 MB",
+                              rows=[{"row": 0, "field": "file", "reason": "file exceeds 20 MB"}])
+            data.extend(chunk)
+        media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        try:
+            payload = parse_catalog_file(bytes(data), media_type, batch_id)
+            offset = 2 if media_type == "text/csv" else 1
+            numbers = {item.item_id: row for row, item in enumerate(payload.items, offset)}
+            return await asyncio.to_thread(demo.manager.import_items, payload, row_numbers=numbers)
+        except CatalogFileError as exc:
+            return _error(422, exc.code, str(exc),
+                          rows=[row.__dict__ for row in exc.rows])
+        except ManagementError as exc:
+            return _error(exc.status_code, exc.code, str(exc),
+                          retryable=exc.status_code == 503, rows=exc.rows or [])
+
+    @app.post(
+        "/api/v1/admin/catalog/file-import-jobs",
+        response_model=CatalogFileJobResponse,
+        status_code=202,
+        responses={200: {"model": CatalogFileJobResponse}, 403: {"model": ErrorEnvelope},
+                   409: {"model": ErrorEnvelope}, 413: {"model": ErrorEnvelope},
+                   503: {"model": ErrorEnvelope}},
+        openapi_extra={"requestBody": {"required": True, "content": {
+            "text/csv": {"schema": {"type": "string", "format": "binary"}},
+            "application/json": {"schema": {"type": "array", "items": {
+                "$ref": "#/components/schemas/CatalogItem"}}},
+        }}},
+        tags=["admin"],
+    )
+    async def enqueue_catalog_file(
+        request: Request,
+        response: Response,
+        batch_id: UUID = Header(alias="X-Batch-Id"),
+        admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        data = bytearray()
+        async for chunk in request.stream():
+            if len(chunk) > MAX_FILE_BYTES - len(data):
+                return _error(413, "file_too_large", "catalog file exceeds 20 MB")
+            data.extend(chunk)
+        media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        try:
+            state = await asyncio.to_thread(demo.manager.file_jobs.enqueue,
+                                            batch_id, bytes(data), media_type)
+            response.status_code = 200 if state["status"] in {"imported", "failed"} else 202
+            return state
+        except ManagementError as exc:
+            return management_error(exc)
+
+    @app.get("/api/v1/admin/catalog/file-import-jobs/{batch_id}",
+             response_model=CatalogFileJobResponse, responses=management_responses,
+             tags=["admin"])
+    async def catalog_file_job_status(
+        batch_id: UUID,
+        admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        try:
+            return await asyncio.to_thread(demo.manager.file_jobs.get, batch_id)
+        except ManagementError as exc:
+            return management_error(exc)
+
+    @app.get("/api/v1/admin/catalog/imports/{batch_id}",
+             response_model=CatalogImportStateResponse, responses=management_responses,
+             tags=["admin"])
+    async def catalog_import_status(batch_id: UUID,
+                                    admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        try:
+            return await asyncio.to_thread(demo.manager.get_import, batch_id)
+        except ManagementError as exc:
+            return management_error(exc)
+
+    @app.post("/api/v1/admin/catalog/imports/{batch_id}/builds",
+              response_model=CatalogBuildResponse, responses=management_responses, tags=["admin"])
+    async def process_catalog(batch_id: UUID, payload: CatalogBuildInput,
+                              admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        try:
+            return await asyncio.to_thread(demo.manager.builds.process, batch_id, payload.build_id)
+        except ManagementError as exc:
+            return management_error(exc)
+
+    @app.post("/api/v1/admin/catalog/imports/{batch_id}/build-jobs",
+              response_model=CatalogBuildResponse, status_code=202,
+              responses={200: {"model": CatalogBuildResponse}, **management_responses}, tags=["admin"])
+    async def enqueue_catalog(batch_id: UUID, payload: CatalogBuildInput,
+                              response: Response,
+                              admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        try:
+            state = await asyncio.to_thread(demo.manager.builds.enqueue, batch_id, payload.build_id)
+            response.status_code = 200 if state["status"] in {"ready", "failed"} else 202
+            return state
+        except ManagementError as exc:
+            return management_error(exc)
+
+    @app.get("/api/v1/admin/catalog/builds/{build_id}",
+             response_model=CatalogBuildResponse, responses=management_responses, tags=["admin"])
+    async def catalog_build_status(build_id: UUID,
+                                    admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        try:
+            return await asyncio.to_thread(demo.manager.builds.get, build_id)
+        except ManagementError as exc:
+            return management_error(exc)
+
+    @app.get("/api/v1/admin/catalog/builds/{build_id}/items",
+             response_model=CatalogPreviewResponse, responses=management_responses, tags=["admin"])
+    async def preview_catalog(build_id: UUID, offset: int = Query(default=0, ge=0),
+                              limit: int = Query(default=50, ge=1, le=100),
+                              admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        try:
+            return await asyncio.to_thread(demo.manager.builds.preview, build_id, offset, limit)
+        except ManagementError as exc:
+            return management_error(exc)
+
+    @app.post("/api/v1/admin/catalog/builds/{build_id}/publish",
+              response_model=PublicationResponse, responses=management_responses, tags=["admin"])
+    async def publish_catalog(build_id: UUID, payload: CatalogBuildPublishInput,
+                              admin_token: str | None = Header(default=None, alias="X-Admin-Token")):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        try:
+            return await asyncio.to_thread(demo.manager.builds.publish, build_id, payload.operation_id)
         except ManagementError as exc:
             return management_error(exc)
 
@@ -554,6 +806,27 @@ def create_app(
         try:
             return await asyncio.to_thread(
                 demo.manager.publish, payload.operation_id, bundle_id,
+                payload.expected_active_bundle_id,
+            )
+        except ManagementError as exc:
+            return management_error(exc)
+        except psycopg.Error:
+            return _error(503, "publication_uncertain", "check publication state before retrying",
+                          retryable=True)
+
+    @app.post("/api/v1/admin/bundles/{bundle_id}/rollback",
+              response_model=PublicationResponse, tags=["admin"])
+    async def rollback_bundle(
+        bundle_id: UUID,
+        payload: PublicationInput,
+        admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        try:
+            return await asyncio.to_thread(
+                demo.manager.rollback, payload.operation_id, bundle_id,
                 payload.expected_active_bundle_id,
             )
         except ManagementError as exc:

@@ -18,16 +18,24 @@
 | GET /api/v1/sessions/{id} | `X-Session-Token` → 会话摘要与状态；已实现 | M1 |
 | POST /api/v1/sessions/{id}/reset | `X-Session-Token` → 增加 epoch 和历史版本并清空状态；已实现 | M1 |
 | POST /api/v1/recommendations | `X-Session-Token` + 推荐输入；可选 UUID `Idempotency-Key` 重放原结果；已实现 | M1/M23 |
-| GET /api/v1/items、GET /api/v1/items/{id} | 商品列表/详情及有效状态；已实现，需 PostgreSQL | M23 |
+| GET /api/v1/items、GET /api/v1/items/{id} | 商品列表/详情及有效状态；列表支持 `offset`（默认 0）与 `limit`（默认 100，最大 100），按商品 ID 排序，空列表表示末页；已实现，需 PostgreSQL | M23 |
 | POST /api/v1/feedback | `X-Session-Token` + 反馈输入 → 原事件结果、最新历史版本；已实现 | M12 |
-| POST /api/v1/admin/catalog/imports | JSON 批次按 `batch_id` 幂等导入；已实现，不接受文件上传 | M23 |
-| GET /api/v1/admin/catalog/imports/{id} | 进度、错误与产物状态 | M2 |
-| POST /api/v1/admin/catalog/imports/{id}/retry | 校验原内容后幂等重试 | M2 |
+| POST /api/v1/admin/catalog/imports | JSON 批次按 `batch_id` 幂等导入；已有商品 ID 默认整批拒绝；已实现 | M23/V0.2 |
+| POST /api/v1/admin/catalog/file-imports | 上传 CSV/JSON 文件并整批校验、导入；已实现 F05 子集，尚不生成内容索引或自动发布 | V0.2 |
+| POST /api/v1/admin/catalog/file-import-jobs | 上传受限 CSV/JSON 文件并持久排队；同批次同文件返回已有状态，不同文件返回 409；`queued`/`validating` 返回 202，终态重放返回 200 | V0.2 |
+| GET /api/v1/admin/catalog/file-import-jobs/{batch_id} | 管理员查询待校验、校验中、已导入或失败状态，含尝试次数、错误码与逐行错误；失败无部分入库 | V0.2 |
+| POST /api/v1/admin/catalog/imports/{batch_id}/builds | 提交 `build_id`，固定当前版本和商品元数据快照，同步生成受控内容基线；同 ID 重试保留快照 | V0.2 |
+| POST /api/v1/admin/catalog/imports/{batch_id}/build-jobs | 提交 `build_id` 并冻结快照；排队/处理中返回 202，已完成的同 ID 重放返回 200；失败后同 ID 重排，由独立 worker 构建 | V0.2 |
+| GET /api/v1/admin/catalog/builds/{build_id} | 查询持久处理数量、失败原因、尝试次数和发布状态 | V0.2 |
+| GET /api/v1/admin/catalog/builds/{build_id}/items | 分页预览完整候选版本的商品及当前可推荐状态 | V0.2 |
+| POST /api/v1/admin/catalog/builds/{build_id}/publish | 提交 `operation_id`，按构建时固定的基础版本确认发布 | V0.2 |
+| GET /api/v1/admin/catalog/imports/{id} | 查询已导入数量、时间、快照可用性和最近一次构建状态；已实现，管理员权限 | V0.2 |
+| POST /api/v1/admin/catalog/imports/{id}/retry | 独立导入重试接口未实现；当前以原批次 ID 和原内容重发导入请求来幂等对账 | M2 |
 | POST /api/v1/admin/bundles/{id}/register | 从固定受管根读取并验证白名单 CPU bundle；已实现 | M23 |
 | GET /api/v1/admin/publication、POST /api/v1/admin/publication/recover | 读取持久发布状态、显式恢复；已实现 | M23 |
 | POST /api/v1/admin/bundles/{id}/publish | `operation_id` + 预期活动版本；持久状态机与运行时对齐；已实现 | M23 |
 | POST /api/v1/admin/items/{id}/deactivate | 事务更新有效状态与排除版本；已实现 | M23 |
-| POST /api/v1/admin/bundles/{id}/rollback | 恢复兼容版本，保留当前下架名单 | M2 |
+| POST /api/v1/admin/bundles/{id}/rollback | `operation_id` + 预期活动版本；仅允许恢复曾成功发布的旧版本，重用受控切换并保留当前下架名单；已实现 | M2 |
 | POST /api/v1/admin/comparisons | 固定输入和策略集合 → 后台任务 | M3 |
 | GET /api/v1/admin/runs/{id} | 配置、指标、样本数、来源与结果引用 | M4 |
 | GET /api/v1/admin/jobs/{id} | 任务状态与错误 | M2 |
@@ -43,6 +51,16 @@
 反馈包含 event_id、session_id、request_id、item_id、kind、observed_at。状态设置事件要求 desired_state；客户端曝光要求 visible_ratio 和 visible_duration_ms。未知字段拒绝，时间必须带时区。同一 `event_id` 同一规范化内容返回原历史版本并标记 `replayed=true`；同 ID 不同内容返回 409。反馈必须关联该会话当前 epoch 中真实返回的商品。详情事件响应额外返回确定性的 `exposure_event_id`；该派生曝光在同一事务中补记，并明确标为点击推断。
 
 发布采用预期活动版本比较，避免两个管理操作覆盖彼此。匹配失败返回冲突，调用方重新读取状态后决定重试。单批大小、权限和商品存在性由接口与业务层检查。
+
+回滚要求非空的 `expected_active_bundle_id`，目标须与之不同且曾成功发布。它重用发布状态机，重新校验受管产物与成员，保留数据库中当前商品下架状态；活动版本在请求前后发生变化则拒绝覆盖。回滚不会恢复已删除或损坏的产物。
+
+文件导入使用原始请求体（不是 multipart）：请求头 `X-Admin-Token`、UUID `X-Batch-Id`，`Content-Type` 为 `text/csv` 或 `application/json`。CSV 首行必须包含 `item_id,title,category`，可选 `description,image_url`；JSON 为商品对象数组。单文件至多 20 MB（20,000,000 字节）、1–1000 件。字段错误返回 422，文件过大返回 413，已有 ID 或批次内容冲突返回 409；逐行错误位于响应的 `rows` 数组。相同批次与规范化内容返回 `replayed=true`，任何校验或冲突失败都不写入部分商品。导入成功仅写入管理商品表；进入推荐候选仍需后续内容处理与发布，不能把导入成功当作发布成功。
+
+导入成功后可按批次 ID 查询持久导入记录与最近一次构建。尚无构建时 `latest_build=null`；旧迁移前的导入若缺少商品快照，`snapshot_available=false`，不会假装它可以构建。校验失败的文件没有成功导入记录，查询返回 404；网络响应丢失时先查询，若不存在则用原批次 ID 和原文件重发。
+
+处理接口要求先完成导入，并配置 `EVOREC_BUNDLE_ROOT`。旧 `/builds` 在当前 HTTP 请求中同步运行；新 `/build-jobs` 先保存 `queued` 状态及固定快照并立即返回 202，独立运行的 `python -m scripts.catalog_worker` 读取任务、更新进度。worker 中断后，重启时将该任务重新排队并按原快照重试；正常构建失败则标为 `failed`，同一 `build_id` 再次提交可重排。旧同步构建中断仍标记为失败并需显式重试。一个构建的完整商品集合是处理开始时的活动版本商品与该批新商品的并集，最多 5,000 件；其他尚未确认的导入不会混入。预览默认每页 50 件、最多 100 件。确认发布以处理时捕获的活动版本为预期版本，版本已变化则返回 409 并要求新建构建。发布重用受控加载、黄金样本检查和持久切换；下架排除状态持续生效。旧批次若在本迁移前导入、未保存商品快照，不会猜测其成员，处理返回 `legacy_import_without_snapshot`。当前 worker 使用数据库 advisory lock 串行执行，不提供租约续期、分布式调度或大规模检索保障。
+
+当前内容基线只对标题和类别做可复现的特征哈希与余弦匹配，生成确定性的内容分组编码和精确遍历的小规模索引。它没有训练权重，也没有接入 R06 模型；编码碰撞、词义理解和大规模检索质量仍需单独验证。构建产物保存商品快照、构建及运行路径的源码副本、Git 修订与脏工作区标记，模型文件不提交仓库。
 
 ## 4. 状态码与错误
 

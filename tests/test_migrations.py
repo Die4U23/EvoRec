@@ -14,6 +14,9 @@ def test_repository_migrations_have_unique_ordered_versions_and_checksums():
     assert all(len(migration.sha256) == 64 for migration in migrations)
     assert migrations[0].path.name == "0001_m1_core.sql"
     assert migrations[1].path.name == "0002_m23_publication.sql"
+    assert migrations[2].path.name == "0003_catalog_builds.sql"
+    assert migrations[3].path.name == "0004_catalog_build_queue.sql"
+    assert migrations[4].path.name == "0005_catalog_file_jobs.sql"
 
 
 def test_invalid_or_duplicate_migration_names_are_rejected(tmp_path: Path):

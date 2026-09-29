@@ -48,7 +48,9 @@ class FeedbackSourceMismatch(Exception):
 class ManagementError(Exception):
     """Stable catalog or publication failure without storage details."""
 
-    def __init__(self, code: str, message: str, status_code: int = 409):
+    def __init__(self, code: str, message: str, status_code: int = 409,
+                 rows: list[dict[str, object]] | None = None):
         super().__init__(message)
         self.code = code
         self.status_code = status_code
+        self.rows = rows

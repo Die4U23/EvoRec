@@ -273,7 +273,7 @@ def _load_encoder(raw: bytes, manifest: dict[str, Any], dimension: int,
         "schema_version", "kind", "model_id", "dimension", "dtype", "output_normalized",
     })
     _schema_one(value["schema_version"], "content_encoder")
-    if (value["kind"] != "mean-history-v1"
+    if (value["kind"] not in {"mean-history-v1", "hash-text-mean-history-v1"}
             or value["dtype"] != "float32" or value["output_normalized"] is not True
             or _integer(value["dimension"], "content_encoder.dimension") != dimension):
         _fail("component_mismatch", "unsupported or incompatible content encoder contract")
