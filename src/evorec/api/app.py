@@ -16,13 +16,17 @@ import psycopg
 
 from evorec import __version__
 from evorec.application.health import ReadinessQuery
+from evorec.application.compare import ComparisonCommand
 from evorec.api.catalog_file import (
     MAX_FILE_BYTES, CatalogFileError, parse_catalog_file,
 )
 from evorec.bootstrap import DemoApplication, build_demo_application
-from evorec.contracts import CatalogImportInput, FeedbackInput, RecommendationInput
+from evorec.contracts import (
+    CatalogImportInput, ComparisonPreviewInput, FeedbackInput, RecommendationInput,
+)
 from evorec.domain.errors import (
     AccessDenied,
+    ComparisonStorageUnavailable,
     FeedbackSourceMismatch,
     HistoryConflict,
     IdempotencyConflict,
@@ -39,6 +43,7 @@ from evorec.domain.models import (
     RecommendationCommand,
     RecommendationResult,
     SessionSnapshot,
+    Strategy,
 )
 
 
@@ -106,6 +111,78 @@ class RecommendationResponse(BaseModel):
     actual_strategy: str
     fallback_reason: str | None
     items: list[RecommendationItemResponse]
+
+
+class ComparedStrategyResponse(BaseModel):
+    requested_strategy: str
+    actual_strategy: str
+    fallback_reason: str | None
+    elapsed_ms: float
+    items: list[RecommendationItemResponse]
+    unique_item_ids: list[str]
+
+
+class ComparisonPreviewResponse(BaseModel):
+    comparison_id: UUID
+    session_id: UUID
+    session_epoch: int
+    history_version: int
+    bundle_id: UUID
+    exclusion_version: int
+    snapshot_at: datetime
+    common_item_ids: list[str]
+    strategies: list[ComparedStrategyResponse]
+    persisted: Literal[False] = False
+
+
+class ComparisonInputSnapshotResponse(BaseModel):
+    history: list[str]
+    hidden_items: list[str]
+    favorite_items: list[str]
+    profile_id: str
+    eligible_items: list[str]
+
+
+class ComparisonSavedResponse(ComparisonPreviewResponse):
+    persisted: Literal[True] = True
+    status: Literal["completed"] = "completed"
+    requested_k: int
+    input_snapshot: ComparisonInputSnapshotResponse
+
+
+class ComparisonSummaryResponse(BaseModel):
+    comparison_id: UUID
+    session_id: UUID
+    history_version: int
+    bundle_id: UUID
+    snapshot_at: datetime
+    requested_k: int
+    requested_strategies: list[str]
+    actual_strategies: list[str]
+
+
+class ComparisonPageResponse(BaseModel):
+    items: list[ComparisonSummaryResponse]
+    offset: int
+    limit: int
+    has_more: bool
+
+
+class ComparisonJobResponse(BaseModel):
+    job_id: UUID
+    session_id: UUID
+    status: Literal['queued', 'running', 'cancelling', 'completed', 'cancelled', 'failed']
+    completed_strategies: int
+    total_strategies: int
+    attempts: int
+    cancel_requested: bool
+    error_code: str | None
+    comparison_id: UUID | None
+    bundle_id: UUID
+    history_version: int
+    snapshot_at: datetime
+    created_at: datetime
+    updated_at: datetime
 
 
 class FeedbackResponse(BaseModel):
@@ -502,6 +579,216 @@ def create_app(
                 504, "recommendation_timeout", "recommendation deadline exceeded",
                 request_id, retryable=True,
             )
+
+    @app.post(
+        "/api/v1/strategy-comparisons/preview",
+        response_model=ComparisonPreviewResponse,
+        tags=["demo"],
+        responses={
+            401: {"model": ErrorEnvelope, "description": "Missing or invalid session token"},
+            404: {"model": ErrorEnvelope, "description": "Session not found"},
+            409: {"model": ErrorEnvelope, "description": "History version conflict"},
+            503: {"model": ErrorEnvelope, "description": "Catalog is not ready"},
+            504: {"model": ErrorEnvelope, "description": "Comparison deadline exceeded"},
+        },
+    )
+    async def preview_comparison(
+        payload: ComparisonPreviewInput,
+        session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    ):
+        return await execute_comparison(payload, session_token, uuid4(), persist=False)
+
+    @app.post(
+        "/api/v1/strategy-comparisons", response_model=ComparisonSavedResponse, tags=["demo"],
+        responses={401: {"model": ErrorEnvelope}, 404: {"model": ErrorEnvelope},
+                   409: {"model": ErrorEnvelope}, 503: {"model": ErrorEnvelope},
+                   504: {"model": ErrorEnvelope}},
+    )
+    async def save_comparison(
+        payload: ComparisonPreviewInput,
+        session_token: str | None = Header(default=None, alias="X-Session-Token"),
+        idempotency_key: UUID | None = Header(default=None, alias="Idempotency-Key"),
+    ):
+        return await execute_comparison(payload, session_token, idempotency_key or uuid4(), persist=True)
+
+    def comparison_response(result, *, persist: bool):
+        binding = result.binding
+        preview = ComparisonPreviewResponse(
+            comparison_id=binding.request_id, session_id=binding.session_id,
+            session_epoch=binding.session_epoch, history_version=binding.history_version,
+            bundle_id=binding.bundle_id, exclusion_version=binding.exclusion_version,
+            snapshot_at=result.snapshot_at, common_item_ids=list(result.common_item_ids),
+            strategies=[ComparedStrategyResponse(
+                requested_strategy=entry.requested_strategy,
+                actual_strategy=entry.actual_strategy,
+                fallback_reason=entry.fallback_reason, elapsed_ms=entry.elapsed_ms,
+                items=[RecommendationItemResponse(
+                    item_id=item.item_id, score=item.score, source=item.source,
+                ) for item in entry.items],
+                unique_item_ids=list(entry.unique_item_ids),
+            ) for entry in result.strategies],
+        )
+        if not persist:
+            return preview
+        session, catalog = result.context.session, result.context.catalog
+        return ComparisonSavedResponse(**{
+            **preview.model_dump(), "persisted": True, "requested_k": result.requested_k,
+            "input_snapshot": ComparisonInputSnapshotResponse(
+                history=list(session.history), hidden_items=sorted(session.hidden_items),
+                favorite_items=sorted(session.favorite_items), profile_id=session.profile_id,
+                eligible_items=sorted(catalog.eligible_items),
+            ),
+        })
+
+    async def execute_comparison(payload, session_token, comparison_id, *, persist: bool):
+        if not session_token:
+            return _error(401, "session_access_denied", "session token is required", comparison_id)
+        command = ComparisonCommand(
+            comparison_id, payload.session_id, session_token,
+            payload.expected_history_version,
+            tuple(Strategy(strategy) for strategy in payload.strategies), payload.k,
+        )
+        try:
+            result = await (demo.compare.save(command) if persist else demo.compare.preview(command))
+        except ResourceNotFound as exc:
+            return _error(404, "session_not_found", str(exc), comparison_id)
+        except AccessDenied as exc:
+            return _error(401, "session_access_denied", str(exc), comparison_id)
+        except HistoryConflict as exc:
+            return _error(409, "history_conflict", str(exc), comparison_id)
+        except IdempotencyConflict as exc:
+            return _error(409, "idempotency_conflict", str(exc), comparison_id)
+        except ComparisonStorageUnavailable as exc:
+            return _error(503, "comparison_storage_unavailable", str(exc), comparison_id)
+        except RuntimeError:
+            return _error(503, "catalog_unavailable", "catalog is not ready", comparison_id,
+                          retryable=True)
+        except psycopg.Error:
+            return _error(503, "database_unavailable", "database is unavailable", comparison_id,
+                          retryable=True)
+        except TimeoutError:
+            return _error(504, "comparison_timeout", "comparison deadline exceeded",
+                          comparison_id, retryable=True)
+        return comparison_response(result, persist=persist)
+
+    @app.get(
+        "/api/v1/strategy-comparisons", response_model=ComparisonPageResponse, tags=["demo"],
+        responses={401: {"model": ErrorEnvelope}, 404: {"model": ErrorEnvelope},
+                   503: {"model": ErrorEnvelope}},
+    )
+    async def list_comparisons(
+        session_id: UUID, offset: int = Query(default=0, ge=0, le=10000),
+        limit: int = Query(default=20, ge=1, le=50),
+        session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    ):
+        request_id = uuid4()
+        if not session_token:
+            return _error(401, "session_access_denied", "session token is required", request_id)
+        try:
+            page = await demo.compare.list(session_id, session_token, offset, limit)
+        except AccessDenied as exc:
+            return _error(401, "session_access_denied", str(exc), request_id)
+        except ResourceNotFound as exc:
+            return _error(404, "session_not_found", str(exc), request_id)
+        except ComparisonStorageUnavailable as exc:
+            return _error(503, "comparison_storage_unavailable", str(exc), request_id)
+        except psycopg.Error:
+            return _error(503, "database_unavailable", "database is unavailable", request_id,
+                          retryable=True)
+        return ComparisonPageResponse(
+            offset=page.offset, limit=page.limit, has_more=page.has_more,
+            items=[ComparisonSummaryResponse(
+                comparison_id=row.comparison_id, session_id=row.session_id,
+                history_version=row.history_version, bundle_id=row.bundle_id,
+                snapshot_at=row.snapshot_at, requested_k=row.requested_k,
+                requested_strategies=list(row.requested_strategies),
+                actual_strategies=list(row.actual_strategies),
+            ) for row in page.items],
+        )
+
+    @app.get(
+        "/api/v1/strategy-comparisons/{comparison_id}", response_model=ComparisonSavedResponse,
+        tags=["demo"], responses={401: {"model": ErrorEnvelope}, 404: {"model": ErrorEnvelope},
+                                  503: {"model": ErrorEnvelope}},
+    )
+    async def get_comparison(
+        comparison_id: UUID, session_id: UUID,
+        session_token: str | None = Header(default=None, alias="X-Session-Token"),
+    ):
+        if not session_token:
+            return _error(401, "session_access_denied", "session token is required", comparison_id)
+        try:
+            result = await demo.compare.get(comparison_id, session_id, session_token)
+        except AccessDenied as exc:
+            return _error(401, "session_access_denied", str(exc), comparison_id)
+        except ResourceNotFound as exc:
+            return _error(404, "comparison_not_found", str(exc), comparison_id)
+        except ComparisonStorageUnavailable as exc:
+            return _error(503, "comparison_storage_unavailable", str(exc), comparison_id)
+        except psycopg.Error:
+            return _error(503, "database_unavailable", "database is unavailable", comparison_id,
+                          retryable=True)
+        return comparison_response(result, persist=True)
+
+    async def comparison_job_operation(operation, session_id, session_token, job_id, payload=None):
+        if not session_token:
+            return _error(401, 'session_access_denied', 'session token is required', job_id)
+        if demo.comparison_jobs is None:
+            return _error(503, 'comparison_storage_unavailable', 'comparison jobs require PostgreSQL', job_id)
+        try:
+            if operation == 'enqueue':
+                command = ComparisonCommand(job_id, session_id, session_token,
+                                            payload.expected_history_version,
+                                            tuple(Strategy(s) for s in payload.strategies), payload.k)
+                row = await demo.comparison_jobs.enqueue(command)
+            else:
+                row = await getattr(demo.comparison_jobs, operation)(job_id, session_id, session_token)
+            return ComparisonJobResponse(**row)
+        except AccessDenied as exc:
+            return _error(401, 'session_access_denied', str(exc), job_id)
+        except ResourceNotFound as exc:
+            return _error(404, 'comparison_job_not_found', str(exc), job_id)
+        except (HistoryConflict, IdempotencyConflict) as exc:
+            code = 'history_conflict' if isinstance(exc, HistoryConflict) else 'idempotency_conflict'
+            return _error(409, code, str(exc), job_id)
+        except ManagementError as exc:
+            return _error(exc.status_code, exc.code, str(exc), job_id, retryable=exc.status_code == 429)
+        except psycopg.Error:
+            return _error(503, 'database_unavailable', 'database is unavailable', job_id, retryable=True)
+        except RuntimeError:
+            return _error(503, 'catalog_unavailable', 'catalog is not ready', job_id, retryable=True)
+        except TimeoutError:
+            return _error(504, 'comparison_timeout', 'comparison submission deadline exceeded', job_id, retryable=True)
+
+    job_errors = {401: {'model': ErrorEnvelope}, 404: {'model': ErrorEnvelope},
+                  409: {'model': ErrorEnvelope}, 429: {'model': ErrorEnvelope},
+                  503: {'model': ErrorEnvelope}, 504: {'model': ErrorEnvelope}}
+
+    @app.post('/api/v1/strategy-comparison-jobs', response_model=ComparisonJobResponse,
+              status_code=202, tags=['demo'], responses=job_errors)
+    async def enqueue_comparison_job(
+        payload: ComparisonPreviewInput,
+        session_token: str | None = Header(default=None, alias='X-Session-Token'),
+        idempotency_key: UUID | None = Header(default=None, alias='Idempotency-Key'),
+    ):
+        return await comparison_job_operation('enqueue', payload.session_id, session_token,
+                                              idempotency_key or uuid4(), payload)
+
+    @app.get('/api/v1/strategy-comparison-jobs/{job_id}', response_model=ComparisonJobResponse,
+             tags=['demo'], responses=job_errors)
+    async def get_comparison_job(
+        job_id: UUID, session_id: UUID,
+        session_token: str | None = Header(default=None, alias='X-Session-Token'),
+    ):
+        return await comparison_job_operation('get', session_id, session_token, job_id)
+
+    @app.post('/api/v1/strategy-comparison-jobs/{job_id}/cancel', response_model=ComparisonJobResponse,
+              tags=['demo'], responses=job_errors)
+    async def cancel_comparison_job(
+        job_id: UUID, session_id: UUID,
+        session_token: str | None = Header(default=None, alias='X-Session-Token'),
+    ):
+        return await comparison_job_operation('cancel', session_id, session_token, job_id)
 
     @app.post(
         "/api/v1/feedback",

@@ -60,6 +60,29 @@
       <div id="undo" role="status" aria-live="polite"></div>
       <div id="detail"></div>
     </section>
+    <section class="wide">
+      <h2>策略对比</h2>
+      <p>固定当前会话与商品库，查看各策略的结果、共同商品、独有商品和耗时。保存后可重查当时的结果。</p>
+      <button id="compare-strategies">对比当前会话</button>
+      <button id="save-comparison">运行并保存对比</button>
+      <button id="new-comparison" class="secondary">开始新对比</button>
+      <label for="comparison-id">已保存的对比编号</label><input id="comparison-id" placeholder="保存后自动填写">
+      <button id="load-comparison" class="secondary">重查记录</button>
+      <button id="comparison-history">查看已保存对比</button>
+      <div id="comparison-history-list" role="region" aria-label="已保存对比列表"></div>
+      <p id="comparison-history-page" role="status"></p>
+      <button id="comparison-previous" class="secondary" disabled>更近记录</button>
+      <button id="comparison-next" class="secondary" disabled>更早记录</button>
+      <h3>后台对比任务</h3>
+      <p>提交时冻结输入，独立 comparison worker 执行。进度按完成的策略计数；取消需等待当前排序结束，不会中断普通推荐。</p>
+      <button id="submit-comparison-job">提交后台对比</button>
+      <button id="new-comparison-job" class="secondary">新建后台任务</button>
+      <label for="comparison-job-id">任务编号</label><input id="comparison-job-id" placeholder="提交后自动填写，可重开查询">
+      <button id="load-comparison-job" class="secondary">查询任务</button>
+      <button id="cancel-comparison-job" class="secondary" disabled>取消任务</button>
+      <p id="comparison-job-status" role="status" aria-live="polite">尚无后台任务。</p>
+      <div id="comparison" role="region" aria-label="策略对比结果" aria-live="polite"></div>
+    </section>
     <section>
       <h2>商品目录</h2>
       <button id="refresh-items">刷新商品</button>
@@ -111,10 +134,29 @@
     let itemsOffset = 0;
     const itemsPageSize = 20;
     let pendingCatalogFile = null;
+    let pendingComparison = null, savingComparison = false;
+    let pendingComparisonJob = null, submittingComparisonJob = false, comparisonJobTimer = null;
+    let comparisonHistoryOffset = 0;
+    const comparisonHistoryPageSize = 10;
     let currentBuild = null, buildPreviewOffset = 0, pendingBuildPublication = null, processingCatalog = false, buildPollTimer = null, importPollTimer = null;
     const pendingFeedback = new Map();
     const hiddenUndo = new Map();
     const message = value => { el('message').textContent = value; };
+    function rememberComparison() {
+      try { sessionStorage.setItem('evorec.comparison', JSON.stringify({
+        session, pending: pendingComparison, id: el('comparison-id').value,
+        pendingJob: pendingComparisonJob, jobId: el('comparison-job-id').value,
+      })); } catch (_) { /* Comparison IDs remain available when browser storage is disabled. */ }
+    }
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('evorec.comparison'));
+      if (saved?.session?.session_id && saved.session.access_token) {
+        session = saved.session; pendingComparison = saved.pending || null;
+        el('comparison-id').value = saved.id || '';
+        pendingComparisonJob = saved.pendingJob || null;
+        el('comparison-job-id').value = saved.jobId || '';
+      }
+    } catch (_) { /* A new session can be created if the saved tab state is unavailable. */ }
     async function api(path, options = {}) {
       const response = await fetch(path, {...options, headers: {'Content-Type': 'application/json', ...(options.headers || {})}});
       const data = await response.json();
@@ -130,6 +172,7 @@
     function showSession() {
       const title = id => catalog.get(id)?.title || id;
       el('session').textContent = session ? `${session.profile_id === 'sample' ? '示例用户' : '新用户'} · 已看过 ${[...new Set(session.history)].map(title).join('、') || '暂无'} · 收藏 ${session.favorite_items.map(title).join('、') || '暂无'} · 版本 ${session.history_version}` : '尚未创建会话。';
+      rememberComparison();
     }
     async function refreshItems({offset = 0} = {}) {
       const page = await api(`/api/v1/items?offset=${offset}&limit=${itemsPageSize + 1}`);
@@ -302,12 +345,23 @@
       } else if (state.status === 'queued' || state.status === 'processing') startBuildPolling(buildId);
     }
     async function syncSession() {
-      const fresh = await api(`/api/v1/sessions/${session.session_id}`, {headers: auth()});
+      const currentSession = session.session_id;
+      const fresh = await api(`/api/v1/sessions/${currentSession}`, {headers: auth()});
+      if (session?.session_id !== currentSession) return;
       session = {...session, ...fresh}; showSession();
+      el('comparison').replaceChildren();
     }
     function clearResults() {
       latest = null; pendingRecommendation = null; pendingFeedback.clear(); hiddenUndo.clear();
       el('recommendations').replaceChildren(); el('undo').replaceChildren(); el('detail').replaceChildren();
+      el('comparison').replaceChildren();
+      pendingComparison = null; el('comparison-id').value = '';
+      stopComparisonJobPolling(); pendingComparisonJob = null; el('comparison-job-id').value = '';
+      el('comparison-job-status').textContent = '尚无后台任务。'; el('cancel-comparison-job').disabled = true;
+      rememberComparison();
+      comparisonHistoryOffset = 0; el('comparison-history-list').replaceChildren();
+      el('comparison-history-page').textContent = '';
+      el('comparison-previous').disabled = true; el('comparison-next').disabled = true;
     }
     async function sendFeedback(itemId, kind, desiredState) {
       const key = `${latest.request_id}:${itemId}:${kind}:${desiredState}`;
@@ -390,6 +444,176 @@
         if (!latest.items.length) { const empty = document.createElement('p'); empty.textContent = '暂无可推荐商品。可重置会话或检查商品目录。'; list.append(empty); }
       } catch (error) { list.replaceChildren(); throw new Error(`暂时无法生成推荐，请稍后重试：${error.message}`); }
     }
+    async function compareStrategies() {
+      if (!session) throw new Error('请先开始体验');
+      const currentSession = session.session_id;
+      const area = el('comparison'); area.replaceChildren();
+      const loading = document.createElement('p'); loading.textContent = '正在以同一快照对比策略…';
+      area.append(loading);
+      try {
+        const result = await api('/api/v1/strategy-comparisons/preview', {
+          method: 'POST', headers: auth(), body: JSON.stringify({
+            session_id: session.session_id, expected_history_version: session.history_version,
+            strategies: ['popular', 'dense', 'adaptive'], k: Math.min(10, Math.max(1, Number(el('count').value) || 10)),
+          }),
+        });
+        if (session?.session_id === currentSession) renderComparison(result);
+      } catch (error) {
+        if (session?.session_id !== currentSession) return;
+        area.replaceChildren(); throw error;
+      }
+    }
+    function renderComparison(result) {
+        const area = el('comparison'); area.replaceChildren();
+        const summary = document.createElement('p'); summary.className = 'status';
+        summary.textContent = `同一快照：会话版本 ${result.history_version}，商品库 ${result.bundle_id}。共同商品 ${result.common_item_ids.length} 件：${result.common_item_ids.join('、') || '无'}。${result.persisted ? `已保存：${result.comparison_id}。采样时间 ${result.snapshot_at}。` : '结果仅预览，未保存。'}`;
+        area.append(summary);
+        for (const entry of result.strategies) {
+          const row = document.createElement('div'); row.className = 'item';
+          const heading = document.createElement('strong');
+          heading.textContent = `${entry.requested_strategy} → 实际 ${entry.actual_strategy} · ${entry.elapsed_ms.toFixed(1)} ms`;
+          const detail = document.createElement('small');
+          detail.textContent = `${entry.fallback_reason ? `回退：${entry.fallback_reason}。` : ''}Top ${entry.items.length}：${entry.items.map(item => item.item_id).join('、') || '无可用商品'}。独有商品：${entry.unique_item_ids.join('、') || '无'}。`;
+          row.append(heading, detail); area.append(row);
+        }
+    }
+    async function saveComparison() {
+      if (!session) throw new Error('请先开始体验');
+      if (savingComparison) return;
+      if (!pendingComparison) pendingComparison = {id: crypto.randomUUID(), payload: {
+        session_id: session.session_id, expected_history_version: session.history_version,
+        strategies: ['popular', 'dense', 'adaptive'],
+        k: Math.min(10, Math.max(1, Number(el('count').value) || 10)),
+      }};
+      el('comparison-id').value = pendingComparison.id; rememberComparison();
+      savingComparison = true; el('save-comparison').disabled = true; el('new-comparison').disabled = true;
+      try {
+        const result = await api('/api/v1/strategy-comparisons', {
+          method: 'POST', headers: {...auth(), 'Idempotency-Key': pendingComparison.id},
+          body: JSON.stringify(pendingComparison.payload),
+        });
+        if (result.session_id === session?.session_id) {
+          el('comparison-id').value = result.comparison_id; pendingComparison = null;
+          rememberComparison(); renderComparison(result);
+        }
+      } finally {
+        savingComparison = false; el('save-comparison').disabled = false; el('new-comparison').disabled = false;
+      }
+    }
+    async function loadComparison() {
+      if (!session) throw new Error('请先开始体验');
+      const id = el('comparison-id').value.trim();
+      if (!id) throw new Error('请填写对比编号');
+      const currentSession = session.session_id;
+      const result = await api(`/api/v1/strategy-comparisons/${encodeURIComponent(id)}?session_id=${encodeURIComponent(currentSession)}`, {headers: auth()});
+      if (session?.session_id !== currentSession || el('comparison-id').value.trim() !== id) return;
+      pendingComparison = null; rememberComparison(); renderComparison(result);
+    }
+    async function refreshComparisonHistory({offset = 0} = {}) {
+      if (!session) throw new Error('请先开始体验');
+      const currentSession = session.session_id;
+      const page = await api(`/api/v1/strategy-comparisons?session_id=${encodeURIComponent(currentSession)}&offset=${offset}&limit=${comparisonHistoryPageSize}`, {headers: auth()});
+      if (session?.session_id !== currentSession) return;
+      comparisonHistoryOffset = page.offset;
+      const list = el('comparison-history-list'); list.replaceChildren();
+      for (const record of page.items) {
+        const row = document.createElement('div'); row.className = 'item';
+        const title = document.createElement('strong'); title.textContent = `会话版本 ${record.history_version} · ${record.snapshot_at}`;
+        const detail = document.createElement('small');
+        detail.textContent = `Top ${record.requested_k} · ${record.requested_strategies.map((strategy, index) => `${strategy} → ${record.actual_strategies[index]}`).join('；')}`;
+        const open = document.createElement('button'); open.className = 'secondary'; open.textContent = '打开此对比';
+        open.onclick = () => run(async () => {
+          if (session?.session_id !== currentSession) return;
+          el('comparison-id').value = record.comparison_id; await loadComparison();
+        });
+        row.append(title, detail, open); list.append(row);
+      }
+      el('comparison-history-page').textContent = page.items.length
+        ? `显示第 ${page.offset + 1}–${page.offset + page.items.length} 条历史记录`
+        : page.offset ? '这一页没有记录，请返回更近记录。' : '当前会话尚无已保存对比。';
+      el('comparison-previous').disabled = page.offset === 0;
+      el('comparison-next').disabled = !page.has_more;
+    }
+    function stopComparisonJobPolling() {
+      if (comparisonJobTimer !== null) clearInterval(comparisonJobTimer);
+      comparisonJobTimer = null;
+    }
+    function startComparisonJobPolling(id, currentSession) {
+      stopComparisonJobPolling();
+      comparisonJobTimer = setInterval(async () => {
+        if (session?.session_id !== currentSession || el('comparison-job-id').value.trim() !== id) {
+          stopComparisonJobPolling(); return;
+        }
+        try { await loadComparisonJob(); }
+        catch (error) {
+          if (session?.session_id === currentSession && el('comparison-job-id').value.trim() === id)
+            el('comparison-job-status').textContent = `暂无法查询任务 ${id}：${error.message}。将继续重试，也可手动查询。`;
+        }
+      }, 1000);
+    }
+    async function showComparisonJob(state, currentSession) {
+      if (session?.session_id !== currentSession || el('comparison-job-id').value.trim() !== state.job_id) return;
+      const phase = {queued: '排队中（请启动 comparison worker）', running: '运行中',
+        cancelling: '取消中，等待当前排序结束', cancelled: '已取消，未保存结果',
+        completed: '已完成并保存', failed: '失败，未保存结果；请新建任务'}[state.status];
+      el('comparison-job-status').textContent = `${phase} · 策略 ${state.completed_strategies}/${state.total_strategies} · 尝试 ${state.attempts} 次${state.error_code ? ' · 原因：' + state.error_code : ''}`;
+      const active = ['queued', 'running', 'cancelling'].includes(state.status);
+      el('cancel-comparison-job').disabled = !active || state.cancel_requested;
+      if (active) {
+        startComparisonJobPolling(state.job_id, currentSession);
+      } else {
+        stopComparisonJobPolling();
+        if (state.status === 'completed') {
+          el('comparison-id').value = state.comparison_id;
+          await loadComparison();
+        }
+      }
+      rememberComparison();
+    }
+    async function submitComparisonJob() {
+      if (!session) throw new Error('请先开始体验');
+      if (submittingComparisonJob) return;
+      const currentSession = session.session_id;
+      if (!pendingComparisonJob) pendingComparisonJob = {id: crypto.randomUUID(), payload: {
+        session_id: currentSession, expected_history_version: session.history_version,
+        strategies: ['popular', 'dense', 'adaptive'],
+        k: Math.min(10, Math.max(1, Number(el('count').value) || 10)),
+      }};
+      el('comparison-job-id').value = pendingComparisonJob.id; rememberComparison();
+      submittingComparisonJob = true; el('submit-comparison-job').disabled = true;
+      try {
+        const state = await api('/api/v1/strategy-comparison-jobs', {
+          method: 'POST', headers: {...auth(), 'Idempotency-Key': pendingComparisonJob.id},
+          body: JSON.stringify(pendingComparisonJob.payload),
+        });
+        if (session?.session_id !== currentSession) return;
+        await showComparisonJob(state, currentSession);
+      } finally {
+        submittingComparisonJob = false; el('submit-comparison-job').disabled = false;
+      }
+    }
+    async function loadComparisonJob() {
+      if (!session) throw new Error('请先开始体验');
+      const id = el('comparison-job-id').value.trim(), currentSession = session.session_id;
+      if (!id) throw new Error('请填写任务编号');
+      const state = await api(`/api/v1/strategy-comparison-jobs/${encodeURIComponent(id)}?session_id=${encodeURIComponent(currentSession)}`, {headers: auth()});
+      await showComparisonJob(state, currentSession);
+    }
+    el('submit-comparison-job').onclick = () => run(submitComparisonJob);
+    el('load-comparison-job').onclick = () => run(loadComparisonJob);
+    el('cancel-comparison-job').onclick = () => run(async () => {
+      if (!session) throw new Error('请先开始体验');
+      const id = el('comparison-job-id').value.trim(), currentSession = session.session_id;
+      if (!id) throw new Error('请填写任务编号');
+      const state = await api(`/api/v1/strategy-comparison-jobs/${encodeURIComponent(id)}/cancel?session_id=${encodeURIComponent(currentSession)}`, {method: 'POST', headers: auth()});
+      await showComparisonJob(state, currentSession);
+    });
+    el('new-comparison-job').onclick = () => {
+      if (submittingComparisonJob) return;
+      stopComparisonJobPolling(); pendingComparisonJob = null; el('comparison-job-id').value = '';
+      el('comparison-job-status').textContent = '可提交一份新任务（原后台任务不会因此取消）。';
+      el('cancel-comparison-job').disabled = true; rememberComparison();
+    };
     el('new-session').onclick = () => run(async () => {
       session = await api('/api/v1/sessions', {method: 'POST', body: JSON.stringify({profile_id: el('profile').value})});
       clearResults(); showSession(); await refreshItems(); await recommend();
@@ -400,6 +624,21 @@
       session = {...session, ...fresh}; clearResults(); showSession(); await recommend();
     });
     el('recommend').onclick = () => run(recommend);
+    el('compare-strategies').onclick = () => run(compareStrategies);
+    el('save-comparison').onclick = () => run(saveComparison);
+    el('load-comparison').onclick = () => run(loadComparison);
+    el('comparison-history').onclick = () => run(refreshComparisonHistory);
+    el('comparison-previous').onclick = () => run(async () => {
+      if (comparisonHistoryOffset > 0) await refreshComparisonHistory({offset: comparisonHistoryOffset - comparisonHistoryPageSize});
+    });
+    el('comparison-next').onclick = () => run(async () => {
+      if (!el('comparison-next').disabled) await refreshComparisonHistory({offset: comparisonHistoryOffset + comparisonHistoryPageSize});
+    });
+    el('new-comparison').onclick = () => {
+      if (savingComparison) return;
+      pendingComparison = null; el('comparison-id').value = '';
+      el('comparison').replaceChildren(); rememberComparison(); message('可以按当前会话运行一份新对比');
+    };
     el('refresh-items').onclick = () => run(refreshItems);
     el('items-previous').onclick = () => run(async () => {
       if (itemsOffset > 0) await refreshItems({offset: itemsOffset - itemsPageSize});
@@ -500,7 +739,16 @@
     el('recover').onclick = () => run(async () => {
       await api('/api/v1/admin/publication/recover', {method: 'POST', headers: admin()}); await publication();
     });
-    run(async () => { const system = await api('/api/v1/system'); el('system').textContent = `服务版本 ${system.version} · 持久化 ${system.capabilities.persistence ? '已配置' : '未配置'} · 发布 ${system.capabilities.catalog_publication ? '可用' : '未配置'}`; });
+    const startup = run(async () => {
+      const system = await api('/api/v1/system'); el('system').textContent = `服务版本 ${system.version} · 持久化 ${system.capabilities.persistence ? '已配置' : '未配置'} · 发布 ${system.capabilities.catalog_publication ? '可用' : '未配置'}`;
+      el('save-comparison').disabled = !system.capabilities.persistence;
+      el('submit-comparison-job').disabled = !system.capabilities.persistence;
+      if (session) {
+        await syncSession();
+        if (el('comparison-id').value) await loadComparison();
+        if (el('comparison-job-id').value) await loadComparisonJob();
+      }
+    });
   </script>
 </body>
 </html>

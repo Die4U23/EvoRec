@@ -66,6 +66,20 @@ class RecommendationInput(Contract):
     k: Annotated[StrictInt, Field(ge=1, le=50)] = 10
 
 
+class ComparisonPreviewInput(Contract):
+    session_id: UUID
+    expected_history_version: Annotated[StrictInt, Field(ge=0)]
+    strategies: Annotated[list[Literal["popular", "dense", "adaptive"]],
+                          Field(min_length=2, max_length=3)]
+    k: Annotated[StrictInt, Field(ge=1, le=10)] = 10
+
+    @model_validator(mode="after")
+    def distinct_strategies(self) -> Self:
+        if len(set(self.strategies)) != len(self.strategies):
+            raise ValueError("comparison strategies must be distinct")
+        return self
+
+
 class FeedbackInput(Contract):
     event_id: UUID
     session_id: UUID

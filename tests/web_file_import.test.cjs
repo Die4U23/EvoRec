@@ -8,7 +8,8 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'web', 'index.html'), 'u
 const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(script, 'inline application script exists');
 
-function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFetch = null) {
+function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFetch = null,
+  comparisonFetch = null, tabStorage = new Map()) {
   const elements = new Map();
   const requests = [];
   let interval = null;
@@ -24,6 +25,8 @@ function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFet
   const context = {
     document: {getElementById: element, createElement: () => element(Symbol())},
     crypto: {randomUUID: () => `batch-${nextId++}`},
+    sessionStorage: {getItem: key => tabStorage.get(key) || null,
+      setItem: (key, value) => tabStorage.set(key, value)},
     setInterval: callback => { interval = callback; return 1; },
     clearInterval: () => { interval = null; },
     fetch: async (url, options) => {
@@ -40,6 +43,9 @@ function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFet
       if (url.startsWith('/api/v1/admin/catalog/file-import-jobs/') && !options?.method)
         return fileStatusFetch ? fileStatusFetch(url) :
           {ok: false, status: 404, json: async () => ({error: {code: 'file_job_not_found'}})};
+      if (comparisonFetch && (url.startsWith('/api/v1/strategy-comparison') ||
+        url.startsWith('/api/v1/sessions/')))
+        return comparisonFetch(url, options);
       if (catalogFetch && url.startsWith('/api/v1/admin/catalog/') &&
           url !== '/api/v1/admin/catalog/file-import-jobs') return catalogFetch(url, options);
       if (catalogFetch && url === '/api/v1/admin/publication') return catalogFetch(url, options);
@@ -50,8 +56,252 @@ function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFet
     },
   };
   vm.runInNewContext(script, context, {filename: 'web/index.html'});
-  return {element, requests, tick: async () => { if (interval) await interval(); }};
+  return {element, requests, tick: async () => { if (interval) await interval(); },
+    ready: vm.runInNewContext('startup', context),
+    setSession: value => { context.__sessionForTest = value; vm.runInNewContext('session = __sessionForTest', context); }};
 }
+
+test('strategy comparison preview uses one session snapshot and labels fallback honestly', async () => {
+  const reply = {comparison_id: 'comparison-1', history_version: 2, bundle_id: 'bundle-1',
+    common_item_ids: ['item-a'], persisted: false, strategies: [
+      {requested_strategy: 'popular', actual_strategy: 'popular', elapsed_ms: 1.2,
+        fallback_reason: null, items: [{item_id: 'item-a'}], unique_item_ids: []},
+      {requested_strategy: 'dense', actual_strategy: 'popular', elapsed_ms: 2.3,
+        fallback_reason: 'strategy_not_loaded_in_memory_demo', items: [{item_id: 'item-a'}], unique_item_ids: []},
+      {requested_strategy: 'adaptive', actual_strategy: 'popular', elapsed_ms: 0.4,
+        fallback_reason: null, items: [{item_id: 'item-a'}], unique_item_ids: []},
+    ]};
+  const pageState = page([], null, [], null,
+    () => ({ok: true, json: async () => reply}));
+  await pageState.ready;
+  pageState.setSession({session_id: 'session-1', access_token: 'token-1', history_version: 2});
+  pageState.element('count').value = '10';
+  await pageState.element('compare-strategies').onclick();
+  const sent = pageState.requests.find(request => request.url === '/api/v1/strategy-comparisons/preview');
+  assert.equal(sent.options.headers['X-Session-Token'], 'token-1');
+  assert.deepEqual(JSON.parse(sent.options.body).strategies, ['popular', 'dense', 'adaptive']);
+  assert.equal(JSON.parse(sent.options.body).expected_history_version, 2);
+  assert.match(pageState.element('comparison').children[0].textContent, /未保存/);
+  assert.match(pageState.element('comparison').children[2].children[1].textContent,
+    /回退：strategy_not_loaded_in_memory_demo/);
+});
+
+test('saved comparison retries the same input and recovers after page reload', async () => {
+  const storage = new Map();
+  const session = {session_id: 'session-1', access_token: 'token-1', history_version: 2,
+    history: [], favorite_items: [], profile_id: 'new'};
+  let saved = null;
+  const posts = [];
+  const fetchComparison = (url, options) => {
+    if (url.startsWith('/api/v1/sessions/')) return {ok: true, json: async () => session};
+    if (options?.method === 'POST') {
+      posts.push(options);
+      if (posts.length === 1) throw new Error('response lost');
+      saved = {comparison_id: options.headers['Idempotency-Key'], session_id: 'session-1',
+        history_version: 2, bundle_id: 'bundle-1', snapshot_at: '2026-10-02T00:00:00Z',
+        persisted: true, common_item_ids: [], strategies: []};
+      return {ok: true, json: async () => saved};
+    }
+    return saved ? {ok: true, json: async () => saved}
+      : {ok: false, status: 404, json: async () => ({error: {message: 'comparison not found'}})};
+  };
+  const first = page([], null, [], null, fetchComparison, storage);
+  await first.ready;
+  first.setSession(session); first.element('count').value = '4';
+  await first.element('save-comparison').onclick();
+  assert.match(first.element('message').textContent, /response lost/);
+  const reloaded = page([], null, [], null, fetchComparison, storage);
+  await reloaded.ready;
+  reloaded.element('count').value = '10';
+  await reloaded.element('save-comparison').onclick();
+  assert.equal(posts[1].headers['Idempotency-Key'], posts[0].headers['Idempotency-Key']);
+  assert.equal(posts[1].body, posts[0].body);
+  assert.equal(JSON.parse(posts[1].body).k, 4);
+  assert.match(reloaded.element('comparison').children[0].textContent, /已保存/);
+  const recovered = page([], null, [], null, fetchComparison, storage);
+  await recovered.ready;
+  assert.equal(recovered.element('comparison-id').value, saved.comparison_id);
+  assert.match(recovered.element('comparison').children[0].textContent, /已保存/);
+  const request = recovered.requests.find(row => row.url.startsWith('/api/v1/strategy-comparisons/'));
+  assert.equal(request.options.headers['X-Session-Token'], 'token-1');
+});
+
+test('comparison history paginates and opens the selected durable record', async () => {
+  const records = Array.from({length: 23}, (_, index) => ({
+    comparison_id: `comparison-${index}`, history_version: index,
+    snapshot_at: '2026-10-02T00:00:00Z', requested_k: 10,
+    requested_strategies: ['popular', 'dense'], actual_strategies: ['popular', 'dense'],
+  }));
+  const state = page([], null, [], null, url => {
+    if (url.startsWith('/api/v1/strategy-comparisons?')) {
+      const query = new URL(url, 'http://test').searchParams;
+      assert.equal(query.get('session_id'), 'session-1');
+      const offset = Number(query.get('offset')), limit = Number(query.get('limit'));
+      return {ok: true, json: async () => ({offset, limit, items: records.slice(offset, offset + limit),
+        has_more: offset + limit < records.length})};
+    }
+    const id = url.split('/').pop().split('?')[0];
+    return {ok: true, json: async () => ({comparison_id: id, session_id: 'session-1',
+      history_version: 20, bundle_id: 'bundle-1', snapshot_at: '2026-10-02T00:00:00Z',
+      persisted: true, common_item_ids: [], strategies: []})};
+  });
+  await state.ready;
+  state.setSession({session_id: 'session-1', access_token: 'token-1'});
+  await state.element('comparison-history').onclick();
+  assert.equal(state.element('comparison-history-list').children.length, 10);
+  assert.equal(state.element('comparison-previous').disabled, true);
+  await state.element('comparison-next').onclick();
+  await state.element('comparison-next').onclick();
+  assert.equal(state.element('comparison-history-list').children.length, 3);
+  assert.match(state.element('comparison-history-page').textContent, /21–23/);
+  assert.equal(state.element('comparison-next').disabled, true);
+  await state.element('comparison-history-list').children[0].children[2].onclick();
+  assert.equal(state.element('comparison-id').value, 'comparison-20');
+  assert.match(state.element('comparison').children[0].textContent, /已保存：comparison-20/);
+  await state.element('comparison-previous').onclick();
+  assert.match(state.element('comparison-history-page').textContent, /11–20/);
+});
+
+test('late comparison response cannot replace the result of a newly selected session', async () => {
+  let complete;
+  const state = page([], null, [], null, () => new Promise(resolve => { complete = resolve; }));
+  await state.ready;
+  state.setSession({session_id: 'old-session', access_token: 'old-token', history_version: 0});
+  const pending = state.element('compare-strategies').onclick();
+  state.setSession({session_id: 'new-session', access_token: 'new-token', history_version: 0});
+  const newResult = {textContent: 'new session result'};
+  state.element('comparison').replaceChildren(newResult);
+  complete({ok: true, json: async () => ({common_item_ids: [], strategies: [], history_version: 0})});
+  await pending;
+  assert.equal(state.element('comparison').children[0], newResult);
+});
+
+test('background comparison retries frozen input, restores polling and opens complete result', async () => {
+  const storage = new Map();
+  const session = {session_id: 'session-1', access_token: 'token-1', history_version: 2,
+    history: [], favorite_items: [], profile_id: 'new'};
+  const posts = [];
+  let status = 'queued', id;
+  const fetchJob = (url, options) => {
+    if (url.startsWith('/api/v1/sessions/')) return {ok: true, json: async () => session};
+    if (url.startsWith('/api/v1/strategy-comparisons/')) return {ok: true, json: async () => ({
+      comparison_id: id, session_id: 'session-1', persisted: true, history_version: 2,
+      bundle_id: 'bundle-1', snapshot_at: '2026-10-02T00:00:00Z', common_item_ids: [], strategies: [],
+    })};
+    if (options?.method === 'POST') {
+      posts.push(options); id = options.headers['Idempotency-Key'];
+      if (posts.length === 1) throw new Error('response lost after enqueue');
+    }
+    return {ok: true, json: async () => ({job_id: id, session_id: 'session-1', status,
+      completed_strategies: status === 'completed' ? 3 : status === 'running' ? 1 : 0,
+      total_strategies: 3, attempts: status === 'queued' ? 0 : 1,
+      cancel_requested: false, error_code: null, comparison_id: status === 'completed' ? id : null})};
+  };
+  const first = page([], null, [], null, fetchJob, storage);
+  await first.ready; first.setSession(session); first.element('count').value = '4';
+  await first.element('submit-comparison-job').onclick();
+  assert.match(first.element('message').textContent, /response lost/);
+  const reloaded = page([], null, [], null, fetchJob, storage);
+  await reloaded.ready;
+  assert.match(reloaded.element('comparison-job-status').textContent, /排队中/);
+  reloaded.element('count').value = '10';
+  await reloaded.element('submit-comparison-job').onclick();
+  assert.equal(posts[0].body, posts[1].body);
+  assert.equal(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
+  status = 'running'; await reloaded.tick();
+  assert.match(reloaded.element('comparison-job-status').textContent, /策略 1\/3/);
+  status = 'completed'; await reloaded.tick();
+  assert.match(reloaded.element('comparison-job-status').textContent, /已完成并保存/);
+  assert.match(reloaded.element('comparison').children[0].textContent, /已保存/);
+  assert.equal(reloaded.element('comparison-id').value, id);
+  const count = reloaded.requests.length;
+  await reloaded.tick(); assert.equal(reloaded.requests.length, count, 'terminal job stops polling');
+});
+
+test('late saved result cannot overwrite a different record selected in the same session', async () => {
+  let complete;
+  const state = page([], null, [], null, () => new Promise(resolve => { complete = resolve; }));
+  await state.ready; state.setSession({session_id: 'session-1', access_token: 'token-1'});
+  state.element('comparison-id').value = 'old-record';
+  const pending = state.element('load-comparison').onclick();
+  state.element('comparison-id').value = 'new-record';
+  const newResult = {textContent: 'new selected comparison'};
+  state.element('comparison').replaceChildren(newResult);
+  complete({ok: true, json: async () => ({comparison_id: 'old-record', session_id: 'session-1',
+    common_item_ids: [], strategies: [], persisted: true})});
+  await pending;
+  assert.equal(state.element('comparison').children[0], newResult);
+});
+
+test('running cancellation is displayed as pending until worker acknowledgement', async () => {
+  let status = 'running';
+  const state = page([], null, [], null, (url, options) => {
+    if (url.includes('/cancel?')) {
+      assert.equal(options.method, 'POST');
+      assert.equal(options.headers['X-Session-Token'], 'token-1');
+      status = 'cancelling';
+    }
+    assert.ok(url.startsWith('/api/v1/strategy-comparison-jobs'), 'cancelled job never queries a saved result');
+    return {ok: true, json: async () => ({job_id: 'job-1', session_id: 'session-1', status,
+      completed_strategies: 1, total_strategies: 3, attempts: 1,
+      cancel_requested: status !== 'running', comparison_id: null, error_code: null})};
+  });
+  await state.ready; state.setSession({session_id: 'session-1', access_token: 'token-1'});
+  state.element('comparison-job-id').value = 'job-1';
+  await state.element('load-comparison-job').onclick();
+  await state.element('cancel-comparison-job').onclick();
+  assert.match(state.element('comparison-job-status').textContent, /取消中，等待当前排序结束/);
+  assert.equal(state.element('cancel-comparison-job').disabled, true);
+  status = 'cancelled'; await state.tick();
+  assert.match(state.element('comparison-job-status').textContent, /已取消，未保存结果/);
+  assert.equal(state.element('comparison').children.length, 0);
+});
+
+test('background failure retains task id and a new task must be explicitly requested', async () => {
+  const ids = [];
+  const state = page([], null, [], null, (url, options) => {
+    const id = options.headers['Idempotency-Key']; ids.push(id);
+    return {ok: true, json: async () => ({job_id: id, session_id: 'session-1', status: 'failed',
+      completed_strategies: 1, total_strategies: 3, attempts: 1,
+      cancel_requested: false, comparison_id: null, error_code: 'comparison_failed'})};
+  });
+  await state.ready; state.setSession({session_id: 'session-1', access_token: 'token-1', history_version: 0});
+  await state.element('submit-comparison-job').onclick();
+  assert.match(state.element('comparison-job-status').textContent, /失败，未保存结果/);
+  await state.element('submit-comparison-job').onclick(); assert.equal(ids[0], ids[1]);
+  state.element('new-comparison-job').onclick();
+  await state.element('submit-comparison-job').onclick(); assert.notEqual(ids[2], ids[0]);
+});
+
+test('selecting another queued job replaces the old polling target', async () => {
+  const reads = [];
+  const state = page([], null, [], null, url => {
+    const id = url.split('/').pop().split('?')[0]; reads.push(id);
+    return {ok: true, json: async () => ({job_id: id, session_id: 'session-1', status: 'queued',
+      completed_strategies: 0, total_strategies: 3, attempts: 0, cancel_requested: false,
+      comparison_id: null, error_code: null})};
+  });
+  await state.ready; state.setSession({session_id: 'session-1', access_token: 'token-1'});
+  state.element('comparison-job-id').value = 'first'; await state.element('load-comparison-job').onclick();
+  state.element('comparison-job-id').value = 'second'; await state.element('load-comparison-job').onclick();
+  await state.tick(); await state.tick();
+  assert.deepEqual(reads, ['first', 'second', 'second', 'second']);
+});
+
+test('late job response cannot replace a different selected job or session', async () => {
+  let complete;
+  const state = page([], null, [], null, () => new Promise(resolve => { complete = resolve; }));
+  await state.ready; state.setSession({session_id: 'old', access_token: 'old-token'});
+  state.element('comparison-job-id').value = 'old-job';
+  const pending = state.element('load-comparison-job').onclick();
+  state.setSession({session_id: 'new', access_token: 'new-token'});
+  state.element('comparison-job-id').value = 'new-job';
+  state.element('comparison-job-status').textContent = 'new task state';
+  complete({ok: true, json: async () => ({job_id: 'old-job', status: 'running',
+    total_strategies: 3, completed_strategies: 0})});
+  await pending; await state.tick();
+  assert.equal(state.element('comparison-job-status').textContent, 'new task state');
+});
 
 test('catalog workbench paginates beyond the first hundred items', async () => {
   const items = Array.from({length: 103}, (_, index) => ({

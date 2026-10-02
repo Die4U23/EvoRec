@@ -21,6 +21,10 @@ class AccessDenied(Exception):
     """A session credential is absent or does not match the stored owner."""
 
 
+class ComparisonStorageUnavailable(Exception):
+    """This backend does not support durable comparison records."""
+
+
 class IdempotencyConflict(Exception):
     """An idempotency key was already used for different semantic content."""
 

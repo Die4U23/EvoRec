@@ -108,6 +108,20 @@ class InMemoryDemoBackend:
                 raise AccessDenied("session token is invalid")
             return snapshot
 
+    async def snapshot_for_comparison(self, command: RecommendationCommand) -> RequestContext:
+        async with self._lock:
+            try:
+                session = self._sessions[command.session_id]
+            except KeyError as exc:
+                raise ResourceNotFound("session does not exist") from exc
+            if not hmac.compare_digest(
+                self._session_tokens[command.session_id], self._token_sha256(command.session_token)
+            ):
+                raise AccessDenied("session token is invalid")
+            if session.history_version != command.expected_history_version:
+                raise HistoryConflict("history changed before comparison")
+            return RequestContext(command.request_id, session, self.catalog)
+
     async def reset_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
         async with self._lock:
             try:

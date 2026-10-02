@@ -51,3 +51,5 @@ def test_service_ci_runs_durable_file_job_regressions():
     )[0]
     assert "tests/test_catalog_file_jobs.py" in service_step
     assert "tests/test_backup_restore.py" in service_step
+    assert service_step.count("tests/test_strategy_comparison.py") == 1
+    assert service_step.count('tests/test_comparison_jobs.py') == 1
