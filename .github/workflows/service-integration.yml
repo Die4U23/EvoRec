@@ -56,6 +56,8 @@ jobs:
             tests/test_feedback.py tests/test_management.py \
             tests/test_migrations.py tests/test_model_runtime.py \
             tests/test_postgres_api.py tests/test_recommendation.py \
+            tests/test_strategy_comparison.py \
+            tests/test_comparison_jobs.py \
             tests/test_repository_hygiene.py tests/test_v01_experience.py
           python -c 'import xml.etree.ElementTree as ET; suite = ET.parse("service-tests.xml").getroot().find("testsuite"); assert int(suite.attrib["skipped"]) == 0, "service tests must not skip"'
       - name: Run local page interaction tests

@@ -86,6 +86,8 @@ python -m venv .venv
 
 商品工作台使用后台构建任务。完成数据库迁移后，在另一个终端载入相同的 `EVOREC_DATABASE_URL` 与 `EVOREC_BUNDLE_ROOT`，运行 `python -m scripts.catalog_worker`；可用 `--once` 只处理一个排队任务。停止 worker 不会发布半成品；重启后中断的后台任务按原快照重排。只启动 API、不启动 worker 时任务会保持排队，可通过构建 ID 查询。页面应从 `http://127.0.0.1:8000/app` 打开，直接打开 `web/index.html` 的 `file://` 地址无法调用 API。
 
+策略对比另有独立的 `python -m scripts.comparison_worker`。应用最新迁移后，页面支持提交后台单次对比、进度查询、取消与编号恢复；完整结果仍与普通推荐记录隔离。worker 终端也需载入相同的数据库及受管目录环境变量，`.env` 不会自动读取。当前只接入热门、受控 CPU 稠密和自适应路径，不代表真实 R06 或批量评估已完成。
+
 - `GET /health/live`：进程存活，返回 200。
 - `GET /health/ready`：检查数据库发布屏障和活动受控运行时；仅配置旧演示种子时仍返回 503，发布受控 bundle 且恢复对齐后可以返回 200。
 - `GET /api/v1/system`：返回真实版本、阶段与能力状态；配置数据库后 persistence 为 true。

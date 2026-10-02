@@ -1,7 +1,7 @@
 """Adapters must implement these contracts; none implies a ready production backend."""
 
 from contextlib import AbstractAsyncContextManager
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
 from evorec.domain.models import (
@@ -15,6 +15,9 @@ from evorec.domain.models import (
     RequestContext,
     SessionSnapshot,
 )
+
+if TYPE_CHECKING:
+    from evorec.application.compare import ComparisonCommand, ComparisonPreview, ComparisonSummary
 
 
 class SessionPort(Protocol):
@@ -58,6 +61,31 @@ class RankingPort(Protocol):
         ...
 
 
+class ComparisonSnapshotPort(Protocol):
+    async def snapshot_for_comparison(self, command: RecommendationCommand) -> RequestContext:
+        """Authorize and freeze a read-only session/catalog view without recording a recommendation."""
+        ...
+
+
+class ComparisonRecordPort(Protocol):
+    async def find(self, command: "ComparisonCommand") -> "ComparisonPreview | None":
+        """Authorize current ownership and replay a matching completed comparison."""
+        ...
+
+    async def save(self, command: "ComparisonCommand",
+                   result: "ComparisonPreview") -> "ComparisonPreview":
+        """Atomically retain one immutable complete result; return the winner on retry."""
+        ...
+
+    async def get(self, comparison_id: UUID, session_id: UUID,
+                  session_token: str) -> "ComparisonPreview":
+        ...
+
+    async def list(self, session_id: UUID, session_token: str,
+                   offset: int, limit: int) -> "tuple[ComparisonSummary, ...]":
+        ...
+
+
 class ResultRecorderPort(Protocol):
     async def save(self, result: RecommendationResult) -> None:
         """Persist before success; request_id is the idempotency key.
@@ -78,6 +106,7 @@ class DemoBackendPort(
     FeedbackPort,
     AdmissionPort,
     RankingPort,
+    ComparisonSnapshotPort,
     ResultRecorderPort,
     Protocol,
 ):

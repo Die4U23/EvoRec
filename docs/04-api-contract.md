@@ -18,6 +18,13 @@
 | GET /api/v1/sessions/{id} | `X-Session-Token` → 会话摘要与状态；已实现 | M1 |
 | POST /api/v1/sessions/{id}/reset | `X-Session-Token` → 增加 epoch 和历史版本并清空状态；已实现 | M1 |
 | POST /api/v1/recommendations | `X-Session-Token` + 推荐输入；可选 UUID `Idempotency-Key` 重放原结果；已实现 | M1/M23 |
+| POST /api/v1/strategy-comparisons/preview | `X-Session-Token` + 会话版本、2–3 个不同的 `popular`/`dense`/`adaptive` 策略及 `k≤10`；同一只读快照下返回 Top-K、交集、独有商品、实际策略、回退原因和各路径耗时；不保存任务或推荐记录；已实现预览子集 | V0.3/M31 |
+| POST /api/v1/strategy-comparisons | 同预览输入；可选 UUID `Idempotency-Key`；在当前请求中执行并原子保存完整对比，返回 `completed`、`persisted=true` 及输入快照；需 PostgreSQL | V0.3/F08 子集 |
+| GET /api/v1/strategy-comparisons | `session_id` + `X-Session-Token`；按保存时间倒序分页查询本会话摘要（相同时间按 ID 倒序）；`offset` 默认 0、最大 10000，`limit` 默认 20、最大 50，含 `has_more` | V0.3/F08 子集 |
+| GET /api/v1/strategy-comparisons/{id} | `session_id` 查询参数 + `X-Session-Token`，取回本会话已保存的历史快照与结果；不依赖当前活动商品库或运行时 | V0.3/F08 子集 |
+| POST /api/v1/strategy-comparison-jobs | 同预览输入和可选 UUID `Idempotency-Key`，持久冻结输入并返回 202；独立 worker 执行单次对比，同键同输入重放现有状态 | V0.3/F08 子集 |
+| GET /api/v1/strategy-comparison-jobs/{id} | `session_id` + `X-Session-Token`，查询本会话任务状态、已完成策略数、尝试数与错误码；完成后给出 `comparison_id` | V0.3/F08 子集 |
+| POST /api/v1/strategy-comparison-jobs/{id}/cancel | `session_id` + `X-Session-Token`；排队任务立即取消，运行任务先进入 `cancelling`，当前路径退出后确认 `cancelled` | V0.3/F08 子集 |
 | GET /api/v1/items、GET /api/v1/items/{id} | 商品列表/详情及有效状态；列表支持 `offset`（默认 0）与 `limit`（默认 100，最大 100），按商品 ID 排序，空列表表示末页；已实现，需 PostgreSQL | M23 |
 | POST /api/v1/feedback | `X-Session-Token` + 反馈输入 → 原事件结果、最新历史版本；已实现 | M12 |
 | POST /api/v1/admin/catalog/imports | JSON 批次按 `batch_id` 幂等导入；已有商品 ID 默认整批拒绝；已实现 | M23/V0.2 |
@@ -47,6 +54,14 @@
 `src/evorec/contracts.py` 定义推荐、反馈与 JSON 批次输入。其 JSON Schema 由同一代码导出到 `docs/contracts/`，避免手工维护两套字段。
 
 推荐输入包含 session_id、expected_history_version、strategy、k；k 默认为 10，当前允许 1-50。策略名称不代表已经接入对应研究模型。创建会话后必须保存访问令牌，后续会话和推荐请求通过 `X-Session-Token` 提交；数据库只保存其 SHA-256 摘要。可选 `Idempotency-Key` 为 UUID：相同键、会话及语义输入返回原完成结果；仍在执行时返回可重试 409；不同输入或已失败的键返回 409。未提供时由服务生成请求 ID，不支持客户端重放。该令牌是当前本地演示的最小访问边界，不替代公网部署所需的完整身份系统。
+
+策略预览使用同一时点的会话历史、隐藏名单、活动 bundle 与有效商品集合，对每个策略执行相同的合法性过滤；`comparison_id` 仅标识本次响应，`persisted=false` 表示结果不可重查、不可当作 F08 已保存的对比任务。`dense` 在运行时未加载时会明确报告回退到 `popular`，自适应路由当前也可能实际选择 `popular`；界面展示真实执行路径，不将两次热门排序伪称为模型差异。尚未接入 `generative`、`hybrid`，也没有批量评估、正式耗时指标或策略收益结论。
+
+保存入口与预览共用同一执行和过滤逻辑，但只在 PostgreSQL 中保存完整结果及当时的历史、隐藏/收藏名单、有效商品集合、商品库版本、采样时间和 K。成功响应表示结果已提交；同一幂等键及输入返回原始结果（包括耗时），即使随后重置会话、下架商品或重启服务，也不重新计算。键对应不同会话、历史版本、策略顺序或 K 时返回 409。并发同键请求可能各执行一次，但事务只保留一个完整结果，两次响应均返回最终保存的版本；保存前中断不会留下半条记录，保存后响应丢失可用原键或 GET 对账。已保存的商品资格是历史快照，不能直接用于当前推荐或反馈。未提供键时由服务生成编号，客户端无法在响应丢失后定位该请求。同步入口仍保留兼容。
+
+后台入口提交时冻结会话/商品快照、K、策略顺序、时间和当时已加载的 CPU runtime 清单指纹，不保存访问令牌。任务编号与完成后的对比编号相同，不能用同步入口抢占后台任务的编号；反向抢占也返回 409。每会话至多 10 个非终态任务，数据库队列至多 1000 个，达到上限返回 429。`python -m scripts.comparison_worker` 独立执行（也支持 `--once`）；没有 worker 时保持 `queued`。进度是已完成的策略条数，不是预计耗时百分比。完成时原子保存完整结果并更新 `completed`；失败/取消不保存部分策略结果，正常失败须显式新建任务，同键不会默默重算。
+
+worker 每 5 秒续期 30 秒租约；崩溃后租约过期可按原输入重新领取，最多 3 次尝试。领取代数、owner 和租约有效期一起约束进度及提交；session advisory lock 保持到当前 CPU 计算真正退出，防止仍存活的执行者因心跳延迟被重复领取。运行取消先显示 `cancelling`，在策略边界或最终提交前确认，取消先于完成提交时不保存结果；完成先于取消时保留原结果。已加载的冻结 runtime 缺失或指纹变化时任务失败，不偷换成新 bundle 或无提示热门回退。上述范围仅为本机受控 CPU 单次对比，不证明数据库连接断开后的远端资源终止、GPU 强制取消、多机器高可用、后台批量样本评估或算法质量达标。
 
 反馈包含 event_id、session_id、request_id、item_id、kind、observed_at。状态设置事件要求 desired_state；客户端曝光要求 visible_ratio 和 visible_duration_ms。未知字段拒绝，时间必须带时区。同一 `event_id` 同一规范化内容返回原历史版本并标记 `replayed=true`；同 ID 不同内容返回 409。反馈必须关联该会话当前 epoch 中真实返回的商品。详情事件响应额外返回确定性的 `exposure_event_id`；该派生曝光在同一事务中补记，并明确标为点击推断。
 

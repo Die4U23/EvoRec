@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from evorec.application.health import ReadinessQuery
+from evorec.application.compare import CompareStrategies
 from evorec.application.ports import DemoBackendPort
 from evorec.application.recommend import Recommend
 from evorec.infrastructure.memory import InMemoryDemoBackend
@@ -13,15 +14,18 @@ from evorec.infrastructure.readiness import UnconfiguredReadiness
 
 if TYPE_CHECKING:
     from evorec.infrastructure.management import CatalogManager
+    from evorec.infrastructure.comparison_job import ComparisonJobService
 
 
 @dataclass(frozen=True)
 class DemoApplication:
     backend: DemoBackendPort
     recommend: Recommend
+    compare: CompareStrategies
     readiness: ReadinessQuery
     persistent: bool
     manager: "CatalogManager | None" = None
+    comparison_jobs: "ComparisonJobService | None" = None
 
 
 def build_demo_application(
@@ -37,9 +41,11 @@ def build_demo_application(
             backend = InMemoryDemoBackend()
 
     persistent = not isinstance(backend, InMemoryDemoBackend)
+    comparison_records = None
     if persistent:
         from evorec.infrastructure.postgres import PostgresDemoBackend, PostgresDemoReadiness
         from evorec.infrastructure.management import CatalogManager
+        from evorec.infrastructure.comparison_store import PostgresComparisonStore
 
         if not isinstance(backend, PostgresDemoBackend):
             raise TypeError("unsupported persistent demo backend")
@@ -47,8 +53,15 @@ def build_demo_application(
         manager = CatalogManager(backend, Path(root) if root else None)
         backend.manager = manager
         readiness = ReadinessQuery(PostgresDemoReadiness(backend))
+        comparison_records = PostgresComparisonStore(backend)
     else:
         manager = None
         readiness = ReadinessQuery(UnconfiguredReadiness())
-    return DemoApplication(backend, Recommend(backend, backend, backend), readiness,
-                           persistent, manager)
+    compare = CompareStrategies(backend, backend, comparison_records)
+    jobs = None
+    if comparison_records is not None:
+        from evorec.infrastructure.comparison_job import ComparisonJobService
+
+        jobs = ComparisonJobService(compare, comparison_records)
+    return DemoApplication(backend, Recommend(backend, backend, backend), compare, readiness,
+                           persistent, manager, jobs)

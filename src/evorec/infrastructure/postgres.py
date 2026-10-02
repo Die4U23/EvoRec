@@ -116,6 +116,41 @@ class PostgresDemoBackend:
     async def get_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
         return await asyncio.to_thread(self._get_session, session_id, access_token)
 
+    async def snapshot_for_comparison(self, command: RecommendationCommand) -> RequestContext:
+        if self.manager is not None:
+            await asyncio.to_thread(self.manager.ensure_ready)
+        return await asyncio.to_thread(self._comparison_snapshot, command)
+
+    def _comparison_snapshot(self, command: RecommendationCommand) -> RequestContext:
+        with self._connect() as connection:
+            connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            row = connection.execute(
+                "SELECT session_id, owner_token_sha256, epoch, history_version, history, "
+                "hidden_items, favorite_items, seed_user_id FROM sessions WHERE session_id = %s",
+                (command.session_id,),
+            ).fetchone()
+            if row is None:
+                raise ResourceNotFound("session does not exist")
+            self._authorize(row, command.session_token)
+            session = self._snapshot(row)
+            if session.history_version != command.expected_history_version:
+                raise HistoryConflict("history changed before comparison")
+            control = connection.execute(
+                "SELECT active_bundle_id, exclusion_version FROM catalog_control "
+                "WHERE singleton = 1 AND admission_open",
+            ).fetchone()
+            if control is None or control["active_bundle_id"] is None:
+                raise RuntimeError("catalog admission is not ready")
+            eligible = frozenset(row["item_id"] for row in connection.execute(
+                "SELECT bi.item_id FROM bundle_items bi JOIN items i ON i.item_id = bi.item_id "
+                "WHERE bi.bundle_id = %s AND i.is_active",
+                (control["active_bundle_id"],),
+            ).fetchall())
+            catalog = CatalogSnapshot(
+                control["active_bundle_id"], control["exclusion_version"], eligible,
+            )
+        return RequestContext(command.request_id, session, catalog)
+
     def _get_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
         with self._connect() as connection:
             cursor = connection.execute(
