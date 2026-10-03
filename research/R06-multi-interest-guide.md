@@ -68,3 +68,24 @@ A/B 冻结模型使用旧 R05 验证选轮，C/D 使用 R06 验证选轮。B-A �
 参考请求固定取验证缓存中可表示历史的首条、中间条、末条，以及首条空历史，不按命中与否挑样本。导出同时在组件目录之外保存 `-source/` 源码副本和 `-verification.json` 核对记录，包含基础提交、真实 dirty 状态、六份关键模块的源码哈希与实际依赖版本。导出失败不留下可加载的 manifest；历史目录不覆盖。源码副本和基础提交用于还原这次导出，不代表已经重建全部历史研究环境。
 
 **这不是可发布的在线 bundle。** 组件输入是已经构造好的候选向量、上下文和 8 个标量；不负责 CF/content 召回、TF-IDF/SVD 变换、可用时间/已见过滤、在线特征构造、商品版本绑定或发布恢复。旧的完整 bundle 校验会拒绝这个组件格式。后续须完成这些适配，核对整条链路，再显式发布；没有对当前服务执行发布、修改业务数据或重启操作。
+
+## 冻结商品与候选特征组件（2026-10-03）
+
+在排序组件之后，新增[特征导出器](../src/evorec/research/export_features.py)、[纯服务特征构造器](../src/evorec/infrastructure/r06_features.py)和[批准哈希重载入口](../scripts/load_r06_features.py)。仍使用 `A-frozen-s17` 的原商品向量，不重新拟合编码器、训练排序器或按测试效果改选模型。
+
+```powershell
+.\.venv-research\Scripts\python.exe -m evorec.research.export_features artifacts/exports/my-r06-features --ranker-component artifacts/exports/my-r06-ranker
+.\.venv\Scripts\python.exe -m scripts.load_r06_features artifacts/exports/my-r06-features --expected-manifest-sha256 <特征manifest_sha256> --ranker-component artifacts/exports/my-r06-ranker --expected-ranker-manifest-sha256 <排序manifest_sha256>
+```
+
+本阶段研究导出固定使用[已验收排序组件记录](../docs/validation/r06-ranker-component-20261003.json)批准的 manifest 哈希；第二条命令的特征哈希取本次导出结果。只重载特征时可同时省略两个排序参数；只提供其中一个会拒绝执行。输出、`-source/` 和 `-verification.json` 均须使用新目录，不能覆盖旧证据。
+
+特征目录只能包含 `manifest.json`、`items.json`、`vectors.f32`、`validation.json`。商品映射、原首次交互时间、训练交互存在标记和归一化 prior 全部冻结；训练标记包含低评分交互，不能以正反馈 prior 是否非零代替。小端 float32 向量按商品 ID 排序存储，服务加载为不可变缓冲区；manifest 哈希固定批准身份。加载限制 200,000 件商品、128 维、JSON 单文件 32 MiB、向量 128 MiB、1–4 个参考请求，拒绝格式、路径、资源、数值、来源和参考特征漂移。哈希不能代替可信不可变目录或授权。
+
+构造器接收完整已见集合、最多 50 条正反馈历史，以及已经召回且严格合法的 CF/content 各最多 200 项。去重排序后的并集最多 400 项；已见、未知商品或首次交互时间不严格早于请求的候选直接拒绝，不静默改动 provider 排名。未知或零向量历史不贡献向量，但仍占据原衰减位置和历史长度；保留原 sklearn 对极小 float32 范数的处理。上下文与 8 个标量不接收目标标签；与排序器联合执行前，核对特征指纹、原/选型归档、原 items/vectors/验证缓存哈希及两个协议 ID。
+
+真实冻结导出核对 137,249 件商品、128 维向量；固定 4 个验证请求共 1,399 个候选，上下文最大误差 `5.96e-8`、标量最大误差 `1.79e-7`（固定特征门槛 `1e-6`）。接入已批准排序组件后，分数最大误差 `7.15e-7`，稳定 Top-20 一致。这是选定请求的组件兼容性回放，不是全验证集、历史 GPU、召回覆盖或线上效果验收。源码快照包含真实 dirty 状态和 11 份关键模块字节副本；自身或联合验证失败、报告写入失败或用户中断均撤下新组件 manifest，保留诊断文件，不影响旧组件。尚不提供进程被强制杀死时的原子提交保障。
+
+为重建验证请求的历史和完整已见集合，导出器校验并解析完整原始评分 CSV；只生成验证请求，不生成或评价测试请求。读取来源轨迹的查询 ID 只用于对齐固定位置，不按目标/命中筛选；原始标识和请求轨迹留在忽略目录。不得将此阶段描述为“完全没读测试时段数据”。
+
+**仍不接入在线推荐或发布。** 这里的可用时间是研究用首次交互代理，不是线上商品上架时间。尚缺安全 TF-IDF/SVD 新文本变换、CF/content 召回导出、线上会话/商品版本适配及完整 bundle 发布恢复。当前服务的活动模型和业务数据未切换。验收汇总见[本轮记录](../docs/validation/r06-frozen-features-20261003.json)。
