@@ -49,3 +49,22 @@ A/B 冻结模型使用旧 R05 验证选轮，C/D 使用 R06 验证选轮。B-A �
 [仓库约定](../docs/08-repository-policy.md)定义公开范围；博客和实习材料不提交。每个运行绑定代码 commit，结果交付独立提交。R06 当前依赖 R05 分支；PR 的基底先设为 codex/r05-cold-replication。协议、实现、工程建议评审与结果分别提交；保留训练原提交以便追溯，不补造开发日期。
 
 专项测试位于 tests/test_multi_interest.py，覆盖独立逐点计算、目标标签隔离、严格时间过滤、缺失历史、同分顺序、预算、选型和封闭测试门槛。tests/test_repository_hygiene.py 验证暂存区检查不会依赖被忽略的本地文件。
+
+## 冻结排序组件安全导出（2026-10-03）
+
+新增[研究导出入口](../src/evorec/research/export_ranker.py)和[纯服务加载器](../src/evorec/infrastructure/residual_ranker.py)。只转换公开归档验证选中的 `A-frozen-s17`：复用 R05 冷加权 seed 17 / epoch 3 检查点，不因已经查看的 R06 测试结果改选 B/C/D，不训练新权重。
+
+```powershell
+.\.venv-research\Scripts\python.exe -m evorec.research.export_ranker artifacts/exports/my-r06-ranker
+.\.venv\Scripts\python.exe -m scripts.load_residual_ranker artifacts/exports/my-r06-ranker --expected-manifest-sha256 <导出返回的manifest_sha256>
+```
+
+每次必须使用新的 `artifacts/` 子目录。导出器核对 R05 原运行、复验、检查点、商品向量和 R06 验证候选缓存的归档哈希；检查点协议使用 R05 训练协议 `2624e6561e71af4b`，选型使用 R06 协议 `e11840f33a2fec8d`，不混淆两者。研究环境只以 `torch.load(weights_only=True)` 读取已核对的检查点，不读取编码器 joblib，也不读测试集、验证目标或查询 ID 数组。
+
+组件目录只能含三份文件：`manifest.json`、`weights.f32`、`validation.json`。权重按三层 Linear 的行优先 weight / bias 顺序保存为小端 float32；执行固定 `520 → 128 → 64 → 1`、精确 erf GELU、tanh 残差和原 RRF 基分。服务环境不需要 Torch、NumPy、sklearn、joblib 或 pickle。浮点计算使用 Python double，中间结果不承诺与 Torch float32 位级相同；输出转回 float32，回放要求绝对误差不超过固定 `1e-5`，并要求稳定 Top-20 顺序完全相同。空历史只用原 RRF 基分，padding 在导出参考样本前移除。
+
+加载器限制输入最多 400 个候选、维度最多 128、隐藏层最多 256 / 128、1–4 个参考请求、JSON 单文件最多 8 MiB、权重文件最多 4 MiB。拒绝重复 JSON 键、未知字段、非有限或极端数值、错误形状/标量顺序、路径或格式变化、未列出文件、哈希漂移和黄金样本错配。哈希只证明一致性，不证明来源可信；目录须可信且不可变，批准后用 manifest 哈希固定加载身份。
+
+参考请求固定取验证缓存中可表示历史的首条、中间条、末条，以及首条空历史，不按命中与否挑样本。导出同时在组件目录之外保存 `-source/` 源码副本和 `-verification.json` 核对记录，包含基础提交、真实 dirty 状态、六份关键模块的源码哈希与实际依赖版本。导出失败不留下可加载的 manifest；历史目录不覆盖。源码副本和基础提交用于还原这次导出，不代表已经重建全部历史研究环境。
+
+**这不是可发布的在线 bundle。** 组件输入是已经构造好的候选向量、上下文和 8 个标量；不负责 CF/content 召回、TF-IDF/SVD 变换、可用时间/已见过滤、在线特征构造、商品版本绑定或发布恢复。旧的完整 bundle 校验会拒绝这个组件格式。后续须完成这些适配，核对整条链路，再显式发布；没有对当前服务执行发布、修改业务数据或重启操作。
