@@ -12,7 +12,7 @@
 | R01–R03 | [R01 检查](r01-checks.json)、[训练检查](training-checks.json)、[内容检查](content-checks.json) | [实验索引](../experiments/README.md) |
 | R04–R05 | [门控检查](gating-checks.json)、[排序检查](ranker-checks.json)、[R05 复验](replication-artifacts-checks.json) | [实验索引](../experiments/README.md) |
 | R06 | [产物审计](r06-artifacts-checks.json)、[仓库检查](r06-repository-checks.json) | [区间复算](r06-interval-repeat.json) |
-| R06 受控服务组件 | [冻结排序器](r06-ranker-component-20261003.json)、[冻结特征](r06-frozen-features-20261003.json)、[安全编码器](r06-safe-encoder-20261004.json) | 独立组件兼容性，不代表完整在线集成 |
+| R06 受控服务组件 | [冻结排序器](r06-ranker-component-20261003.json)、[冻结特征](r06-frozen-features-20261003.json)、[安全编码器](r06-safe-encoder-20261004.json)、[冻结召回](r06-controlled-retrieval-20261004.json) | 独立组件兼容性，不代表完整在线集成 |
 | R02–R05 来源与干净复验 | [历史来源复原](r02-r05-provenance-reconstruction.json)、[干净复验汇总](r02-r05-clean-replications.json) | [R02 审计](r02-clean-replication-audit.json)、[R03 审计](r03-verified-clean-audit.json)、[R04 审计](r04-verified-clean-audit.json)、[R05 审计](r05-verified-clean-audit.json) |
 | 发布前检查 | [发布预检](release-preflight.json) | 仍须按[验证与发布框架](../07-validation-release.md)核对未完成项 |
 
