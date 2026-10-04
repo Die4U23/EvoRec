@@ -71,3 +71,22 @@ jobs:
         run: |
           python scripts/export_contracts.py
           git diff --exit-code -- docs/contracts
+
+  retrieval-accelerated:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install optional CPU retrieval environment
+        run: |
+          python -m pip install -r requirements-retrieval.lock.txt
+          python -m pip install --no-deps -e .
+          python -m pip check
+      - name: Verify accelerated numerical parity without research dependencies
+        run: |
+          python -m pytest -q -ra --junitxml=accelerated-tests.xml \
+            tests/test_r06_retrieval_numpy.py tests/test_r06_retrieval_runtime.py \
+            tests/test_r06_retrieval_benchmark.py
+          python -c 'import xml.etree.ElementTree as ET; s = ET.parse("accelerated-tests.xml").getroot().find("testsuite"); assert int(s.attrib["tests"]) > 0 and all(int(s.attrib[k]) == 0 for k in ("errors", "failures", "skipped")), "acceleration tests must pass without skips"'

@@ -1,6 +1,7 @@
 """Bounded, immutable CF/centroid retrieval over a controlled frozen snapshot.
 
-Standard library only. No fitting, executable models, live catalog adaptation or
+Standard library by default; explicit optional NumPy CPU backend. No fitting,
+executable models, live catalog adaptation or
 activation. Content scores use explicit float32 products and sequential float32
 accumulation: different BLAS/GPU reductions can reorder near-equal scores.
 """
@@ -64,6 +65,8 @@ class R06Retrieval:
     _priors: tuple[float, ...]
     _offsets: tuple[int, ...]
     _edges: bytes
+    content_backend: str = "stdlib"
+    _content_scanner: object = None
 
     def _available(self, index, seen, timestamp):
         return (self._features._metadata[index].first_seen_ms < timestamp
@@ -106,7 +109,9 @@ class R06Retrieval:
                         # No rounding/epsilon buckets: ties use sorted item IDs.
                         score = _content_score(context, features.vector(item))
                         yield -score, index
-            content = [i for _, i in heapq.nsmallest(200, ranked_items())]
+            stream = (ranked_items() if self._content_scanner is None else
+                      self._content_scanner(features, context, seen, timestamp_ms))
+            content = [i for _, i in heapq.nsmallest(200, stream)]
         content_personalized = len(content)
         selected = set(content)
         for index in fallback:
@@ -124,7 +129,9 @@ class R06Retrieval:
         return self._features.build_pool(history, seen, timestamp_ms, result.collaborative, result.content)
 
 
-def load_r06_retrieval(component_dir, features, *, expected_manifest_sha256=None):
+def load_r06_retrieval(component_dir, features, *, expected_manifest_sha256=None, content_backend="stdlib"):
+    if type(content_backend) is not str or content_backend not in ("stdlib", "numpy"):
+        _fail("unsupported_backend", "content backend must be explicitly stdlib or numpy")
     if type(features) is not R06Features:
         _fail("component_schema", "a controlled frozen feature component is required")
     supplied = Path(component_dir)
@@ -211,8 +218,12 @@ def load_r06_retrieval(component_dir, features, *, expected_manifest_sha256=None
     samples = _json(_verified(root, manifest["validation"], "validation.json", MAX_JSON_BYTES))
     if not isinstance(samples, list) or not 2 <= len(samples) <= 4:
         _fail("resource_limit", "two to four full provider references are required")
+    scanner = None
+    if content_backend == "numpy":
+        from evorec.infrastructure._content_numpy import numpy_scanner
+        scanner = numpy_scanner()
     runtime = R06Retrieval(digest, len(samples), edges, MappingProxyType(dict(provenance)),
-                           features, ordered, priors, offsets, edge_bytes)
+                           features, ordered, priors, offsets, edge_bytes, content_backend, scanner)
     represented, empty = False, False
     for sample in samples:
         _object(sample, ("history", "seen", "timestamp_ms", "collaborative", "content"))

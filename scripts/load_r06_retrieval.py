@@ -13,6 +13,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("component_dir", type=Path)
     parser.add_argument("--expected-manifest-sha256", required=True)
+    parser.add_argument("--content-backend", choices=("stdlib", "numpy"), default="stdlib")
     parser.add_argument("--features-component", type=Path, required=True)
     parser.add_argument("--expected-features-manifest-sha256", required=True)
     parser.add_argument("--ranker-component", type=Path)
@@ -22,7 +23,8 @@ def main(argv=None):
         parser.error("ranker component and approved digest must be supplied together")
     try:
         features = load_r06_features(args.features_component, expected_manifest_sha256=args.expected_features_manifest_sha256)
-        runtime = load_r06_retrieval(args.component_dir, features, expected_manifest_sha256=args.expected_manifest_sha256)
+        runtime = load_r06_retrieval(args.component_dir, features, expected_manifest_sha256=args.expected_manifest_sha256,
+                                     content_backend=args.content_backend)
         if args.ranker_component:
             ranker = load_residual_ranker(args.ranker_component, expected_manifest_sha256=args.expected_ranker_manifest_sha256)
             # No catalog scan: empty request also verifies all ranker bindings.
@@ -32,6 +34,7 @@ def main(argv=None):
         return 1
     print(json.dumps({"status": "passed", "component_only": True, "activated": False,
                       "manifest_sha256": runtime.manifest_sha256, "edge_count": runtime.edge_count,
+                      "content_backend": runtime.content_backend,
                       "validation_samples_checked": runtime.validation_samples_checked,
                       "ranker_binding_checked": args.ranker_component is not None}))
     return 0
