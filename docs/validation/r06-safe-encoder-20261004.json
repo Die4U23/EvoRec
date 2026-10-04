@@ -2,9 +2,8 @@
   "schema_version": 1,
   "date_local": "2026-10-04",
   "scope": "R06 frozen TF-IDF/SVD component, not an online bundle",
-  "local_component": "artifacts/exports/r06-safe-encoder-20261004-b",
+  "local_component": "artifacts/exports/r06-safe-encoder-20261004-c",
   "real_verification": {
-    "activated": false,
     "catalog_rows": [
       0,
       34312,
@@ -12,66 +11,67 @@
       102936,
       137248
     ],
-    "component_only": true,
-    "dimension": 128,
+    "max_stored_catalog_vector_error": 0,
     "export_code": {
-      "base_commit": "473fd7681757ce7c8aa088acf23b8e922e83e4d6",
-      "joblib_version": "1.5.3",
-      "numpy_version": "2.1.3",
-      "python_version": "3.12.6",
-      "scipy_version": "1.14.1",
-      "sklearn_version": "1.8.0",
+      "base_commit": "376b0f352929f4576480631b9bb57848083dcbca",
+      "working_tree_dirty": false,
       "source_sha256": {
-        "scripts/load_content_encoder.py": "07248d9d8e061251a941d2784079cff651d8201c9942657cc511236c16a0980e",
-        "src/evorec/infrastructure/bundle.py": "d5b0cffc6191f7bf10c5067e586880491f24a676ef36a4dfa91d41651468bc27",
-        "src/evorec/infrastructure/content_encoder.py": "4404c1581de1627d408f5e691def7d2bf92eee4daa6d3d1cd1f8c1de5357c7eb",
-        "src/evorec/infrastructure/model_runtime.py": "eaddf4153ca0f7522ec5755591fe59534e455ee1850b644e4ab5ea4b36de9ef1",
-        "src/evorec/infrastructure/r06_features.py": "c1d4773dc0aeb684b71704e2a88f4be1ddffd81119864794ecd69f610cf397ab",
-        "src/evorec/infrastructure/residual_ranker.py": "0a547e8fbc29d132e8e87e492d6a993f35e9e341a8dd28d2d04d0eb0bd71671d",
-        "src/evorec/research/content.py": "9a159ada0f4ad7dec25092fc1312a45841ccec0b76d5487e4e08d313673e686e",
-        "src/evorec/research/export_encoder.py": "fa4806a4e96d4ff0cda4182f6817b08b8f2b2021d5a8e85dcb0f5bc2e03b5ec3",
         "src/evorec/research/export_ranker.py": "63728c484f8070520e41b153dce14c84c0c8d85918f5f9e206a88ccbce2bd0d7",
         "src/evorec/research/ranker.py": "1bea3cb481aba8236b45cc79dfa569f2450850c624ce793e41da5057f05e3df8",
-        "tests/test_content_encoder_export.py": "7ca649461d5c9400c22a3b75f5a2a402b20628dcf83fca21a9c3f13c736215b4",
-        "tests/test_content_encoder_runtime.py": "7810508a663cb5927f8458b1b7d9b3e8db94211066a5b0f522e265851b4a7696"
+        "src/evorec/research/content.py": "9a159ada0f4ad7dec25092fc1312a45841ccec0b76d5487e4e08d313673e686e",
+        "src/evorec/infrastructure/residual_ranker.py": "0a547e8fbc29d132e8e87e492d6a993f35e9e341a8dd28d2d04d0eb0bd71671d",
+        "src/evorec/infrastructure/model_runtime.py": "eaddf4153ca0f7522ec5755591fe59534e455ee1850b644e4ab5ea4b36de9ef1",
+        "src/evorec/infrastructure/bundle.py": "d5b0cffc6191f7bf10c5067e586880491f24a676ef36a4dfa91d41651468bc27",
+        "src/evorec/infrastructure/content_encoder.py": "4404c1581de1627d408f5e691def7d2bf92eee4daa6d3d1cd1f8c1de5357c7eb",
+        "src/evorec/infrastructure/r06_features.py": "c1d4773dc0aeb684b71704e2a88f4be1ddffd81119864794ecd69f610cf397ab",
+        "src/evorec/research/export_encoder.py": "fa4806a4e96d4ff0cda4182f6817b08b8f2b2021d5a8e85dcb0f5bc2e03b5ec3",
+        "scripts/load_content_encoder.py": "07248d9d8e061251a941d2784079cff651d8201c9942657cc511236c16a0980e",
+        "tests/test_content_encoder_runtime.py": "7810508a663cb5927f8458b1b7d9b3e8db94211066a5b0f522e265851b4a7696",
+        "tests/test_content_encoder_export.py": "7ca649461d5c9400c22a3b75f5a2a402b20628dcf83fca21a9c3f13c736215b4"
       },
+      "python_version": "3.12.6",
       "torch_version": "2.9.0+cu126",
-      "unicode_version": "15.0.0",
-      "working_tree_dirty": true
-    },
-    "feature_binding_checked": true,
-    "fit": {
-      "document_count": 15824,
-      "end_ms": 1483228800000,
-      "training_rows": 90570
+      "numpy_version": "2.1.3",
+      "sklearn_version": "1.8.0",
+      "scipy_version": "1.14.1",
+      "joblib_version": "1.5.3",
+      "unicode_version": "15.0.0"
     },
     "legacy_load": "hash-pinned research-only joblib",
+    "status": "passed",
+    "component_only": true,
+    "activated": false,
     "manifest_sha256": "a551aff992e1703f1645292f70b1f6a75e84b93a7f7cd5665f10945da78e59f4",
-    "max_absolute_vector_error": 5.960464477539063e-8,
-    "max_stored_catalog_vector_error": 0,
+    "dimension": 128,
+    "vocabulary_terms": 18820,
     "provenance": {
-      "encoder_protocol_id": "dce3dfd53735427e",
-      "encoder_sha256": "3aec761ee4b73435c9c0a6f46c77614cef9d5eca31015d430e80f7d6695fe833",
-      "feature_fingerprint": "a6cafc98cc683a4c65430e1bcb4df7db97b8cea00c8e5b3186c601fd49660c0b",
-      "fit_item_set_sha256": "40065029327dcc702845c1a065df48a558c3b531f8450b8a1219c34b97501725",
-      "fit_training_signature": "69b9738202ad32a341ea301b25a5a921199f405d08434d5fb156f2124b58db6f",
-      "items_sha256": "90a7d0dc91e03e2d56a04b77806564e0c94c4bd8c3bd7b00fbfc92f61ee9a553",
-      "metadata_sha256": "58d8d7c2e45034596c6c6c55871e808f82ee8b49f94885d1a3f8ac8f3093d8c7",
       "selected_method": "A-frozen-s17",
-      "selection_protocol_id": "e11840f33a2fec8d",
       "selection_series_sha256": "dc8b5cb6ed231d7c576497a21bac632c6abcd74b31926a53ceb77e7905d406e4",
       "source_series_sha256": "ae8fcb98a5d26269529123c80ca924be02c553dbbb4b3f442d7d63f5e52dbab6",
-      "training_protocol_id": "2624e6561e71af4b",
+      "feature_fingerprint": "a6cafc98cc683a4c65430e1bcb4df7db97b8cea00c8e5b3186c601fd49660c0b",
+      "encoder_sha256": "3aec761ee4b73435c9c0a6f46c77614cef9d5eca31015d430e80f7d6695fe833",
+      "items_sha256": "90a7d0dc91e03e2d56a04b77806564e0c94c4bd8c3bd7b00fbfc92f61ee9a553",
+      "vectors_sha256": "49ac503c929a92f26235ec3f46c9791ce34900a2b2ffc8cd4bb8edb19869da96",
+      "metadata_sha256": "58d8d7c2e45034596c6c6c55871e808f82ee8b49f94885d1a3f8ac8f3093d8c7",
+      "fit_item_set_sha256": "40065029327dcc702845c1a065df48a558c3b531f8450b8a1219c34b97501725",
+      "fit_training_signature": "69b9738202ad32a341ea301b25a5a921199f405d08434d5fb156f2124b58db6f",
       "training_sample_sha256": "333ac4396b3a8c67d426f025c3f443bc8332cebdd5a37cc21ac18fa6713e1bf5",
-      "vectors_sha256": "49ac503c929a92f26235ec3f46c9791ce34900a2b2ffc8cd4bb8edb19869da96"
+      "selection_protocol_id": "e11840f33a2fec8d",
+      "training_protocol_id": "2624e6561e71af4b",
+      "encoder_protocol_id": "dce3dfd53735427e"
     },
-    "retrained": false,
-    "retrieval_recomputed": false,
-    "status": "passed",
-    "test_queries_evaluated": false,
+    "fit": {
+      "end_ms": 1483228800000,
+      "training_rows": 90570,
+      "document_count": 15824
+    },
     "validation_samples": 11,
+    "max_absolute_vector_error": 5.960464477539063e-8,
     "vector_tolerance": 0.000001,
-    "vocabulary_terms": 18820
+    "feature_binding_checked": true,
+    "retrained": false,
+    "test_queries_evaluated": false,
+    "retrieval_recomputed": false
   },
   "validation": {
     "full_research_environment": {
@@ -129,6 +129,12 @@
       "tracked_files": 338,
       "local_links_checked": 436,
       "python_files_parsed": 131
+    },
+    "clean_commit_git_blob_audit": {
+      "git_blobs_and_snapshot_bytes_match": true,
+      "files": 12,
+      "commit": "376b0f352929f4576480631b9bb57848083dcbca",
+      "working_tree_dirty_at_export": false
     }
   },
   "review": {
@@ -154,12 +160,18 @@
     "real_model_ab_measurement": false,
     "real_browser_acceptance": false,
     "process_kill_atomic_export": false,
-    "source_snapshot_includes_exact_dirty_bytes": true
+    "exact_export_source_bytes_preserved": true,
+    "final_export_working_tree_dirty": false,
+    "prior_dirty_snapshots_preserved": true
   },
   "notes": [
     "Only five fixed catalog positions and six synthetic texts were replayed, not all catalog vectors or full validation/test.",
     "Hashes prove byte consistency, not trustworthy authorship; the legacy joblib input remains explicitly acknowledged trusted research-only.",
     "No private vocabulary, weights, text or business credentials are published.",
-    "Old diagnostic export a and reviewed export b are preserved; final clean-commit replay is still pending."
+    "Final export c was replayed from clean implementation commit 376b0f352929f4576480631b9bb57848083dcbca; all 12 snapshot/source digests match the Git blobs. Earlier a/b diagnostic evidence is preserved."
+  ],
+  "previous_local_exports": [
+    "artifacts/exports/r06-safe-encoder-20261004-a",
+    "artifacts/exports/r06-safe-encoder-20261004-b"
   ]
 }
