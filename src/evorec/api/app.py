@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 
 from fastapi import FastAPI, Header, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 import psycopg
 
 from evorec import __version__
@@ -270,6 +270,11 @@ class BundleRegistrationResponse(BaseModel):
     manifest_sha256: str
     item_count: int
     replayed: bool
+
+
+class R06PreparationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_manifest_sha256: str = Field(strict=True, pattern=r"^[0-9a-f]{64}$", min_length=64, max_length=64)
 
 
 class PendingPublication(BaseModel):
@@ -1067,6 +1072,20 @@ def create_app(
             return denied
         try:
             return await asyncio.to_thread(demo.manager.register_bundle, bundle_id)
+        except ManagementError as exc:
+            return management_error(exc)
+
+    @app.post("/api/v1/admin/r06/bundles/{bundle_id}/prepare",
+              response_model=BundleRegistrationResponse, tags=["admin"])
+    async def prepare_r06_bundle(
+        bundle_id: UUID, payload: R06PreparationInput,
+        admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        denied = admin_guard(admin_token)
+        if denied is not None:
+            return denied
+        try:
+            return await asyncio.to_thread(demo.manager.prepare_r06_bundle, bundle_id, payload.expected_manifest_sha256)
         except ManagementError as exc:
             return management_error(exc)
 

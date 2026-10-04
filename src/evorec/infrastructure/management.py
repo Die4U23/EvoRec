@@ -15,6 +15,8 @@ from evorec.infrastructure.catalog_build import CatalogBuildService
 from evorec.infrastructure.catalog_file_job import CatalogFileJobService
 from evorec.infrastructure.model_runtime import ControlledLoadError, RuntimeBundle, load_runtime_bundle
 from evorec.infrastructure.postgres import PostgresDemoBackend
+from evorec.infrastructure.r06_bundle import KIND as R06_KIND
+from evorec.infrastructure.r06_catalog import R06CatalogPreparation
 
 
 class CatalogManager:
@@ -28,6 +30,10 @@ class CatalogManager:
         self.managed_root = managed_root
         self.builds = CatalogBuildService(self)
         self.file_jobs = CatalogFileJobService(self)
+        self.r06 = R06CatalogPreparation(self)
+
+    def prepare_r06_bundle(self, bundle_id: UUID, expected_manifest_sha256: str):
+        return self.r06.prepare(bundle_id, expected_manifest_sha256)
 
     def _connect(self, *, autocommit: bool = False):
         return psycopg.connect(self.database_url, row_factory=dict_row, autocommit=autocommit)
@@ -196,11 +202,13 @@ class CatalogManager:
 
     def _registered_runtime(self, connection, bundle_id: UUID) -> RuntimeBundle:
         row = connection.execute(
-            "SELECT artifact_path, manifest_sha256 FROM bundle_versions WHERE bundle_id = %s",
+            "SELECT artifact_path, manifest_sha256, runtime_kind FROM bundle_versions WHERE bundle_id = %s",
             (bundle_id,),
         ).fetchone()
         if row is None or row["artifact_path"] != f"managed/{bundle_id}":
             raise ManagementError("bundle_not_registered", "controlled bundle is not registered", 404)
+        if row["runtime_kind"] == R06_KIND:
+            raise ManagementError("r06_online_not_enabled", "R06 package is prepared but online ranking is not enabled", 503)
         runtime = self._load(bundle_id)
         if row["manifest_sha256"].strip() != runtime.manifest_sha256:
             raise ManagementError("bundle_changed", "registered manifest hash changed")
@@ -396,7 +404,7 @@ class CatalogManager:
                 if active is None:
                     return
                 row = connection.execute(
-                    "SELECT artifact_path, manifest_sha256 FROM bundle_versions WHERE bundle_id = %s",
+                    "SELECT artifact_path, manifest_sha256, runtime_kind FROM bundle_versions WHERE bundle_id = %s",
                     (active,),
                 ).fetchone()
                 if row is None or row["artifact_path"] != f"managed/{active}":
@@ -405,6 +413,9 @@ class CatalogManager:
                         connection.execute(
                             "UPDATE catalog_control SET admission_open = true WHERE singleton = 1"
                         )
+                    return
+                if row["runtime_kind"] == R06_KIND:
+                    connection.execute("UPDATE catalog_control SET admission_open = false WHERE singleton = 1")
                     return
                 if (self.backend.runtime is None
                         or self.backend.runtime.bundle_id != str(active)
