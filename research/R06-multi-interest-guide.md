@@ -91,3 +91,24 @@ A/B 冻结模型使用旧 R05 验证选轮，C/D 使用 R06 验证选轮。B-A �
 为重建验证请求的历史和完整已见集合，导出器校验并解析完整原始评分 CSV；只生成验证请求，不生成或评价测试请求。读取来源轨迹的查询 ID 只用于对齐固定位置，不按目标/命中筛选；原始标识和请求轨迹留在忽略目录。不得将此阶段描述为“完全没读测试时段数据”。
 
 **仍不接入在线推荐或发布。** 这里的可用时间是研究用首次交互代理，不是线上商品上架时间。尚缺安全 TF-IDF/SVD 新文本变换、CF/content 召回导出、线上会话/商品版本适配及完整 bundle 发布恢复。当前服务的活动模型和业务数据未切换。验收汇总见[本轮记录](../docs/validation/r06-frozen-features-20261003.json)。
+
+## 冻结文本编码器安全导出（2026-10-04）
+
+新增[研究导出器](../src/evorec/research/export_encoder.py)、[纯服务编码器](../src/evorec/infrastructure/content_encoder.py)与[批准哈希重载入口](../scripts/load_content_encoder.py)。复用 `A-frozen-s17` 所用的 R05 TF-IDF/SVD：18,820 个词项、128 维；保留原 15,824 份拟合文档、训练边界 `1483228800000` 毫秒及拟合来源指纹，不重新训练、不按已查看的测试结果选型。
+
+```powershell
+.\.venv-research\Scripts\python.exe -m evorec.research.export_encoder artifacts/exports/my-r06-encoder --allow-trusted-joblib --features-component artifacts/exports/my-r06-features --expected-features-manifest-sha256 <已批准的特征manifest_sha256>
+.\.venv\Scripts\python.exe -m scripts.load_content_encoder artifacts/exports/my-r06-encoder --expected-manifest-sha256 <已批准的编码器manifest_sha256> --features-component artifacts/exports/my-r06-features --expected-features-manifest-sha256 <已批准的特征manifest_sha256>
+```
+
+`joblib` 可执行代码，不是通用安全格式。第一条命令只用于本项目可信本地冻结研究文件；要求显式确认参数，并再次核对实际读取的完整字节哈希后，通过内存缓冲区反序列化这些相同字节，避免校验路径与随后加载文件不同。不能将第三方未知 joblib 交给此入口。第二条命令在服务环境执行，不需要或导入 Torch、NumPy、SciPy、sklearn、joblib、pickle；也不会反序列化旧格式。单独核验编码器时可同时省略两个特征参数，提供其中一个会拒绝执行。
+
+受控目录恰好包含 `manifest.json`、`vocabulary.json`、`weights.f32`、`validation.json`。词项保持原排序索引；权重先存 IDF，再按词项优先保存 SVD 系数，小端 float32。严格复用 Unicode 小写、双字符以上词分词、单词与相邻双词、`1 + log(tf)`、IDF、TF-IDF L2、SVD 投影与输出 L2；空文本/OOV 返回零向量，极小投影不被放大。服务清单固定 Unicode 数据版本与算法，不接收任意正则、函数或可执行对象；不承诺与 sklearn 位级相同。
+
+资源上限：20,000 个词项、128 维、单个 JSON/权重文件 16 MiB、单文本 32,768 字符和 4,096 个分词、2–16 个参考样本、参考文本总长 131,072 字符。JSON 强制 UTF-8 与 32 层深度，拒绝重复键、非有限值、未知字段、错误形状/词项顺序、路径与哈希漂移。空文本与有表示的参考样本都必须存在；固定绝对向量误差门槛为 `1e-6`。配对特征组件时核对维度及七项共同来源/协议身份，不能仅核对维度或词表大小。哈希仅验证一致性，不能替代可信来源和明确批准。
+
+本地真实导出固定核对五个商品库位置与六个合成边界文本，共 11 项参考；相对原冻结 sklearn 变换最大误差 `5.960464477539063e-8`，五个位置相对原存储向量的误差为零。未查看目标标签、评价测试请求或重新计算召回；这里的商品元数据仍继承静态元数据可用性假设。原始词表、权重、文本样本和源码副本都留在忽略目录，公开[汇总验收](../docs/validation/r06-safe-encoder-20261004.json)。
+
+输出、`-source/` 与 `-verification.json` 必须使用新路径。记录真实 dirty 状态、基础提交、十二份关键文件字节副本和依赖版本；组件重放、配对、报告写入失败或中断会撤销本次新建 manifest，保留诊断文件，不覆盖旧组件/报告。独占创建报告，若另一写入者抢先创建，保留其文件。仍不保证进程被强制终止时的原子发布。
+
+**仍不是在线 R06 模型包。** `ContentEncoder.encode(text)` 是独立文本变换，不负责商品入库、召回、线上历史适配、模型版本发布或恢复。CF/content 召回导出与整条推荐链路接入仍待完成；未切换当前服务、修改业务数据或重启 8000 服务。#15 的目标曾停留在旧排序分支，主线补齐通过 [PR #16](https://github.com/Die4U23/EvoRec/pull/16) 独立处理，不因显示已合并就假设 main 已包含依赖。
