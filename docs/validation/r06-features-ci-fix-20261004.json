@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-04",
+  "pr": "https://github.com/Die4U23/EvoRec/pull/15",
+  "status": "local_fix_verified_remote_pending_at_record_creation",
+  "failed_head": "57f33fb45c293c501d83f355169afa06b8381262",
+  "failed_runs": [
+    "https://github.com/Die4U23/EvoRec/actions/runs/37136324329",
+    "https://github.com/Die4U23/EvoRec/actions/runs/37136329231"
+  ],
+  "failure": {
+    "test": "tests/test_r06_features_runtime.py::test_strict_json_including_oversized_numeric_literal, deep-nesting case",
+    "expected_error": "invalid_json",
+    "actual_ci_error": "component_schema",
+    "local_runtime": "CPython 3.12.6 on Windows",
+    "ci_runtime": "CPython 3.12.14 on Ubuntu 24.04",
+    "cause": "The component relied on the underlying JSON decoder raising RecursionError for 5000 levels. The local decoder rejected nesting, while the CI decoder returned a nested list subsequently rejected by the manifest schema. No explicit component nesting limit existed.",
+    "inference_boundary": "Logs establish different decoder behavior in the two runtime/platform combinations; they do not isolate the Python patch version from the operating-system/build difference.",
+    "safety_boundary": "The old implementation still rejected this input; the observed failure was an inconsistent error contract, not acceptance or activation of the input."
+  },
+  "repair": {
+    "utf8_required": true,
+    "max_json_depth": 32,
+    "reject_before_platform_decoder": true,
+    "quoted_braces_and_escaped_quotes_ignored": true,
+    "original_negative_assertion_preserved": true,
+    "bounded_pytest_case_ids": true,
+    "no_ci_skip_or_dependency_downgrade": true
+  },
+  "source_sha256": {
+    "src/evorec/infrastructure/r06_features.py": "c1d4773dc0aeb684b71704e2a88f4be1ddffd81119864794ecd69f610cf397ab",
+    "tests/test_r06_features_runtime.py": "93829d49d296596cb5de6721054bbd37e7ed27557d356db8dae33486c2689db2"
+  },
+  "checks": {
+    "full_repository_python": {"passed": 390, "failed": 0, "errors": 0, "skipped": 0, "seconds": 153.651},
+    "pure_service_components": {"passed": 102, "failed": 0, "errors": 0, "skipped": 0},
+    "focused_research_service": {"passed": 88, "failed": 0, "errors": 0, "skipped": 0},
+    "page_scripts": {"passed": 23, "failed": 0, "skipped": 0},
+    "elevated_python_recursion_limit": {"limit": 20000, "input_depth": 5000, "error": "invalid_json"},
+    "actual_frozen_component_reload": {"passed": true, "item_count": 137249, "dimension": 128, "feature_manifest_sha256": "2108c7cb285201481001533c62044d0dc7f414b0d3ab33f179479646909a3d36", "ranker_manifest_sha256": "f299980f2ef7f9d058bd4a91224b4f24279aec93df89a301de3a79207e60f8ae", "shared_bindings_checked": true},
+    "remote_ci": "Pending when this pre-push record was created; inspect the latest checks of PR 15 for the live outcome",
+    "counting_rule": "Focused and service checks overlap with the complete suite; do not add totals. No new recommendation-effectiveness or real-browser measurement."
+  },
+  "local_evidence_sha256": {
+    "tmp/r06-features-ci-fix-service-20261004-a.xml": "5c3f2b8415d5026f3fa7d135b5d4576f61187c471c20d79b16ecaec02f1c4e25",
+    "tmp/r06-features-ci-fix-focused-20261004-a.xml": "133afe49ed4ce5f5c3c63c19d29b7a425f8767e22c43c33b5c69785c020cab10",
+    "tmp/r06-features-ci-fix-all-20261004-a.xml": "ea6e131de5ef448b5bb254fa968447e829d62508d95cd24c90746fce943c68d5"
+  },
+  "unchanged_scope": "No new retrieval/text encoder, weight training, live model switch, production-data change or automatic PR merge. Previous export source hashes and acceptance records remain historical evidence rather than being overwritten."
+}

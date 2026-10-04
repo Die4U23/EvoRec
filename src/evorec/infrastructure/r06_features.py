@@ -20,6 +20,7 @@ from evorec.infrastructure.residual_ranker import (
 
 MAX_ITEMS = 200_000
 MAX_JSON_BYTES = 32 * 1024 * 1024
+MAX_JSON_DEPTH = 32
 MAX_VECTOR_BYTES = 128 * 1024 * 1024
 FEATURE_TOLERANCE = 1e-6
 MAX_TIMESTAMP_MS = 253402300799999
@@ -41,7 +42,28 @@ def _fail(code, message):
 
 def _json(raw):
     try:
-        return _ranker_json(raw)
+        # CPython patch versions do not share the same decoder recursion limit.
+        # Enforce the component contract before decoding nested containers,
+        # ignoring brackets/braces inside strings and honoring escaped quotes.
+        decoded = raw.decode("utf-8")
+        depth, quoted, escaped = 0, False, False
+        for character in decoded:
+            if quoted:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == '"':
+                    quoted = False
+            elif character == '"':
+                quoted = True
+            elif character in "[{":
+                depth += 1
+                if depth > MAX_JSON_DEPTH:
+                    _fail("invalid_json", "JSON nesting exceeds the component limit")
+            elif character in "]}":
+                depth -= 1
+        return _ranker_json(decoded)
     except ControlledLoadError:
         raise
     except (ValueError, RecursionError) as error:

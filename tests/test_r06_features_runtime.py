@@ -196,12 +196,45 @@ def test_cross_component_mismatch_is_checked_before_scoring(tmp_path):
 
 
 @pytest.mark.parametrize("raw", [b'{"a":1,"a":2}', b'{"a":NaN}', b'\xff',
-                                b'{"number":'+b'1'*5000+b'}', b'['*5000+b'0'+b']'*5000])
+                                b'{"number":'+b'1'*5000+b'}', b'['*5000+b'0'+b']'*5000,
+                                '{"a":1}'.encode("utf-16")],
+                         ids=["duplicate-key", "nan", "invalid-utf8", "oversized-int", "deep-nesting", "utf16"])
 def test_strict_json_including_oversized_numeric_literal(tmp_path, raw):
     root, _, _, _ = _fixture(tmp_path)
     (root / "manifest.json").write_bytes(raw)
     with pytest.raises(ControlledLoadError) as error:
         load_r06_features(root)
+    assert error.value.code == "invalid_json"
+
+
+@pytest.mark.parametrize("depth", [32, 33], ids=["at-depth-limit", "above-depth-limit"])
+def test_json_depth_limit_is_explicit_not_decoder_dependent(depth):
+    from evorec.infrastructure.r06_features import _json
+    raw = b"["*depth+b"0"+b"]"*depth
+    if depth == 33:
+        with pytest.raises(ControlledLoadError) as error:
+            _json(raw)
+        assert error.value.code == "invalid_json"
+    else:
+        value = _json(raw)
+        for _ in range(depth):
+            assert len(value) == 1
+            value = value[0]
+        assert value == 0
+
+
+@pytest.mark.parametrize("value", ["[{}]"*100, "\\\"[{}]"*100, "\\\\[{}]"*100, "中文\"\\[{}]"*100],
+                         ids=["quoted-brackets", "escaped-quote", "escaped-backslash", "unicode-escapes"])
+def test_json_depth_guard_ignores_brackets_and_escaped_quotes_in_strings(value):
+    from evorec.infrastructure.r06_features import _json
+    assert _json(json.dumps({"text": value}, ensure_ascii=False).encode()) == {"text": value}
+
+
+def test_overdeep_json_is_rejected_before_platform_decoder(monkeypatch):
+    from evorec.infrastructure import r06_features
+    monkeypatch.setattr(r06_features, "_ranker_json", lambda *_: pytest.fail("overdeep input reached decoder"))
+    with pytest.raises(ControlledLoadError) as error:
+        r06_features._json(b"["*33+b"0"+b"]"*33)
     assert error.value.code == "invalid_json"
 
 
