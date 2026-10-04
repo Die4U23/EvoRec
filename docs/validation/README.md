@@ -14,6 +14,7 @@
 | R06 | [产物审计](r06-artifacts-checks.json)、[仓库检查](r06-repository-checks.json) | [区间复算](r06-interval-repeat.json) |
 | R06 受控服务组件 | [冻结排序器](r06-ranker-component-20261003.json)、[冻结特征](r06-frozen-features-20261003.json)、[安全编码器](r06-safe-encoder-20261004.json)、[冻结召回](r06-controlled-retrieval-20261004.json) | 独立组件兼容性，不代表完整在线集成 |
 | R06 可选召回加速 | [交错对照与数值验收](r06-retrieval-acceleration-20261004.json) | 热加载召回，不含排序/数据库/HTTP，不是线上 SLA |
+| R06 请求快照适配 | [冻结子集与请求绑定](r06-snapshot-serving-20261004.json) | 同步组件，未接入数据库 admission、发布恢复或 API |
 | R02–R05 来源与干净复验 | [历史来源复原](r02-r05-provenance-reconstruction.json)、[干净复验汇总](r02-r05-clean-replications.json) | [R02 审计](r02-clean-replication-audit.json)、[R03 审计](r03-verified-clean-audit.json)、[R04 审计](r04-verified-clean-audit.json)、[R05 审计](r05-verified-clean-audit.json) |
 | 发布前检查 | [发布预检](release-preflight.json) | 仍须按[验证与发布框架](../07-validation-release.md)核对未完成项 |
 

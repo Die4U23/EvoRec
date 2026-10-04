@@ -125,3 +125,14 @@ def test_cli_explicit_backend_reports_real_execution(tmp_path, capsys):
                  "--expected-features-manifest-sha256", f.manifest_sha256, "--content-backend", "numpy"]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["content_backend"] == "numpy" and not result["activated"]
+
+
+def test_live_subset_parity_including_large_budget_refill(tmp_path):
+    from test_r06_serving import _large_fixture
+    root, features = _large_fixture(tmp_path)
+    scalar = load_r06_retrieval(root, features)
+    accelerated = load_r06_retrieval(root, features, content_backend="numpy")
+    for eligible in (frozenset(features.item_ids[400:]), frozenset(), frozenset(features.item_ids[::3])):
+        actual = accelerated.retrieve([features.item_ids[0]], {features.item_ids[0]}, 11, eligible_items=eligible)
+        expected = scalar.retrieve([features.item_ids[0]], {features.item_ids[0]}, 11, eligible_items=eligible)
+        assert actual == expected

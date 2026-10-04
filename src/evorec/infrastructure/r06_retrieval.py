@@ -68,17 +68,29 @@ class R06Retrieval:
     content_backend: str = "stdlib"
     _content_scanner: object = None
 
-    def _available(self, index, seen, timestamp):
+    def _available(self, index, seen, timestamp, eligible_items=None):
         return (self._features._metadata[index].first_seen_ms < timestamp
-                and self._features.item_ids[index] not in seen)
+                and self._features.item_ids[index] not in seen
+                and (eligible_items is None or self._features.item_ids[index] in eligible_items))
 
-    def retrieve(self, history, seen, timestamp_ms):
+    def retrieve(self, history, seen, timestamp_ms, *, eligible_items=None):
         history, seen, timestamp_ms = validate_request(history, seen, timestamp_ms)
         features = self._features
+        if eligible_items is not None:
+            if isinstance(eligible_items, (set, frozenset)):
+                if len(eligible_items) > MAX_ITEMS:
+                    _fail("resource_limit", "eligible catalog exceeds the frozen limit")
+                eligible_items = tuple(eligible_items)
+            eligible_items = frozenset(_ids(eligible_items, MAX_ITEMS, unique=True))
+            if not eligible_items.issubset(features._indices):
+                _fail("catalog_changed", "eligible catalog is outside the frozen item snapshot")
         if any(features._metadata[features._indices[item]].first_seen_ms >= timestamp_ms
                for item in history if item in features._indices):
             _fail("input_shape", "known history item is not strictly available at the request time")
-        fallback = tuple(islice((index for index in self._ordered if self._available(index, seen, timestamp_ms)), 200))
+        if eligible_items == frozenset():
+            return RetrievalResult((), (), 0, 0)
+        fallback = tuple(islice((index for index in self._ordered
+                                if self._available(index, seen, timestamp_ms, eligible_items)), 200))
         scores = Counter()
         for distance, item in enumerate(reversed(history)):
             index = features._indices.get(item)
@@ -86,12 +98,13 @@ class R06Retrieval:
                 continue
             for edge in range(self._offsets[index], self._offsets[index + 1]):
                 other, similarity = struct.unpack_from("<Id", self._edges, edge * 12)
-                if self._available(other, seen, timestamp_ms):
+                if self._available(other, seen, timestamp_ms, eligible_items):
                     scores[other] += similarity * .8 ** distance
         scale = max(scores.values(), default=1.)
         candidates = set(scores)
         # Original protocol filters AFTER truncating the prior to 1000, not before.
-        candidates.update(i for i in self._ordered[:1000] if self._available(i, seen, timestamp_ms))
+        candidates.update(i for i in self._ordered[:1000]
+                          if self._available(i, seen, timestamp_ms, eligible_items))
         cf = sorted(candidates, key=lambda i: (-(.25 * scores[i] / scale + .75 * self._priors[i]), i))[:200]
         selected = set(cf)
         for index in fallback:
@@ -105,12 +118,12 @@ class R06Retrieval:
         if math.sqrt(sum(value * value for value in context)) > 1e-8:
             def ranked_items():
                 for index, item in enumerate(features.item_ids):
-                    if features._present[index] and self._available(index, seen, timestamp_ms):
+                    if features._present[index] and self._available(index, seen, timestamp_ms, eligible_items):
                         # No rounding/epsilon buckets: ties use sorted item IDs.
                         score = _content_score(context, features.vector(item))
                         yield -score, index
             stream = (ranked_items() if self._content_scanner is None else
-                      self._content_scanner(features, context, seen, timestamp_ms))
+                      self._content_scanner(features, context, seen, timestamp_ms, eligible_items=eligible_items))
             content = [i for _, i in heapq.nsmallest(200, stream)]
         content_personalized = len(content)
         selected = set(content)
@@ -124,8 +137,8 @@ class R06Retrieval:
                                tuple(features.item_ids[i] for i in content),
                                sum(scores[i] > 0 for i in cf), content_personalized)
 
-    def build_pool(self, history, seen, timestamp_ms):
-        result = self.retrieve(history, seen, timestamp_ms)
+    def build_pool(self, history, seen, timestamp_ms, *, eligible_items=None):
+        result = self.retrieve(history, seen, timestamp_ms, eligible_items=eligible_items)
         return self._features.build_pool(history, seen, timestamp_ms, result.collaborative, result.content)
 
 

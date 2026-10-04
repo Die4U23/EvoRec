@@ -163,3 +163,27 @@ A/B 冻结模型使用旧 R05 验证选轮，C/D 使用 R06 验证选轮。B-A �
 本机验收使用原批准的三份组件字节，从干净实现提交 `8946b777e86fe7665ff7e50ba5ad4c9f7e0d3332` 运行到 `artifacts/benchmarks/r06-acceleration-20261004-c`，十三份源码快照与 Git blob 逐项匹配。四个原固定请求、两轮 32 次召回全部通过顺序与候选/排序检查。有历史请求合并中位数：标准库 `3.667804 s`、NumPy `0.076364 s`，约 `48.03×`；三个有历史请求各自约 `46.09× / 48.37× / 50.16×`。冷启动两者约 `1.2 ms`，没有同级收益。旧的 7–8 秒是另一环境的单次观察，不用于本轮速度比；无需为了加速重新导出、批准或激活组件。当前 `.venv-accelerated` 已确认只有可选 NumPy 而无研究执行依赖，原 `.venv` 仍无 NumPy。
 
 测试范围、失败修正及未完成边界见[公开验收摘要](../docs/validation/r06-retrieval-acceleration-20261004.json)。
+
+## 冻结商品子集的请求快照适配（2026-10-04）
+
+[快照适配器](../src/evorec/infrastructure/r06_serving.py)将原受控特征、召回、排序组件组合成同步 `R06SnapshotRanker`，接收 `FrozenR06Request`，返回带原 `RequestBinding` 的 `RankedBatch` 和模型版本/召回信息。现有 `dense` 执行类别在此表示 R06 CF+content 候选及冻结残差排序，候选来源明确为 `r06-a-frozen-s17`；不声称该组件已实现异步 `RankingPort`、现有 CPU dot-product 路线或生成式模型。模型版本绑定策略名、bundle UUID 和三份组件 manifest 哈希；后端加速选择不改变模型身份。
+
+请求必须由可信 admission/发布器提供：明确捕获的毫秒时间、完整已见集合、不可变会话/商品快照、批准特征 manifest 与冻结原商品来源哈希。适配器核对 UUID 和版本类型、组件共同来源及同一不可变特征对象；原始商品哈希是来源身份声明，不是当前数据库内容的自动扫描，也不是授权/签名。不能允许公网客户端自己填一个旧哈希来“证明”商品未修改，未来发布/入场层仍须校验实际商品内容并生成声明。
+
+会话历史最多 10,000 条，只有最近 50 条进入原衰减/上下文/长度特征；未知历史不提前删去，仍占位置。传入已见集合须覆盖**整个**会话历史，历史之外的曝光/交互也须由入场层补齐；隐藏与收藏状态会合并进排除集，合并后最多 10,000 件，不能靠截断已见集满足预算。已知的完整历史须严格早于请求时间。适配器不读数据库、不取当前时钟、不缓存请求结果、不主动变更会话。
+
+冻结商品子集策略 `r06-a-frozen-subset-v1` 允许对原商品做可售/下架选择。`eligible_items` 在 CF 邻居、prior、内容扫描与两路 top-200 选取**之前**过滤，CF 归一化也在合法候选上计算，不先取 200 件再丢下架项。原 prior 的“先截前 1000 件再过滤”规则仍保留；零 prior 商品不会凭空进入 CF 回退。完全相同的全库视图复现原参考；真实子集的 provider 顺序/RRF 可以变化，属于明确的服务策略，不冒称原研究所有子集已有质量证据。
+
+子集之外的新 ID 直接拒绝；同 ID 的文本/表示修改需要新的真实内容身份和批准产物，旧身份声明不能自动发现调用者谎报的修改。不将新文本编码器直接套在旧 CF 图/向量索引上，也不扩展冻结研究商品库。零合法候选返回空结果，不补造商品。同步组件未实现取消、排队或模型/索引租约，不能直接塞入异步 API 后就宣布超时可中止 CPU 推理。
+
+[记录型回放入口](../scripts/verify_r06_serving.py)复用已验收的完整 provider/特征/排序判据，额外检查实际返回批次与领域合法 Top-20；不只重新计算一个旁路候选池。必须先提交并确认干净工作树，输出使用新的 `artifacts/` 子目录：
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.verify_r06_serving artifacts/replays/my-r06-snapshot --features-component artifacts/exports/my-r06-features --expected-features-manifest-sha256 <批准特征manifest_sha256> --retrieval-component artifacts/exports/my-r06-retrieval --expected-retrieval-manifest-sha256 <批准召回manifest_sha256> --ranker-component artifacts/exports/my-r06-ranker --expected-ranker-manifest-sha256 <批准排序manifest_sha256>
+```
+
+默认不需要 NumPy；在独立加速环境使用同一命令并追加 `--content-backend numpy`。回放从原固定验证参考构造合成请求/bundle UUID，不是创建真实会话或发布 bundle；不读取目标标签或评价测试请求。报告与十六份源码副本保留在忽略目录，失败/中断不保留通过报告，旧证据和竞争写入者的报告不覆盖。还不保证进程被强制终止时的原子落盘。
+
+本地从干净实现提交 `da14f1a96d807248f7bc448e4ff01cd9cc231892` 分别运行到 `artifacts/replays/r06-snapshot-serving-20261004-c`（纯服务标准库）和 `-d`（独立 NumPy 环境）。每份十六个源码副本与当前文件和对应 Git blob 一致，两环境模型身份相同。四个原固定请求各 399/400/400/200 件候选，完整 provider 顺序、实际批次绑定/分数与领域合法 Top-20 通过；最大上下文/标量/分数误差分别 `5.96e-8 / 1.79e-7 / 7.15e-7`。真实商品子集尚无新质量评价，601 件受控合成库仅证明过滤前置与足量补齐；没有用它替代原模型/数据库的发布验收。
+
+完整测试范围、失败修正与未完成边界见[公开验收摘要](../docs/validation/r06-snapshot-serving-20261004.json)。

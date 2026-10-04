@@ -46,7 +46,7 @@ def numpy_scanner():
     except FloatingPointError as error:
         raise ControlledLoadError("backend_arithmetic", "NumPy arithmetic self-check failed") from error
 
-    def scan(features, context, seen, timestamp_ms):
+    def scan(features, context, seen, timestamp_ms, *, eligible_items=None):
         # Only ephemeral views of immutable bytes; no persistent mutable ndarray.
         vectors = np.frombuffer(features._vectors, dtype="<f4").reshape(-1, features.dimension)
         context = np.asarray(context, dtype=np.float32)
@@ -55,7 +55,8 @@ def numpy_scanner():
                 stop = min(start + BLOCK_ITEMS, len(features.item_ids))
                 eligible = [i for i in range(start, stop) if features._present[i]
                             and features._metadata[i].first_seen_ms < timestamp_ms
-                            and features.item_ids[i] not in seen]
+                            and features.item_ids[i] not in seen
+                            and (eligible_items is None or features.item_ids[i] in eligible_items)]
                 if not eligible:
                     continue
                 scores = _scores(np, vectors[start:stop], context)
