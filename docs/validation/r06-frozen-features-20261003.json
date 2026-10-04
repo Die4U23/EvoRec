@@ -1,0 +1,111 @@
+{
+  "work_started_date": "2026-10-03",
+  "record_completed_date": "2026-10-04",
+  "branch": "codex/r06-frozen-pool-features",
+  "status": "passed_with_explicit_scope_limits",
+  "component_only": true,
+  "activated": false,
+  "retrained": false,
+  "selected_method": "A-frozen-s17",
+  "manifest_sha256": "2108c7cb285201481001533c62044d0dc7f414b0d3ab33f179479646909a3d36",
+  "approved_ranker_manifest_sha256": "f299980f2ef7f9d058bd4a91224b4f24279aec93df89a301de3a79207e60f8ae",
+  "item_count": 137249,
+  "dimension": 128,
+  "provenance": {
+    "feature_fingerprint": "a6cafc98cc683a4c65430e1bcb4df7db97b8cea00c8e5b3186c601fd49660c0b",
+    "selection_series_sha256": "dc8b5cb6ed231d7c576497a21bac632c6abcd74b31926a53ceb77e7905d406e4",
+    "source_series_sha256": "ae8fcb98a5d26269529123c80ca924be02c553dbbb4b3f442d7d63f5e52dbab6",
+    "training_sample_sha256": "333ac4396b3a8c67d426f025c3f443bc8332cebdd5a37cc21ac18fa6713e1bf5",
+    "catalog_sha256": "f47c61b27e858ff30e46b42c2dcb3e7f6c7800c652fec0b08b7ead4a59b4d24f",
+    "items_sha256": "90a7d0dc91e03e2d56a04b77806564e0c94c4bd8c3bd7b00fbfc92f61ee9a553",
+    "vectors_sha256": "49ac503c929a92f26235ec3f46c9791ce34900a2b2ffc8cd4bb8edb19869da96",
+    "validation_pool_sha256": "485488d12d05668551d4bde90b689d0a46ca4f2c1eb01787b2a34c07cb94c105",
+    "validation_sources_sha256": "0a7aac70d6836a90c7aeed9a2c218f459e9f281a0e36ab226cb31b346534bdd6",
+    "selection_protocol_id": "e11840f33a2fec8d",
+    "training_protocol_id": "2624e6561e71af4b"
+  },
+  "reference": "Archived R06 validation-A contexts/scalars with frozen provider outputs; paired approved ranker Torch CPU reference scores",
+  "validation_rows": [0, 5677, 11569, 1],
+  "candidate_counts": [399, 400, 400, 200],
+  "candidates_checked": 1399,
+  "feature_tolerance": 0.000001,
+  "score_tolerance": 0.00001,
+  "max_context_error": 0.00000005960464477539063,
+  "max_scalar_error": 0.00000017881393432617188,
+  "max_ranker_score_error": 0.0000007152557373046875,
+  "top20_exact": true,
+  "test_queries_evaluated": false,
+  "full_rating_sample_parsed": true,
+  "data_access_scope": "Full frozen rating CSV parsed to reconstruct validation history/seen. Query IDs align fixed rows only; targets do not enter the builder or select reference rows. No test queries or test metrics evaluated.",
+  "retrieval_recomputed": false,
+  "new_text_encoded": false,
+  "export_code": {
+    "base_commit": "c33130780dabc356e28a325237458cae3e487ee4",
+    "working_tree_dirty": true,
+    "source_snapshot_preserved": true,
+    "snapshot_current_bytes_verified": true,
+    "source_sha256": {
+      "src/evorec/research/export_ranker.py": "63728c484f8070520e41b153dce14c84c0c8d85918f5f9e206a88ccbce2bd0d7",
+      "src/evorec/research/ranker.py": "1bea3cb481aba8236b45cc79dfa569f2450850c624ce793e41da5057f05e3df8",
+      "src/evorec/research/content.py": "9a159ada0f4ad7dec25092fc1312a45841ccec0b76d5487e4e08d313673e686e",
+      "src/evorec/infrastructure/residual_ranker.py": "0a547e8fbc29d132e8e87e492d6a993f35e9e341a8dd28d2d04d0eb0bd71671d",
+      "src/evorec/infrastructure/model_runtime.py": "eaddf4153ca0f7522ec5755591fe59534e455ee1850b644e4ab5ea4b36de9ef1",
+      "src/evorec/infrastructure/bundle.py": "d5b0cffc6191f7bf10c5067e586880491f24a676ef36a4dfa91d41651468bc27",
+      "src/evorec/infrastructure/r06_features.py": "ba995728199ca3566acb99dfc97cad0c6ae8bfe6e0b3033b5f99e6c580fcbe80",
+      "src/evorec/research/export_features.py": "7fdfc69994d22f8ad875f0da85c9fd8bd5fd799fb59cec7964d61328b99d1b78",
+      "src/evorec/research/data.py": "1fc50e8989451d2d5431de6ba44e0f1f562e1d1e4382ca1e0910dded3efd5ddf",
+      "src/evorec/research/protocol.py": "065b9f010e48733b54b17ffaa7adc4663983c520ca6d6836972f2a21f0c6b669",
+      "src/evorec/research/training_baselines.py": "5626e65a891512b6048fe57afcc095ca96c07c231ea25e9ba3a940cac4004127"
+    },
+    "python_version": "3.12.6",
+    "torch_version": "2.9.0+cu126",
+    "numpy_version": "2.1.3",
+    "sklearn_version": "1.8.0"
+  },
+  "acceptance_source_sha256": {
+    "tests/test_r06_features_runtime.py": "639acd568e6a18a37c3e1f482ba12edb00677f1808f11f20054784ed014d6755",
+    "tests/test_r06_features_export.py": "122ca84e4a2b9c18ecf397b2dda9bd16e80414c1ba009d9388e47dc0a20e0c49",
+    "scripts/load_r06_features.py": "4bc733f9b99634c00229ae10a8a63210c80e07866c13b0bc0ff5f05e295095f4",
+    ".github/workflows/service-integration.yml": "950b5837f327b223ed9ceaf665dea0d91b867b684f54bb6a7982eba21de8ed91",
+    "tests/test_repository_hygiene.py": "0b3fe6c6fa7c6facad4c61d160c03da1797c950c4a24d46f73a4748262c97169"
+  },
+  "checks": {
+    "full_repository_python": {"passed": 382, "failed": 0, "errors": 0, "skipped": 0, "seconds": 163.361},
+    "focused_research_and_service": {"passed": 140, "failed": 0, "errors": 0, "skipped": 0},
+    "pure_service_components_final": {"passed": 94, "failed": 0, "errors": 0, "skipped": 0},
+    "earlier_service_ci_selection": {"passed": 251, "failed": 0, "errors": 0, "skipped": 0, "scope": "Before final deep-JSON guard; final guard included in full 382 and pure-service 94 runs"},
+    "page_scripts": {"passed": 23, "failed": 0, "skipped": 0},
+    "pure_service_actual_component_load": "passed with both approved manifest digests and shared source bindings",
+    "pure_service_research_dependencies_present": {"torch": false, "numpy": false, "sklearn": false, "joblib": false},
+    "dependency_checks": "pip check passed in service and research environments",
+    "prospective_working_tree_hygiene": {"status": "passed", "delivery_files_checked": 331, "local_links_checked": 424, "python_files_parsed": 126, "largest_file_bytes": 568813, "scope": "Tracked working-tree bytes plus six explicit new files; not staged-index validation", "credential_scan": "Common token/private-key signatures only, not exhaustive"},
+    "counting_rule": "Narrower runs overlap with full repository tests; do not add totals. Synthetic tests are not real experiment runs.",
+    "remote_ci": "not run for this local uncommitted branch"
+  },
+  "local_evidence_sha256": {
+    "artifacts/exports/r06-pool-features-20261003-c-verification.json": "3c61d16c2e231c02ac94aba6bb15f9c33d6492caca7618b4d6471d46adbda386",
+    "tmp/r06-features-all-20261003-b.xml": "3da76dc245f47fc3d41b375e47250d359a569bc4044a5858d3cf4187c376cb60",
+    "tmp/r06-features-focused-20261003-d.xml": "6194b71d0399f2e5a3d18070b654883328992fb210938f3ff7a2e9bd5ed972fc",
+    "tmp/r06-features-service-20261003-c.xml": "b8dfa6cc99106d3d71e28af171a43cd92aaa6319338847472458f919bb279850",
+    "tmp/r06-features-ci-service-20261003-b.xml": "465a01aec4a15f037cbb749d7ba9c076dce0ce66d4b8a02e57d39155ef0da95b"
+  },
+  "review": {
+    "mode": "main-thread quality, performance and reuse review; required custom-agent dispatch parameter unavailable",
+    "quality": "Added all shared source/protocol checks and removal of newly owned manifest/report on joint failure, interrupted writes and KeyboardInterrupt; preserved existing components/reports",
+    "performance": "Request building touches at most 50 history vectors and 400 candidates, not the full catalog; loaded vectors use an immutable byte buffer; no online latency target measured",
+    "reuse": "Reused existing controlled ranker readers and exact scalar order without refactoring the pending ranker PR; private helper coupling is limited to the adjacent infrastructure/research modules"
+  },
+  "unsuccessful_attempts": [
+    "CI selection wrapper initially assumed 25 files; its pre-run guard stopped execution. Read back the actual 20 files, corrected the guard and obtained the valid 251-test run."
+  ],
+  "not_verified_or_implemented": [
+    "Full validation-set or historical GPU equivalence, new recommendation-effectiveness evaluation",
+    "Safe trained TF-IDF/SVD transform for new text and CF/content candidate retrieval export",
+    "Online session/history/catalog-version adapter and translation from research first-seen proxy to publication time",
+    "Complete R06 bundle, API integration, publication and restart recovery",
+    "Atomic export against hard process termination or hostile concurrent filesystem changes",
+    "Native Windows symlink/junction behavior; symlink rejection regression uses a mock",
+    "New real-browser acceptance, online latency, public deployment or multi-machine behavior"
+  ],
+  "local_artifacts": "artifacts/exports/r06-pool-features-20261003-c with sibling -source and -verification.json; all ignored, not committed. Earlier a/b exports preserved as earlier-code diagnostic evidence."
+}

@@ -55,7 +55,7 @@ jobs:
             tests/test_catalog_build.py \
             tests/test_feedback.py tests/test_management.py \
             tests/test_migrations.py tests/test_model_runtime.py \
-            tests/test_residual_ranker_runtime.py \
+            tests/test_residual_ranker_runtime.py tests/test_r06_features_runtime.py \
             tests/test_postgres_api.py tests/test_recommendation.py \
             tests/test_strategy_comparison.py \
             tests/test_comparison_jobs.py \
