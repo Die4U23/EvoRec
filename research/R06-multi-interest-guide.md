@@ -187,3 +187,28 @@ A/B 冻结模型使用旧 R05 验证选轮，C/D 使用 R06 验证选轮。B-A �
 本地从干净实现提交 `da14f1a96d807248f7bc448e4ff01cd9cc231892` 分别运行到 `artifacts/replays/r06-snapshot-serving-20261004-c`（纯服务标准库）和 `-d`（独立 NumPy 环境）。每份十六个源码副本与当前文件和对应 Git blob 一致，两环境模型身份相同。四个原固定请求各 399/400/400/200 件候选，完整 provider 顺序、实际批次绑定/分数与领域合法 Top-20 通过；最大上下文/标量/分数误差分别 `5.96e-8 / 1.79e-7 / 7.15e-7`。真实商品子集尚无新质量评价，601 件受控合成库仅证明过滤前置与足量补齐；没有用它替代原模型/数据库的发布验收。
 
 完整测试范围、失败修正与未完成边界见[公开验收摘要](../docs/validation/r06-snapshot-serving-20261004.json)。
+
+## 自包含冻结 bundle 组装与真实商品身份2026-10-04
+
+[组装器](../scripts/assemble_r06_bundle.py)将四个批准组件的原字节复制进独立 UUID 目录，同时保存原首次出现时间表与研究文本。新格式 `r06-frozen-bundle-v1` 与旧 demo CPU bundle 分开，不改旧格式、不自动注册/切换模型，不增添 A 方法没有的生成器/语义码本。[加载器](../scripts/load_r06_bundle.py)必须接收批准的外层 manifest 哈希，复查内层哈希、共同来源、参考样本、固定布局与资源上限。哈希检测漂移，不证明不可信来源的真实性。
+
+features 的 `catalog_sha256` 只标识时间表，**不包含商品文本**。完整包另核对 encoder 的原 `metadata_sha256`：时间表 ID 集须等于冻结映射，时间须与 features 相同，文本 ID 不可超出映射。缺失文本明确视为空，不填造标题。逐件身份是 UTF-8 紧凑 JSON `[item_id, first_seen_ms, original_text]` 的 SHA-256；不修改训练指纹或原批准组件。
+
+`FrozenR06Bundle.score(context, timestamp_ms, full_seen, catalog_items)` 接收可信入场层捕获的实际 `FrozenCatalogItem` 列表，不接收客户端自报哈希。记录须无重复且精确覆盖可售子集，每件 ID/原文本/时间都相符；新增、编辑和漏项拒绝，下架可形成合法子集。原文本来自研究标题/类别规则，不能用当前商家标题代替。现有数据库尚未生产此快照；调用者谎报旧内容时，组件不能自动探测数据库变化。
+
+模型版本由格式和完整外层 manifest 摘要生成，绑定 UUID、四组件、两源文件、策略和组装提交；后端与请求子集不改变版本。原 `RequestBinding`、完整已见、最近 50 条建模与 top-200 前过滤保留。encoder 固定来源完整性，不授权把新商品放入旧 CF 图。
+
+先提交代码、确认工作树干净，再使用新的忽略目录。所有批准值应来自受信验收记录，不能对未知输入现算哈希就当作批准。参数示例（尖括号需替换）：
+
+```powershell
+$bundleId = [guid]::NewGuid().ToString()
+.\.venv\Scripts\python.exe -m scripts.assemble_r06_bundle artifacts/bundles/r06-frozen --bundle-id $bundleId --features-component <特征目录> --expected-features-manifest-sha256 <批准特征哈希> --retrieval-component <召回目录> --expected-retrieval-manifest-sha256 <批准召回哈希> --ranker-component <排序目录> --expected-ranker-manifest-sha256 <批准排序哈希> --encoder-component <编码器目录> --expected-encoder-manifest-sha256 <批准编码器哈希> --catalog datasets/video_games_r02.catalog.json --metadata datasets/video_games_r03.metadata.json
+.\.venv\Scripts\python.exe -m scripts.load_r06_bundle artifacts/bundles/r06-frozen "artifacts/bundles/r06-frozen/$bundleId" --expected-manifest-sha256 <批准外层哈希>
+.\.venv\Scripts\python.exe -m scripts.verify_r06_bundle artifacts/replays/my-r06-bundle artifacts/bundles/r06-frozen "artifacts/bundles/r06-frozen/$bundleId" --expected-manifest-sha256 <批准外层哈希>
+```
+
+先验证临时包，独占创建新目标，manifest 最后写入。失败/中断撤下自己创建的 marker，保留诊断文件，不覆盖旧包或竞争写入者。失败目录用新 UUID 重试，不原地覆盖。固定 18 文件，禁止链接/额外文件；单文件 128 MiB、全包 256 MiB、源 JSON 32 MiB、外 manifest 16 KiB。不承诺断电/fsync 持久性或强制杀进程后的原子发布，也不等于数据库发布事务。
+
+[记录重放](../scripts/verify_r06_bundle.py)检查实际商品、完整 provider 顺序、特征、实际批次分数/身份及领域合法 Top-20，保存 22 份源码副本。独立加速环境可追加 `--content-backend numpy`。只回放原固定验证请求，不重训、不评价测试目标或创建真实会话。尚缺数据库真实内容快照、活动包发布/恢复、异步队列/取消与租约、推荐 API 注册及端到端性能验收；现有 8000 服务不变。
+
+本轮真实包和双环境干净重放、完整测试及初次失败修正见[验收摘要](../docs/validation/r06-frozen-bundle-20261004.json)。源码基线 `ba2e056`，四组件 15 文件与原件逐字节一致；137,249 件原表示、四个固定参考的完整顺序/批次/Top-20 通过。没有全库向量重编码、真实线上子集质量评价或浏览器验收。

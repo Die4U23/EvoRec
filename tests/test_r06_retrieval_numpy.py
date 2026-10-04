@@ -136,3 +136,16 @@ def test_live_subset_parity_including_large_budget_refill(tmp_path):
         actual = accelerated.retrieve([features.item_ids[0]], {features.item_ids[0]}, 11, eligible_items=eligible)
         expected = scalar.retrieve([features.item_ids[0]], {features.item_ids[0]}, 11, eligible_items=eligible)
         assert actual == expected
+
+
+@pytest.mark.parametrize("history", [("a",), (), ("unknown", "a"), ("zero",)])
+def test_numpy_full_package_matches_pure_wrapper_with_actual_catalog(tmp_path, history):
+    from test_r06_bundle import _build, _records
+    from test_r06_serving import _request
+    from evorec.infrastructure.r06_bundle import load_r06_bundle
+    root, target, digest = _build(tmp_path)
+    pure = load_r06_bundle(root, target, expected_manifest_sha256=digest)
+    fast = load_r06_bundle(root, target, expected_manifest_sha256=digest, content_backend="numpy")
+    request = _request(pure.adapter, history=history, eligible={"b", "c", "e", "zero"})
+    rows = _records(pure, request.context.catalog.eligible_items)
+    assert pure.score(request.context, 11, request.full_seen, rows) == fast.score(request.context, 11, request.full_seen, rows)

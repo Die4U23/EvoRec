@@ -1,0 +1,321 @@
+{
+  "schema_version": 1,
+  "date_local": "2026-10-04",
+  "scope": "Self-contained hash-approved frozen R06 package; no online activation",
+  "main_base": "520f0025802248a5b75d24e046bdbe5f13e8b481",
+  "implementation_commit": "ba2e056a6046dfbc4f844a9bd5a5e8a22385f6fa",
+  "bundle": {
+    "local_directory": "artifacts/bundles/r06-frozen-20261004-a/bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "manifest": {
+      "assembly_revision": "ba2e056a6046dfbc4f844a9bd5a5e8a22385f6fa",
+      "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+      "catalog": {
+        "path": "catalog.json",
+        "sha256": "f47c61b27e858ff30e46b42c2dcb3e7f6c7800c652fec0b08b7ead4a59b4d24f",
+        "size_bytes": 3703383
+      },
+      "catalog_policy": "original-text-and-first-seen-v1",
+      "components": {
+        "encoder": "a551aff992e1703f1645292f70b1f6a75e84b93a7f7cd5665f10945da78e59f4",
+        "features": "2108c7cb285201481001533c62044d0dc7f414b0d3ab33f179479646909a3d36",
+        "ranker": "f299980f2ef7f9d058bd4a91224b4f24279aec93df89a301de3a79207e60f8ae",
+        "retrieval": "2b0480e225e39eeb12071cd71d323074258ec4874a4a39934893471c802715d0"
+      },
+      "kind": "r06-frozen-bundle-v1",
+      "metadata": {
+        "path": "metadata.json",
+        "sha256": "58d8d7c2e45034596c6c6c55871e808f82ee8b49f94885d1a3f8ac8f3093d8c7",
+        "size_bytes": 20823244
+      },
+      "schema_version": 1,
+      "serving_policy": "r06-a-frozen-subset-v1"
+    },
+    "regular_files": 18,
+    "original_component_files_byte_unchanged": 15
+  },
+  "replays": [
+    {
+      "local_directory": "artifacts/replays/r06-frozen-bundle-20261004-a",
+      "report_sha256": "f9e1eac36e27762c6e40ee51a5a88f48a331bfbacbe6b2786094783012168b82",
+      "verification": {
+        "activated": false,
+        "actual_catalog_items_checked": 137249,
+        "assembly_revision": "ba2e056a6046dfbc4f844a9bd5a5e8a22385f6fa",
+        "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+        "content_backend": "stdlib",
+        "full_provider_orders_exact": true,
+        "kind": "r06-frozen-bundle-v1",
+        "legal_top20_exact": true,
+        "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+        "max_context_error": 5.960464477539063e-8,
+        "max_scalar_error": 1.7881393432617188e-7,
+        "max_score_error": 7.152557373046875e-7,
+        "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+        "request_bindings_exact": true,
+        "retrained": false,
+        "rows": [
+          {
+            "candidate_count": 399,
+            "provider_counts": [
+              200,
+              200
+            ],
+            "row": 0
+          },
+          {
+            "candidate_count": 400,
+            "provider_counts": [
+              200,
+              200
+            ],
+            "row": 1
+          },
+          {
+            "candidate_count": 400,
+            "provider_counts": [
+              200,
+              200
+            ],
+            "row": 2
+          },
+          {
+            "candidate_count": 200,
+            "provider_counts": [
+              200,
+              200
+            ],
+            "row": 3
+          }
+        ],
+        "source": {
+          "base_commit": "ba2e056a6046dfbc4f844a9bd5a5e8a22385f6fa",
+          "source_sha256": {
+            "pyproject.toml": "10017b9491f850117047bbbc50c9a85235dc972bd90f857df1f682a08652865a",
+            "requirements-retrieval.lock.txt": "11b896858f7ed97de365448a857d4e4b3fd12ce41906ba9493babbbca685ae50",
+            "scripts/assemble_r06_bundle.py": "34e10245d0b93685ba898baf3ed803bf3e272682dd1b8aa1b45568858b3540ce",
+            "scripts/benchmark_r06_retrieval.py": "34010dcbf5d03213dab2ec1f1082609985c83cae549bef8c840bfdfa9fabd277",
+            "scripts/load_r06_bundle.py": "e140d120b49c40d8a418b6c4bfd45a98005ef18b233365240d65c903f1b03e7d",
+            "scripts/load_r06_retrieval.py": "57bf32043e0ad0bce3fa36a857df8072513d53226a720f9d91577335fd956bb5",
+            "scripts/verify_r06_bundle.py": "fc7156148d436156dd866dcb4b821cba20faffd73424ed12a8e0fe3d8a0d1f5f",
+            "scripts/verify_r06_serving.py": "c83906dbe19ce27b06459085f67b92876e7510b4c1591b0015bd44a3bf85470f",
+            "src/evorec/infrastructure/_content_numpy.py": "2e63a07144f28bd560e6b8cdb0b2c1e4ae22b9a00b0a5891413aba10537c3011",
+            "src/evorec/infrastructure/bundle.py": "d5b0cffc6191f7bf10c5067e586880491f24a676ef36a4dfa91d41651468bc27",
+            "src/evorec/infrastructure/content_encoder.py": "4404c1581de1627d408f5e691def7d2bf92eee4daa6d3d1cd1f8c1de5357c7eb",
+            "src/evorec/infrastructure/model_runtime.py": "eaddf4153ca0f7522ec5755591fe59534e455ee1850b644e4ab5ea4b36de9ef1",
+            "src/evorec/infrastructure/r06_bundle.py": "d95c670e9fd9a3928c1268c019eac6efeb621038c7f63097223050611339b33e",
+            "src/evorec/infrastructure/r06_features.py": "9a4886af8470d89f164ac6b6ce9d37a19a681bd4d545b864a14297def40a192d",
+            "src/evorec/infrastructure/r06_retrieval.py": "afd8cb1d52279b34b87f0843fac62b612f7e749dfc3296f45123f62f8e58873f",
+            "src/evorec/infrastructure/r06_serving.py": "78791006a32a115da148b26fd903c9e9726ffcc5dca554914e119ff78116e42a",
+            "src/evorec/infrastructure/residual_ranker.py": "0a547e8fbc29d132e8e87e492d6a993f35e9e341a8dd28d2d04d0eb0bd71671d",
+            "tests/test_r06_bundle.py": "a3c467e28f8ded6491a77c2366ef6f92d92db18c86853b4e206fffdcfb695eb4",
+            "tests/test_r06_retrieval_benchmark.py": "f6ee2af8e4fcb4ab1868a3167d356d24efc38ae28c8bb4c1725d71956847f1eb",
+            "tests/test_r06_retrieval_numpy.py": "767281ed33e907b41089972574bb82679152e916d5ccff67805c67468cd6b2d5",
+            "tests/test_r06_retrieval_runtime.py": "ebf7f3b12a109d8c159244fecfa49d6ba6844f792e84aff3157d1c703bc0e85d",
+            "tests/test_r06_serving.py": "126f4a68104f331dbad839c36fbed4be5a91b6b19c1d33f707bb7c3491baeb7b"
+          },
+          "working_tree_dirty": false
+        },
+        "status": "passed",
+        "test_queries_evaluated": false
+      },
+      "snapshots_match_current_and_git_blob": true
+    },
+    {
+      "local_directory": "artifacts/replays/r06-frozen-bundle-20261004-b",
+      "report_sha256": "7b83b793f931c9273fd8d010d310412ae25951182a57b5820d3f63067b3e492a",
+      "verification": {
+        "activated": false,
+        "actual_catalog_items_checked": 137249,
+        "assembly_revision": "ba2e056a6046dfbc4f844a9bd5a5e8a22385f6fa",
+        "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+        "content_backend": "numpy",
+        "full_provider_orders_exact": true,
+        "kind": "r06-frozen-bundle-v1",
+        "legal_top20_exact": true,
+        "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+        "max_context_error": 5.960464477539063e-8,
+        "max_scalar_error": 1.7881393432617188e-7,
+        "max_score_error": 7.152557373046875e-7,
+        "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+        "request_bindings_exact": true,
+        "retrained": false,
+        "rows": [
+          {
+            "candidate_count": 399,
+            "provider_counts": [
+              200,
+              200
+            ],
+            "row": 0
+          },
+          {
+            "candidate_count": 400,
+            "provider_counts": [
+              200,
+              200
+            ],
+            "row": 1
+          },
+          {
+            "candidate_count": 400,
+            "provider_counts": [
+              200,
+              200
+            ],
+            "row": 2
+          },
+          {
+            "candidate_count": 200,
+            "provider_counts": [
+              200,
+              200
+            ],
+            "row": 3
+          }
+        ],
+        "source": {
+          "base_commit": "ba2e056a6046dfbc4f844a9bd5a5e8a22385f6fa",
+          "source_sha256": {
+            "pyproject.toml": "10017b9491f850117047bbbc50c9a85235dc972bd90f857df1f682a08652865a",
+            "requirements-retrieval.lock.txt": "11b896858f7ed97de365448a857d4e4b3fd12ce41906ba9493babbbca685ae50",
+            "scripts/assemble_r06_bundle.py": "34e10245d0b93685ba898baf3ed803bf3e272682dd1b8aa1b45568858b3540ce",
+            "scripts/benchmark_r06_retrieval.py": "34010dcbf5d03213dab2ec1f1082609985c83cae549bef8c840bfdfa9fabd277",
+            "scripts/load_r06_bundle.py": "e140d120b49c40d8a418b6c4bfd45a98005ef18b233365240d65c903f1b03e7d",
+            "scripts/load_r06_retrieval.py": "57bf32043e0ad0bce3fa36a857df8072513d53226a720f9d91577335fd956bb5",
+            "scripts/verify_r06_bundle.py": "fc7156148d436156dd866dcb4b821cba20faffd73424ed12a8e0fe3d8a0d1f5f",
+            "scripts/verify_r06_serving.py": "c83906dbe19ce27b06459085f67b92876e7510b4c1591b0015bd44a3bf85470f",
+            "src/evorec/infrastructure/_content_numpy.py": "2e63a07144f28bd560e6b8cdb0b2c1e4ae22b9a00b0a5891413aba10537c3011",
+            "src/evorec/infrastructure/bundle.py": "d5b0cffc6191f7bf10c5067e586880491f24a676ef36a4dfa91d41651468bc27",
+            "src/evorec/infrastructure/content_encoder.py": "4404c1581de1627d408f5e691def7d2bf92eee4daa6d3d1cd1f8c1de5357c7eb",
+            "src/evorec/infrastructure/model_runtime.py": "eaddf4153ca0f7522ec5755591fe59534e455ee1850b644e4ab5ea4b36de9ef1",
+            "src/evorec/infrastructure/r06_bundle.py": "d95c670e9fd9a3928c1268c019eac6efeb621038c7f63097223050611339b33e",
+            "src/evorec/infrastructure/r06_features.py": "9a4886af8470d89f164ac6b6ce9d37a19a681bd4d545b864a14297def40a192d",
+            "src/evorec/infrastructure/r06_retrieval.py": "afd8cb1d52279b34b87f0843fac62b612f7e749dfc3296f45123f62f8e58873f",
+            "src/evorec/infrastructure/r06_serving.py": "78791006a32a115da148b26fd903c9e9726ffcc5dca554914e119ff78116e42a",
+            "src/evorec/infrastructure/residual_ranker.py": "0a547e8fbc29d132e8e87e492d6a993f35e9e341a8dd28d2d04d0eb0bd71671d",
+            "tests/test_r06_bundle.py": "a3c467e28f8ded6491a77c2366ef6f92d92db18c86853b4e206fffdcfb695eb4",
+            "tests/test_r06_retrieval_benchmark.py": "f6ee2af8e4fcb4ab1868a3167d356d24efc38ae28c8bb4c1725d71956847f1eb",
+            "tests/test_r06_retrieval_numpy.py": "767281ed33e907b41089972574bb82679152e916d5ccff67805c67468cd6b2d5",
+            "tests/test_r06_retrieval_runtime.py": "ebf7f3b12a109d8c159244fecfa49d6ba6844f792e84aff3157d1c703bc0e85d",
+            "tests/test_r06_serving.py": "126f4a68104f331dbad839c36fbed4be5a91b6b19c1d33f707bb7c3491baeb7b"
+          },
+          "working_tree_dirty": false
+        },
+        "status": "passed",
+        "test_queries_evaluated": false
+      },
+      "snapshots_match_current_and_git_blob": true
+    }
+  ],
+  "tests": {
+    "full_research": {
+      "local_report": "tmp/r06-bundle-full-20261004-b.xml",
+      "report_sha256": "de6ec01af1d79509425155c09345610e4c3b82a3cbd370efd87d1d7f928c8bc4",
+      "passed": 754,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "junit_seconds": 239.244
+    },
+    "pure_service_ci": {
+      "local_report": "tmp/r06-bundle-service-ci-20261004-a.xml",
+      "report_sha256": "0d06174affb90455d88c9be0c29b11c3f3e63198ba906d5e2f048ee95e44d9cf",
+      "passed": 556,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "junit_seconds": 216.79
+    },
+    "optional_ci": {
+      "local_report": "tmp/r06-bundle-optional-ci-20261004-a.xml",
+      "report_sha256": "67720619922cdcedc5402466e6a0a8d74b090ad7f2dc00c48702c9259c973402",
+      "passed": 123,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "junit_seconds": 15.99
+    },
+    "web_page": {
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "command": "node --test tests/web_file_import.test.cjs"
+    },
+    "overlapping_suites_not_additive": true,
+    "service_ci_file_count": 24
+  },
+  "remaining_test_schemas": 0,
+  "additional_checks": {
+    "pip_check": [
+      "service",
+      "research",
+      "accelerated"
+    ],
+    "service_python": "3.12.6",
+    "accelerated_python": "3.12.6",
+    "numpy": "2.1.3",
+    "pure_runtime_research_imports": false,
+    "api_contracts_reexported": 4,
+    "contract_diff": false,
+    "git_index_hygiene_passed_before_implementation_commit": true
+  },
+  "negative_checks": [
+    "actual text/time drift, new IDs, duplicates and incomplete eligible coverage rejected",
+    "inner approvals, outer schemas, raw tampering, unlisted files, limits and link guards",
+    "independent synthetic scalar/score formulas and original fixed reference replay",
+    "actual returned batch score/version/binding faults rejected, not just a side calculation",
+    "dirty/source drift, partial report/manifest writes, interruption and competing destination/report protection",
+    "domain snapshot constructor already freezes collections; external mutation leaves results unchanged",
+    "optional full package parity including cold, unknown and zero histories"
+  ],
+  "initial_failures": [
+    {
+      "report": "tmp/r06-bundle-focus-20261004-a.xml",
+      "failed": 3,
+      "errors": 43,
+      "passed": 15,
+      "cause": "synthetic fixture incorrectly assumed ItemFeatures contains item_id",
+      "resolution": "zip frozen item IDs with metadata; rerun"
+    },
+    {
+      "report": "tmp/r06-bundle-focus-20261004-c.xml",
+      "failed": 4,
+      "errors": 0,
+      "passed": 77,
+      "cause": "test incorrectly expected mutable constructor inputs to remain mutable; domain already freezes them",
+      "resolution": "reuse domain freezing and verify input mutation isolation; repaired eight cases passed then final full/pure suites passed"
+    },
+    {
+      "attempt": "tmp/r06-bundle-full-20261004-a.xml",
+      "complete_report_available": false,
+      "counted_as_passed": false,
+      "resolution": "no remaining pytest and zero test schemas observed; fresh -b run completed"
+    }
+  ],
+  "review": {
+    "method": "main-thread quality/performance/reuse review",
+    "independent_agent_review": false,
+    "reason": "skill requires agent_type; current dispatch interface lacks it"
+  },
+  "boundaries": {
+    "activated": false,
+    "business_data_changed": false,
+    "restarted_8000": false,
+    "retrained": false,
+    "test_queries_evaluated": false,
+    "all_catalog_vectors_reencoded": false,
+    "real_browser_acceptance": false,
+    "online_quality_or_sla": false,
+    "fsync_or_power_loss_publication_proven": false,
+    "legacy_demo_bundle_unchanged": true,
+    "client_reported_hash_not_trusted": true
+  },
+  "remaining": [
+    "trusted database admission must capture actual original text/time and complete seen state",
+    "R06 active bundle publication/recovery and runtime registry dispatch",
+    "asynchronous RankingPort, queue/cancellation and model/index leases",
+    "recommendation API integration and end-to-end performance/acceptance"
+  ],
+  "remote_ci": "Local evidence only; check the PR latest head SHA after publication."
+}
