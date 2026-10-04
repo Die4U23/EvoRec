@@ -135,3 +135,27 @@ A/B 冻结模型使用旧 R05 验证选轮，C/D 使用 R06 验证选轮。B-A �
 最终从干净提交 `0e2a4f45484cdeb39a2a06d8e8a87acfc9e0e33a` 导出，十六份关键源码副本与 Git blob 一致。输出、`-source/` 和独占创建的 `-verification.json` 都须使用新路径；参考重放、排序配对、报告写入异常或中断会撤下本次 manifest，保留诊断文件，保护旧组件/报告与抢先创建的其他写入者报告。尚不保证进程被强制杀死时原子提交；版本、输入和依赖记录不等于全新机器环境复建。
 
 **仍不是在线完整 bundle。** 本机干净回放中有历史召回约 7–8 秒，冷启动约 0.0012 秒，仅是单次离线观察。还须内容扫描性能优化、线上会话及新增/修改/下架商品的版本适配、完整模型包发布恢复与推荐接口集成；本轮不扩展冻结商品库，不切换当前服务或业务数据。详见[公开验收摘要](../docs/validation/r06-controlled-retrieval-20261004.json)。
+
+## 可选 CPU 内容召回加速（2026-10-04）
+
+默认 `content_backend="stdlib"` 不变，原 `.venv` 无需添加 NumPy。显式 `content_backend="numpy"` 或 CLI `--content-backend numpy` 选择[分块内核](../src/evorec/infrastructure/_content_numpy.py)；只复用已批准的冻结向量与召回文件，不重建统计、重训或激活模型。缺少依赖、版本不匹配或算术自检失败时拒绝加载，不静默换后端。
+
+```powershell
+.\.venv\Scripts\python.exe -m venv .venv-accelerated
+.\.venv-accelerated\Scripts\python.exe -m pip install -r requirements-retrieval.lock.txt
+.\.venv-accelerated\Scripts\python.exe -m pip install --no-deps -e .
+.\.venv-accelerated\Scripts\python.exe -m pip check
+.\.venv-accelerated\Scripts\python.exe -m scripts.load_r06_retrieval artifacts/exports/my-r06-retrieval --expected-manifest-sha256 <已批准的召回manifest_sha256> --features-component artifacts/exports/my-r06-features --expected-features-manifest-sha256 <已批准的特征manifest_sha256> --ranker-component artifacts/exports/my-r06-ranker --expected-ranker-manifest-sha256 <已批准的排序manifest_sha256> --content-backend numpy
+```
+
+[可选锁文件](../requirements-retrieval.lock.txt)固定 NumPy `2.1.3`，不需要 Torch、SciPy、sklearn 或 joblib。CI 将可选环境与纯服务环境分开，两者不互相代替；加速测试出现跳过也算失败。锁定版本和算术回放不是完整依赖安全审计或跨设备位级正确性证明。
+
+每块最多 4,096 件，向量是原不可变字节的只读视图。先用独立 float32 乘法，再沿特征轴逐项 float32 累加，不使用 `dot`、BLAS、`sum` 或融合乘加；首项先加正零，保留原标量协议的零符号。参见 NumPy 的[乘法类型控制](https://numpy.org/doc/2.1/reference/generated/numpy.multiply.html)和[逐项累加及中间类型](https://numpy.org/doc/2.1/reference/generated/numpy.ufunc.accumulate.html)。128 维时单个乘积矩阵最多 2 MiB，不代表进程总 RSS 上限；无共享可变数组或请求结果缓存。过滤、负分、同分 ID 顺序、CF 和 prior 回退规则不变。
+
+[交错基准入口](../scripts/benchmark_r06_retrieval.py)接收与加载命令相同的三个组件目录及批准哈希，并要求新的 `artifacts/` 子目录：
+
+```powershell
+.\.venv-accelerated\Scripts\python.exe -m scripts.benchmark_r06_retrieval artifacts/benchmarks/my-r06-comparison --features-component artifacts/exports/my-r06-features --expected-features-manifest-sha256 <已批准的特征manifest_sha256> --retrieval-component artifacts/exports/my-r06-retrieval --expected-retrieval-manifest-sha256 <已批准的召回manifest_sha256> --ranker-component artifacts/exports/my-r06-ranker --expected-ranker-manifest-sha256 <已批准的排序manifest_sha256> --rounds 2
+```
+
+它在同一进程交替 ABBA/BAAB，每个固定参考请求每轮各执行两次完整召回，计时不含加载、候选特征构造和排序校验。每次计时后检查完整 provider 顺序、并集、上下文、标量、分数及 Top-20；失败不留下通过报告，诊断源码保留，旧证据和竞争写入者的报告不覆盖。报告保存各次耗时、中位数、环境与源码副本/哈希；执行期间源码变动会拒绝通过。运行前仍应提交实现、确认干净工作树；不能以 dirty 快照替代 Git 绑定，也不保证进程强制终止时的原子发布。这只验收固定请求的数值兼容性与热加载召回速度，不是完整推荐接口、并发容量、全验证集质量或线上 SLA。

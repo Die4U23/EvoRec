@@ -34,6 +34,28 @@ def test_content_arithmetic_is_explicit_f32_not_host_blas_or_double():
     assert _content_score((value,), (value,)) == expected
 
 
+@pytest.mark.parametrize("backend", [True, None, "auto", "torch", "numpy.exe"])
+def test_backend_is_explicit_and_closed(tmp_path, backend):
+    root, _, f = _fixture(tmp_path)
+    with pytest.raises(ControlledLoadError) as error:
+        load_r06_retrieval(root, f, content_backend=backend)
+    assert error.value.code == "unsupported_backend"
+
+
+def test_optional_dependency_failure_is_not_silent_fallback(tmp_path, monkeypatch):
+    import builtins
+    root, _, f = _fixture(tmp_path)
+    original = builtins.__import__
+    def deny(name, *args, **kwargs):
+        if name == "numpy":
+            raise ImportError("synthetic missing optional dependency")
+        return original(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, "__import__", deny)
+    with pytest.raises(ControlledLoadError) as error:
+        load_r06_retrieval(root, f, content_backend="numpy")
+    assert error.value.code == "backend_unavailable"
+
+
 def _record(name, raw):
     return {"path": name, "size_bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
 

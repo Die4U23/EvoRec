@@ -1,0 +1,3 @@
+# Explicit optional CPU retrieval environment; default service stays NumPy-free.
+-r requirements-dev.lock.txt
+numpy==2.1.3

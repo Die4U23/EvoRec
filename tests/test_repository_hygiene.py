@@ -56,3 +56,16 @@ def test_service_ci_runs_durable_file_job_regressions():
     assert service_step.count('tests/test_r06_features_runtime.py') == 1
     assert service_step.count('tests/test_content_encoder_runtime.py') == 1
     assert service_step.count('tests/test_r06_retrieval_runtime.py') == 1
+
+
+def test_optional_retrieval_ci_remains_separate_from_pure_service():
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github/workflows/service-integration.yml").read_text(encoding="utf-8")
+    service, accelerated = workflow.split("  retrieval-accelerated:", 1)
+    assert "requirements-retrieval.lock.txt" not in service
+    assert "tests/test_r06_retrieval_numpy.py" not in service
+    assert "requirements-retrieval.lock.txt" in accelerated
+    assert "tests/test_r06_retrieval_numpy.py" in accelerated
+    assert "tests/test_r06_retrieval_benchmark.py" in accelerated
+    assert '"errors", "failures", "skipped"' in accelerated
+    assert "numpy" not in (root / "requirements-dev.lock.txt").read_text(encoding="utf-8").lower()
