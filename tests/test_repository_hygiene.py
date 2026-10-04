@@ -55,3 +55,4 @@ def test_service_ci_runs_durable_file_job_regressions():
     assert service_step.count('tests/test_comparison_jobs.py') == 1
     assert service_step.count('tests/test_r06_features_runtime.py') == 1
     assert service_step.count('tests/test_content_encoder_runtime.py') == 1
+    assert service_step.count('tests/test_r06_retrieval_runtime.py') == 1

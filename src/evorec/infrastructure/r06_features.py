@@ -88,6 +88,17 @@ def _ids(values, limit, *, unique=False):
     return result
 
 
+def validate_request(history, seen, timestamp_ms):
+    """Shared full-exclusion contract for pool construction and retrieval."""
+    history = _ids(history, 50)
+    if isinstance(seen, (set, frozenset)) and len(seen) > 10_000:
+        _fail("input_shape", "seen set exceeds the request limit")
+    seen = frozenset(_ids(tuple(seen) if isinstance(seen, (set, frozenset)) else seen, 10_000))
+    if not set(history).issubset(seen):
+        _fail("input_shape", "seen set must include every history item")
+    return history, seen, _timestamp(timestamp_ms)
+
+
 @dataclass(frozen=True, slots=True)
 class ItemFeatures:
     first_seen_ms: int
@@ -160,15 +171,9 @@ class R06Features:
         Reject illegal candidates rather than silently altering provider ranks.
         Seen must be the full request exclusion set, not merely positive history.
         """
-        history = _ids(history, 50)
-        if isinstance(seen, (set, frozenset)) and len(seen) > 10_000:
-            _fail("input_shape", "seen set exceeds the request limit")
-        seen = frozenset(_ids(tuple(seen) if isinstance(seen, (set, frozenset)) else seen, 10_000))
-        if not set(history).issubset(seen):
-            _fail("input_shape", "seen set must include every history item")
+        history, seen, timestamp_ms = validate_request(history, seen, timestamp_ms)
         collaborative = _ids(collaborative, 200, unique=True)
         content = _ids(content, 200, unique=True)
-        timestamp_ms = _timestamp(timestamp_ms)
         context, coherence = self._history(history)
         items = tuple(sorted(set(collaborative) | set(content)))
         cf_ranks = {item: 61 / (60 + rank) for rank, item in enumerate(collaborative, 1)}
