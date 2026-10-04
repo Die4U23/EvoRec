@@ -1,0 +1,64 @@
+{
+  "date": "2026-10-03",
+  "branch": "codex/r06-controlled-ranker-export",
+  "status": "passed_with_explicit_scope_limits",
+  "component_only": true,
+  "activated": false,
+  "retrained": false,
+  "test_split_read": false,
+  "reference": "Torch CPU float32 inference from the archived frozen checkpoint",
+  "selected_method": "A-frozen-s17",
+  "selection_protocol_id": "e11840f33a2fec8d",
+  "training_protocol_id": "2624e6561e71af4b",
+  "manifest_sha256": "f299980f2ef7f9d058bd4a91224b4f24279aec93df89a301de3a79207e60f8ae",
+  "checkpoint_sha256": "62ad4c038bf3c8da1cd7195b7a3aff75c6e127db52435d7b1c93178a7c8c696b",
+  "selection_series_sha256": "dc8b5cb6ed231d7c576497a21bac632c6abcd74b31926a53ceb77e7905d406e4",
+  "feature_fingerprint": "a6cafc98cc683a4c65430e1bcb4df7db97b8cea00c8e5b3186c601fd49660c0b",
+  "validation_pool_sha256": "485488d12d05668551d4bde90b689d0a46ca4f2c1eb01787b2a34c07cb94c105",
+  "architecture": [520, 128, 64, 1],
+  "validation_rows": [0, 5677, 11569, 1],
+  "validation_samples": 4,
+  "candidate_counts": [399, 400, 400, 200],
+  "candidates_checked": 1399,
+  "score_tolerance": 0.00001,
+  "max_absolute_score_error": 0.0000007152557373046875,
+  "top20_exact": true,
+  "export_and_controlled_load_seconds": 4.346993699997256,
+  "timing_scope": "One local component export/load, not an online latency benchmark",
+  "export_code": {
+    "base_commit": "5d1a7bce8394a952fc94aad2dc80e663f4086de2",
+    "working_tree_dirty": true,
+    "source_snapshot_preserved": true,
+    "source_sha256": {
+      "src/evorec/research/export_ranker.py": "63728c484f8070520e41b153dce14c84c0c8d85918f5f9e206a88ccbce2bd0d7",
+      "src/evorec/research/ranker.py": "1bea3cb481aba8236b45cc79dfa569f2450850c624ce793e41da5057f05e3df8",
+      "src/evorec/research/content.py": "9a159ada0f4ad7dec25092fc1312a45841ccec0b76d5487e4e08d313673e686e",
+      "src/evorec/infrastructure/residual_ranker.py": "0a547e8fbc29d132e8e87e492d6a993f35e9e341a8dd28d2d04d0eb0bd71671d",
+      "src/evorec/infrastructure/model_runtime.py": "eaddf4153ca0f7522ec5755591fe59534e455ee1850b644e4ab5ea4b36de9ef1",
+      "src/evorec/infrastructure/bundle.py": "d5b0cffc6191f7bf10c5067e586880491f24a676ef36a4dfa91d41651468bc27"
+    },
+    "python_version": "3.12.6",
+    "torch_version": "2.9.0+cu126",
+    "numpy_version": "2.1.3"
+  },
+  "checks": {
+    "full_repository_python": {"passed": 315, "failed": 0, "errors": 0, "skipped": 0, "seconds": 145.928},
+    "earlier_service_ci_selection": {"passed": 203, "failed": 0, "errors": 0, "skipped": 0},
+    "page_scripts": {"passed": 23, "failed": 0, "skipped": 0},
+    "pure_service_environment_component_load": "passed",
+    "research_imports_forbidden_subprocess": "passed as part of full repository tests",
+    "counting_rule": "Narrower checks overlap with full repository tests; do not add their totals"
+  },
+  "unsuccessful_attempts": [
+    "First sandboxed pytest invocation could not access its temporary directory; no valid test result. Escalated fresh-directory rerun passed.",
+    "First sandboxed Node invocation failed to spawn its test subprocess (EPERM); escalated rerun passed."
+  ],
+  "not_verified_or_implemented": [
+    "Full validation-set or GPU historical ranking equivalence",
+    "Safe trained TF-IDF/SVD content transform and CF/content candidate provider export",
+    "Online scalar/context builder and availability/seen filtering adapter",
+    "Complete R06 online bundle, API integration and publication/recovery",
+    "Online latency, multi-machine behavior or new recommendation effectiveness"
+  ],
+  "local_artifacts": "artifacts/exports/r06-a-frozen-s17-20261003-c with sibling -source and -verification.json; ignored, not committed"
+}
