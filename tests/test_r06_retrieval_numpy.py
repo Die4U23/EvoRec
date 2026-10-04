@@ -36,6 +36,27 @@ def test_analytical_rounding_signed_zero_and_subnormal_cases():
     assert sum((1., 2**-25, -1.)) != 0.
 
 
+def test_async_ranking_port_parity_with_real_controlled_packages(tmp_path):
+    import asyncio
+    from evorec.infrastructure.r06_async import R06CPUQueue
+    from evorec.infrastructure.r06_bundle import load_r06_bundle
+    from test_r06_bundle import _build
+    from test_r06_async import _port, _command
+    root, target, digest = _build(tmp_path)
+    bundles = [load_r06_bundle(root, target, expected_manifest_sha256=digest, content_backend=b)
+               for b in ("stdlib", "numpy")]
+    async def run():
+        queue = R06CPUQueue(workers=2)
+        try:
+            ports = [_port(queue, bundle) for bundle in bundles]
+            assert ports[0].model_version == ports[1].model_version
+            batches = await asyncio.gather(*(p.rank(p.request.context, _command(p)) for p in ports))
+            assert batches[0].candidates == batches[1].candidates
+            assert batches[0].actual_strategy == batches[1].actual_strategy
+        finally: await queue.aclose()
+    asyncio.run(run())
+
+
 def test_full_replay_and_concurrent_requests_preserve_bytes_and_host_error_policy(tmp_path):
     root, _, features = _fixture(tmp_path)
     digest = hashlib.sha256((root / "manifest.json").read_bytes()).hexdigest()
