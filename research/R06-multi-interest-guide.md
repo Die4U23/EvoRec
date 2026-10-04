@@ -114,3 +114,24 @@ A/B 冻结模型使用旧 R05 验证选轮，C/D 使用 R06 验证选轮。B-A �
 最终本地导出从实现提交 `376b0f352929f4576480631b9bb57848083dcbca` 的干净工作树重放，十二份源码副本与该提交 Git blob 哈希逐项一致；早期 dirty 诊断目录保留，不改写其记录。依赖版本和原始研究输入仍需按清单准备，未声称完成全新机器环境复建。
 
 **仍不是在线 R06 模型包。** `ContentEncoder.encode(text)` 是独立文本变换，不负责商品入库、召回、线上历史适配、模型版本发布或恢复。CF/content 召回导出与整条推荐链路接入仍待完成；未切换当前服务、修改业务数据或重启 8000 服务。#15 的目标曾停留在旧排序分支，主线补齐通过 [PR #16](https://github.com/Die4U23/EvoRec/pull/16) 独立处理，不因显示已合并就假设 main 已包含依赖。
+
+## 冻结 CF/content 召回组件（2026-10-04）
+
+新增[研究导出器](../src/evorec/research/export_retrieval.py)、[纯服务召回器](../src/evorec/infrastructure/r06_retrieval.py)与[批准哈希重载入口](../scripts/load_r06_retrieval.py)。此时 #16、#17 均已合入 main，以上历史记录保留原阶段边界。本阶段重建原训练期的确定性 ItemCF/RecentPopular 统计，不拟合新的文本或神经模型、不选 B/C/D、不评价测试请求；完整评分 CSV 仍被解析后按训练截止时间严格过滤，不能说未读测试时段数据。
+
+```powershell
+.\.venv-research\Scripts\python.exe -m evorec.research.export_retrieval artifacts/exports/my-r06-retrieval --features-component artifacts/exports/my-r06-features --expected-features-manifest-sha256 <已批准的特征manifest_sha256> --ranker-component artifacts/exports/my-r06-ranker --expected-ranker-manifest-sha256 <已批准的排序manifest_sha256>
+.\.venv\Scripts\python.exe -m scripts.load_r06_retrieval artifacts/exports/my-r06-retrieval --expected-manifest-sha256 <已批准的召回manifest_sha256> --features-component artifacts/exports/my-r06-features --expected-features-manifest-sha256 <已批准的特征manifest_sha256> --ranker-component artifacts/exports/my-r06-ranker --expected-ranker-manifest-sha256 <已批准的排序manifest_sha256>
+```
+
+导出必须使用新的 `artifacts/` 子目录，核对冻结评分/商品来源并加载批准的特征、排序组件。CF 原规则：用户最多 100 件正评分商品、每件最多 100 个余弦共现邻居、历史距离衰减 `.8`，与 365 天半衰期 prior 以 `.25/.75` 混合；先取 prior 的前 1000 件再过滤，不能改为先过滤再截断。只在研究侧重建统计，服务侧不读原 CSV、joblib、Torch 或任何可执行模型。
+
+内容侧复用冻结商品向量与已有历史构造器，显式舍入 float32 乘积及逐项累加，规范名 `f32-product-sequential-f32-sum-v1`；严格合法且有表示的商品按分数降序、ID 升序选取，负但有限的内容分数也须保留。空/未知/零向量历史走冻结 prior 回退，有效历史不足 200 件时再按 prior 补足，不重复或凭空填商品。两路各最多 200 件；`R06Retrieval.build_pool(history, seen, timestamp_ms)` 构造原最多 400 件并集，可继续用 `PoolFeatures.score(ranker)` 核对来源后排序。
+
+请求最多 50 条历史、10,000 件完整已见商品，已见集合必须覆盖历史；已知历史及返回商品的首次交互代理时间须严格早于请求，未知历史不贡献表示但仍占衰减位置。召回源目录只能有 `manifest.json`、`statistics.json`、`neighbors.bin`、`validation.json`：CSR 小端 uint32 偏移/索引与 float64 相似度，热度计数保留 float64 精度。上限 200,000 件商品、2,000,000 条边、每行 100 邻居、图/JSON 单文件 32 MiB、2–4 个完整 provider 参考，须同时含有表示的历史和冷启动回退；禁止未知字段、重复键、深层 JSON、非有限/越界数字、自环/重复/乱序边、路径或哈希漂移。结合批准特征 manifest、十一项共同来源/协议、训练 prior 一致性后才执行；哈希仍不能替代可信不可变目录。
+
+真实固定四个原验证请求的 CF 和 content 完整 200 件顺序、1,399 件候选及最终 Top-20 均通过，排序分数最大误差 `7.15e-7`。初次 float64 归约导出失败后撤下 manifest，诊断产物不覆盖；改为明确 float32 算术后重放通过，没有用候选集合或放宽误差隐藏交换顺序。不同矩阵库/GPU 归约仍可能改变近等分次序，四个请求通过不是全验证集或跨设备所有请求的位级一致证明。
+
+最终从干净提交 `0e2a4f45484cdeb39a2a06d8e8a87acfc9e0e33a` 导出，十六份关键源码副本与 Git blob 一致。输出、`-source/` 和独占创建的 `-verification.json` 都须使用新路径；参考重放、排序配对、报告写入异常或中断会撤下本次 manifest，保留诊断文件，保护旧组件/报告与抢先创建的其他写入者报告。尚不保证进程被强制杀死时原子提交；版本、输入和依赖记录不等于全新机器环境复建。
+
+**仍不是在线完整 bundle。** 本机干净回放中有历史召回约 7–8 秒，冷启动约 0.0012 秒，仅是单次离线观察。还须内容扫描性能优化、线上会话及新增/修改/下架商品的版本适配、完整模型包发布恢复与推荐接口集成；本轮不扩展冻结商品库，不切换当前服务或业务数据。详见[公开验收摘要](../docs/validation/r06-controlled-retrieval-20261004.json)。
