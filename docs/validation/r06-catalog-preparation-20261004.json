@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "date_local": "2026-10-04",
+  "scope": "Atomic approved R06 catalog preparation, not online activation",
+  "main_base": "c0b6b4b731425215e64f628a26190ff72367174e",
+  "implementation_commit": "600c1c9153f2310069d06627f5f079ae2b19649d",
+  "real_verification": {
+    "local_directory": "artifacts/replays/r06-catalog-preparation-20261004-a",
+    "report_sha256": "bd6ae57bca64d98cbba43f0ba1674ffe91098ca18b6a4ebfa0d4f2be3b07b6f8",
+    "source_files_current_archived_git_exact": 32,
+    "source_working_tree_dirty": false,
+    "status": "passed",
+    "item_count": 137249,
+    "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+    "database_sources_exact": true,
+    "restart_replay_exact": true,
+    "real_database_drift_rejected": true,
+    "unservable_publication_rejected": true,
+    "owned_temporary_schema_removed": true,
+    "activated": false,
+    "business_schema_untouched": true
+  },
+  "tests": {
+    "full_research_environment": {
+      "local_report": "tmp/r06-preparation-full-20261004-b.xml",
+      "report_sha256": "d4cb33a42f1e8c7e0d6ac12dd0d949cce3c5de461f08770df7d3d71e74475d26",
+      "tests": 780,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 278.231
+    },
+    "service_ci_list": {
+      "local_report": "tmp/r06-preparation-service-20261004-a.xml",
+      "report_sha256": "14c7d4dc4be1aef43d3a79c74fc381570892d56833cc8072ca1d9b55fe5d5b6e",
+      "workflow_files": 25,
+      "tests": 582,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 250.405
+    },
+    "optional_ci_list": {
+      "local_report": "tmp/r06-preparation-optional-20261004-a.xml",
+      "report_sha256": "4bf03744f23dc2727da3c65790da3e197a3802af7121c7cb99b2911863d7af63",
+      "tests": 123,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 14.656
+    },
+    "page_scripts": {"tests": 23, "failures": 0, "skipped": 0},
+    "new_preparation_cases": 26,
+    "overlapping_suites_not_added": true
+  },
+  "negative_evidence": [
+    {
+      "report": "tmp/r06-preparation-full-20261004-a.xml",
+      "tests": 775,
+      "failures": 1,
+      "cause": "Exact OpenAPI route allowlist omitted the newly added prepare endpoint",
+      "repair": "Update the allowlist and assert required approval, digest constraints and forbidden extra fields",
+      "counted_as_passed": false
+    },
+    {
+      "report": "tmp/r06-preparation-focused-20261004-b.xml",
+      "tests": 38,
+      "errors": 1,
+      "cause": "Database-access rejection mock outlived the test and blocked fixture cleanup",
+      "repair": "Restore the mock before fixture teardown; identify and remove the one empty owned schema",
+      "counted_as_passed": false
+    }
+  ],
+  "review": {
+    "mode": "Main-thread quality, performance and reuse review; required custom agent_type unavailable",
+    "claims_independent_agent_review": false,
+    "reuse": "Existing controlled loader, per-item digest, publication lock, admin guard and migration runner",
+    "performance": "Bounded approved package loads execute outside API event loop; full corpus is verified, no online latency claim"
+  },
+  "checks": {
+    "pip_check_all_three_environments": "passed",
+    "four_exported_api_contracts_match_index": true,
+    "temporary_test_schemas_remaining_after_all_runs": 0,
+    "git_index_hygiene": "passed before publication; common signatures only, not exhaustive secret audit"
+  },
+  "boundaries": [
+    "No current business-schema migration/import, active model switch or port-8000 restart",
+    "No actual browser acceptance or new research quality evaluation",
+    "R06 publication deliberately returns r06_online_not_enabled before any publication operation",
+    "Complete request-time/seen/content snapshot production and persistence remain unimplemented",
+    "Bounded async ranking, leases, cancellation, API wiring and complete R06 publication/recovery remain next steps",
+    "Abrupt process termination can strand an owned temporary schema; no forced-termination cleanup or fsync claim"
+  ]
+}

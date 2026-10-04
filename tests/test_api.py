@@ -70,11 +70,18 @@ def test_openapi_describes_actual_routes_and_503_readiness():
         "/api/v1/admin/bundles/{bundle_id}/register",
         "/api/v1/admin/bundles/{bundle_id}/publish",
         "/api/v1/admin/bundles/{bundle_id}/rollback",
+        "/api/v1/admin/r06/bundles/{bundle_id}/prepare",
         "/api/v1/admin/publication", "/api/v1/admin/publication/recover",
     }
     responses = schema["paths"]["/health/ready"]["get"]["responses"]
     assert "503" in responses
     assert "200" in responses  # Available for a future real readiness adapter; default remains 503.
+    preparation = schema["components"]["schemas"]["R06PreparationInput"]
+    assert preparation["required"] == ["expected_manifest_sha256"]
+    assert preparation["additionalProperties"] is False
+    digest = preparation["properties"]["expected_manifest_sha256"]
+    assert digest["pattern"] == "^[0-9a-f]{64}$"
+    assert digest["minLength"] == digest["maxLength"] == 64
 
 
 def test_readiness_uses_current_probe_state_instead_of_a_startup_constant():

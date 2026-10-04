@@ -1461,6 +1461,23 @@
         "title": "PublicationStateResponse",
         "type": "object"
       },
+      "R06PreparationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_manifest_sha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Manifest Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_manifest_sha256"
+        ],
+        "title": "R06PreparationInput",
+        "type": "object"
+      },
       "Readiness": {
         "properties": {
           "blockers": {
@@ -3239,6 +3256,75 @@
           }
         },
         "summary": "Recover Publication",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/r06/bundles/{bundle_id}/prepare": {
+      "post": {
+        "operationId": "prepare_r06_bundle_api_v1_admin_r06_bundles__bundle_id__prepare_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/R06PreparationInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BundleRegistrationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Prepare R06 Bundle",
         "tags": [
           "admin"
         ]

@@ -212,3 +212,21 @@ $bundleId = [guid]::NewGuid().ToString()
 [记录重放](../scripts/verify_r06_bundle.py)检查实际商品、完整 provider 顺序、特征、实际批次分数/身份及领域合法 Top-20，保存 22 份源码副本。独立加速环境可追加 `--content-backend numpy`。只回放原固定验证请求，不重训、不评价测试目标或创建真实会话。尚缺数据库真实内容快照、活动包发布/恢复、异步队列/取消与租约、推荐 API 注册及端到端性能验收；现有 8000 服务不变。
 
 本轮真实包和双环境干净重放、完整测试及初次失败修正见[验收摘要](../docs/validation/r06-frozen-bundle-20261004.json)。源码基线 `ba2e056`，四组件 15 文件与原件逐字节一致；137,249 件原表示、四个固定参考的完整顺序/批次/Top-20 通过。没有全库向量重编码、真实线上子集质量评价或浏览器验收。
+
+## 冻结商品数据库准备（2026-10-04）
+
+在追加迁移 `0009_r06_catalog_preparation.sql` 后，管理员可调用 `POST /api/v1/admin/r06/bundles/{bundle_id}/prepare`，带 `X-Admin-Token` 和 JSON `{"expected_manifest_sha256":"<已批准的外层 SHA-256>"}`。这会向所配置的数据库导入整个冻结原商品库，并注册为 `runtime_kind=r06-frozen-bundle-v1`、`ready`。**它是显式的数据库写入，不会发布、切换活动模型或重启服务；不能直接拿业务库做验收。** 不支持客户端提供文本、时间或 `activate` 字段。
+
+一笔事务保存原 `r06_model_text`、`r06_first_seen_ms` 和连续有序的成员映射。展示标题只截取原文本前 300 个字符，空文本用原 ID；分类标明 `R06 frozen corpus`，不补造图片或新商品。研究首次出现时间是交互代理，不是商家上架时间；原文本也不具有历史可见时间的额外证明。同 ID 的普通商品或不同表示会令整个准备失败，绝不覆盖已有商品；已下架状态不会被重放恢复。
+
+幂等重放重新加载批准原包并逐件核对**数据库实际**原文本、时间、展示字段和有序成员，不只比对一条保存的哈希。包、路径、登记身份或实际表示漂移都会拒绝。旧活动 demo 保持不变。在线适配尚未接通时，R06 `publish/rollback` 返回 `503 r06_online_not_enabled`，不生成发布操作；手工绕过发布器强行改指针时恢复器关闭入场，不把 R06 当旧 dot-product 模型运行。
+
+只在独立、可创建临时 schema 的 PostgreSQL 中执行记录型验收，先提交实现并确认干净工作树，输出用新的忽略目录：
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.verify_r06_catalog_preparation artifacts/replays/my-r06-catalog artifacts/bundles/r06-frozen <bundle-uuid> --expected-manifest-sha256 <已批准外层哈希>
+```
+
+入口只创建自己随机命名的临时 schema，迁移、原子准备、进程对象重建后的重放、全部实际表示核对、真实 SQL 修改后的漂移拒绝和未接通发布的拒绝均在该 schema 完成。仅在清理成功后写通过报告，失败保留诊断源码且不覆盖旧输出。报告绑定干净 Git 提交与 32 份关键源码副本，不保存连接串、原商品文本或真实用户信息。强制终止进程可能遗留临时 schema，不能声称具备强杀后的自动清理或断电持久性。
+
+这层还不是可信请求 admission：完整已见集合、请求时间/实际可售内容快照的生产与持久化、异步排序队列/取消/模型租约、完整 R06 发布恢复及推荐接口仍需接通。合成小包测试只验证机制，真实包验证另行记录，不把二者混作模型质量或线上性能证据。
