@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "date_local": "2026-10-04",
+  "scope": "Bounded async R06 RankingPort and in-memory cancellation leases, not online activation",
+  "main_base": "9ba278a1a2da0fb59dcd7db5354112f0a9808cdb",
+  "implementation_commit": "ce47fe2553abf4b357fe8ab83ba8fdc43e591553",
+  "previous_pr": {
+    "number": 22,
+    "verified_head": "d5a34be61b0ac97a95507ee344ea957dbe09872c",
+    "remote_checks_success": 4,
+    "merged_commit": "9ba278a1a2da0fb59dcd7db5354112f0a9808cdb",
+    "user_authorized_merge": true
+  },
+  "real_replays": [
+    {
+      "local_directory": "artifacts/replays/r06-async-20261004-a",
+      "report_sha256": "f0a64ae579497469e772dc38edd7076b736bca61276908db357e846562d9bcc6",
+      "content_backend": "stdlib",
+      "source_files_current_archived_git_exact": 31,
+      "source_working_tree_dirty": false
+    },
+    {
+      "local_directory": "artifacts/replays/r06-async-20261004-b",
+      "report_sha256": "03ce62a577d8541c7e328c5d944dc614d3d3944b1c69ca1c33cc15621a88ee3d",
+      "content_backend": "numpy",
+      "source_files_current_archived_git_exact": 31,
+      "source_working_tree_dirty": false
+    }
+  ],
+  "real_replay_result": {
+    "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+    "actual_ranking_port_batches_exact": true,
+    "candidate_counts": [399, 400, 400, 200],
+    "legal_top20_exact": true,
+    "max_score_error": 7.152557373046875e-7,
+    "workers": 1,
+    "queued_and_running_capacity": 9,
+    "ranking_jobs_drained": true,
+    "database_admission": false,
+    "activated": false,
+    "test_queries_evaluated": false,
+    "retrained": false
+  },
+  "tests": {
+    "full_research_environment": {
+      "local_report": "tmp/r06-async-full-20261004-a.xml",
+      "report_sha256": "5671a601d8c3516fcb9953927ee9c68dbdea83dfb1979897cba03cdd2c43356e",
+      "tests": 816, "failures": 0, "errors": 0, "skipped": 0, "junit_seconds": 307.180
+    },
+    "service_ci_list": {
+      "local_report": "tmp/r06-async-service-20261004-a.xml",
+      "report_sha256": "cad9b570b20fb0bbc91d3dd98d7af3c2c6820280d6efb4b2394898ca8071f418",
+      "workflow_files": 26,
+      "tests": 617, "failures": 0, "errors": 0, "skipped": 0, "junit_seconds": 276.523
+    },
+    "optional_ci_list": {
+      "local_report": "tmp/r06-async-optional-20261004-a.xml",
+      "report_sha256": "c2b28b02f93e80347225812e1c8558107ce836ee613fdad175a8eb0012be7a45",
+      "tests": 124, "failures": 0, "errors": 0, "skipped": 0, "junit_seconds": 14.853
+    },
+    "focused": {
+      "local_report": "tmp/r06-async-focused-20261004-c.xml",
+      "tests": 36, "failures": 0, "errors": 0, "skipped": 0
+    },
+    "new_async_cases": 35,
+    "new_optional_async_case": 1,
+    "page_scripts": {"tests": 23, "failures": 0, "skipped": 0},
+    "overlapping_suites_not_added": true
+  },
+  "negative_evidence": [
+    {
+      "report": "tmp/r06-async-focused-20261004-a.xml",
+      "tests": 27, "failures": 1,
+      "cause": "Immediate GC assertion preceded completion of event-loop notification handles",
+      "repair": "Wait for notification loop turns, then assert actual captured object is released; preserve retained-until-CPU-exit checks",
+      "counted_as_passed": false
+    },
+    {
+      "attempts": 2,
+      "code": "source_dirty",
+      "cause": "OpenAPI export used CRLF; Git stat/index still marked it dirty despite no normalized content diff",
+      "repair": "Verify zero content diff, refresh only the OpenAPI index entry, verify no staged changes and clean status, rerun both recordings",
+      "passed_reports_created": 0,
+      "counted_as_passed": false
+    }
+  ],
+  "checks": {
+    "pip_check_all_three_environments": "passed",
+    "four_exported_contracts_match_git_content": true,
+    "temporary_test_schemas_remaining": 0,
+    "git_index_hygiene": "passed; common secret signatures only, not exhaustive audit"
+  },
+  "review": {
+    "mode": "Main-thread quality, performance and reuse review; required custom agent_type unavailable",
+    "claims_independent_agent_review": false,
+    "reuse": "Frozen bundle actual-content validator, immutable request, existing scorer, RankingPort and domain selection",
+    "concurrency": "Thread lock shared across loops; completed callbacks registered outside lock; bounded outstanding futures and repeated cancellation drain",
+    "performance": "No online latency or capacity benchmark; capture remains synchronous and must run in trusted admission thread"
+  },
+  "boundaries": [
+    "Running Python threads cannot be killed; cancellation/timeout acknowledgement can exceed nominal deadline",
+    "Only an in-memory object lease, not complete database publication or index eviction coordination",
+    "Offline snapshots come from approved package records, not actual database admission",
+    "Complete seen/time/content capture and persistence, online routing, full R06 publish/recovery and recommendation/comparison model metadata remain next steps",
+    "R06 preparation still deliberately rejects publication",
+    "No business data import, live model switch, port-8000 restart or real browser acceptance"
+  ]
+}
