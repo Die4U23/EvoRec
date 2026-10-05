@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-05",
+  "scope": "高级发布/回滚页面和原操作重试；不改变后端发布协议或模型",
+  "implementation_commit": "608af166f7c9c5a5b08b2c106702a23a6a5e8010",
+  "frontend_sha256": "265748eafe7203429d689aac77dfd163dcf42845888f10983c1bd4568bf81f84",
+  "node": {
+    "before": {"selected_cases": 7, "failed": 7, "skipped": 0, "private_junit_sha256": "172b36c8ea79e01491b4cacb1267167282d0de90b19286331c94bcab37f2c0f1", "cause": "缺少回滚控件/处理器；发布响应丢失后刷新无法恢复原元组"},
+    "final": {"files": 2, "passed": 85, "failed": 0, "skipped": 0, "new_cases": 19, "private_junit_sha256": "6c29bb0f70847284e9cdebfc387f27649c370228bd58a13971815c744e9cc2fc"},
+    "coverage": ["发布与回滚响应丢失后重试/刷新保持同键、目标及守卫", "确认重放不误称目标仍是当前活动版本", "读状态期间及构建发布期间互斥，恢复不可并发", "未确认元组禁止更改目标/动作和旁路构建发布", "明确冲突只拒绝，不自动换守卫重算", "完成后状态刷新失败保留原元组", "非法目标/令牌/空活动/同目标/关闭准入/挂起操作不 POST", "响应身份不一致保留原操作", "异常标签页状态不自动执行", "存储不可用提示不要刷新", "完成后解锁，下一次显式操作新键"]
+  },
+  "python": {
+    "files": ["test_management.py", "test_catalog_demo.py", "test_catalog_build.py", "test_repository_hygiene.py"],
+    "passed": 49, "failed": 0, "errors": 0, "skipped": 0,
+    "private_xml_sha256": "7c069df6f10caa454bc8dc07a61465a3cdd2f51d4513cd058b59f2cbb9d0515b",
+    "real_tcp_catalog_demo_case_executed": true,
+    "overlapping_runs_not_added": true
+  },
+  "browser": {
+    "url": "http://127.0.0.1:56470/app",
+    "backend_and_frontend_at_clean_implementation_commit": true,
+    "advanced_controls_and_deactivation_warning_visible": true,
+    "empty_target_click_shows_local_uuid_rejection": true,
+    "no_admin_token_entered_or_file_uploaded_at_this_checkpoint": true,
+    "selector_issue": "summary 在 AX 中为 button，但 Playwright role=button 未匹配；改用已观察到的精确文本展开，不属于应用功能通过/失败结论",
+    "private_controls_screenshot_sha256": "107faafa435e3ff214bcb286b8c2fec07b18a2b44c65184ddf14bde6df2efb5b",
+    "private_invalid_target_observation_sha256": "25809271dc53249527e5e321c4be9211cd06aa423f5e64850f6fca337fa4257a",
+    "private_invalid_target_screenshot_sha256": "84dff758bfda77fee696ea6e44bcb6a24bfe1aff9ec7828db08cf2b9da03c637"
+  },
+  "security": "只保存本标签页的操作元组，不保存管理员令牌；重载不自动提交，临时服务只绑定 loopback。未触及业务环境、数据库、模型或 8000",
+  "review": "主线程质量/性能/复用三视角复查；角色参数不可用，未称独立 Agent 审查。不扩展后端 API 或重构其他状态机",
+  "pending": ["本轮浏览器临时令牌与合成文件授权及成功发布/下架/回滚链路", "网络丢包和多操作者切换的真实浏览器故障注入（当前为 Node 模拟）", "行动时确认后的浏览器永久重置", "三分钟实际复演与作者理解验收"],
+  "not_claimed": ["完整 Demo 交付、性能/SLA、模型效果提升或新训练", "Node 模拟等于真实浏览器故障/网络故障", "本轮本地全服务回归；完整选定套件以最新 head CI 为准", "此摘要检查点已完成另行启动的浏览器服务清理；退出需单独核对 stopped.json"]
+}
