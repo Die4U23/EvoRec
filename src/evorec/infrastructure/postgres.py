@@ -97,7 +97,7 @@ class PostgresDemoBackend:
             ).fetchall()
             eligible = frozenset(row["item_id"] for row in rows if row["is_active"])
             catalog = CatalogSnapshot(bundle_id, control["exclusion_version"], eligible)
-            model = capture_model(connection, runtime.bundle, session, catalog, rows)
+            model = capture_model(connection, runtime, session, catalog, rows)
         elif isinstance(runtime, ManagedR06Runtime):
             raise ManagementError("r06_snapshot_changed", "registered runtime kind differs", 503)
         else:

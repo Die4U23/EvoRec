@@ -19,8 +19,9 @@ from evorec.domain.errors import IdempotencyReplay, ManagementError, SnapshotMis
 from evorec.domain.models import FeedbackCommand, FeedbackKind, RecommendationCommand, Strategy
 from evorec.infrastructure.comparison_store import decode_result, encode_result
 from evorec.infrastructure.postgres import PostgresDemoBackend
-from evorec.infrastructure.r06_admission import restore_request
+from evorec.infrastructure.r06_admission import ManagedR06Runtime, restore_request
 from evorec.infrastructure.r06_serving import R06SnapshotRanker
+from evorec.infrastructure.r06_async import R06CPUQueue
 from test_r06_async import _settle, _started
 from test_r06_bundle import _build
 
@@ -478,4 +479,46 @@ def test_loaded_runtime_does_not_treat_membership_drift_as_deactivation(online, 
         assert error.value.code == "bundle_members_changed"
         with app.backend._connect() as c:
             assert c.execute("SELECT count(*) AS n FROM recommendation_requests").fetchone()["n"] == 0
+    asyncio.run(run())
+
+
+def test_cached_original_sources_are_immutable_owned_and_hash_bound(online):
+    app, _, _ = online
+    runtime = app.backend.runtime
+    records = dict(runtime.catalog_items)
+    copied = ManagedR06Runtime(runtime.bundle, records)
+    records.clear()
+    assert len(copied.catalog_items) == 6
+    with pytest.raises(TypeError): copied.catalog_items["a"] = None
+    with pytest.raises(FrozenInstanceError): copied.catalog_items["a"].text = "tampered"
+    changed = dict(runtime.catalog_items)
+    changed["a"] = replace(changed["a"], text="tampered")
+    with pytest.raises(ManagementError): ManagedR06Runtime(runtime.bundle, changed)
+
+
+def test_api_capacity_error_is_explicit_and_never_returns_popular(online):
+    app, _, _ = online
+    app.backend.r06_queue.close()
+    app.backend.r06_queue = R06CPUQueue(workers=1, queued=0)
+    entered, release = Event(), Event()
+    def block(): entered.set(); assert release.wait(5)
+    async def run():
+        running = asyncio.create_task(app.backend.r06_queue.run(block))
+        try:
+            await _started(entered)
+            command = await _command(app)
+            body = dict(session_id=str(command.session_id), expected_history_version=0, strategy="dense", k=3)
+            headers = {"X-Session-Token": command.session_token, "Idempotency-Key": str(command.request_id)}
+            api = create_app(demo_application=app)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=api), base_url="http://test") as client:
+                response = await client.post("/api/v1/recommendations", json=body, headers=headers)
+                assert response.status_code == 429
+                assert response.json()["error"]["code"] == "r06_queue_full" and response.json()["error"]["retryable"]
+                assert "items" not in response.json()
+            assert "429" in api.openapi()["paths"]["/api/v1/recommendations"]["post"]["responses"]
+            with app.backend._connect() as c:
+                assert c.execute("SELECT status FROM recommendation_requests WHERE request_id=%s",
+                                 (command.request_id,)).fetchone()["status"] == "failed"
+                assert c.execute("SELECT count(*) AS n FROM request_items").fetchone()["n"] == 0
+        finally: release.set(); await running
     asyncio.run(run())

@@ -16,7 +16,7 @@ from evorec.infrastructure.catalog_file_job import CatalogFileJobService
 from evorec.infrastructure.model_runtime import ControlledLoadError, RuntimeBundle, load_runtime_bundle
 from evorec.infrastructure.postgres import PostgresDemoBackend
 from evorec.infrastructure.r06_bundle import KIND as R06_KIND
-from evorec.infrastructure.r06_catalog import R06CatalogPreparation
+from evorec.infrastructure.r06_catalog import R06CatalogPreparation, source_records
 
 
 class CatalogManager:
@@ -212,10 +212,15 @@ class CatalogManager:
                 raise ManagementError("r06_online_not_enabled", "R06 online ranking is explicitly disabled", 503)
             from evorec.infrastructure.r06_admission import ManagedR06Runtime
 
-            return ManagedR06Runtime(self.r06.load_registered(
+            bundle = self.r06.load_registered(
                 connection, bundle_id, content_backend=self.backend.r06_content_backend,
                 verify_sources=not frozen_snapshot,
-            ))
+            )
+            try:
+                records = source_records(self.managed_root / str(bundle_id), bundle)
+                return ManagedR06Runtime(bundle, {item.item_id: item for item in records})
+            except ValueError as error:
+                raise ManagementError("r06_catalog_changed", "approved runtime source table changed", 422) from error
         runtime = self._load(bundle_id)
         if row["manifest_sha256"].strip() != runtime.manifest_sha256:
             raise ManagementError("bundle_changed", "registered manifest hash changed")

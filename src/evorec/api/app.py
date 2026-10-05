@@ -557,6 +557,8 @@ def create_app(
             404: {"model": ErrorEnvelope, "description": "Session not found"},
             401: {"model": ErrorEnvelope, "description": "Missing or invalid session token"},
             409: {"model": ErrorEnvelope, "description": "History version conflict"},
+            429: {"model": ErrorEnvelope, "description": "R06 CPU capacity exhausted"},
+            503: {"model": ErrorEnvelope, "description": "Catalog, runtime or snapshot unavailable"},
             504: {"model": ErrorEnvelope, "description": "Recommendation deadline exceeded"},
         },
     )
@@ -617,6 +619,7 @@ def create_app(
             404: {"model": ErrorEnvelope, "description": "Session not found"},
             409: {"model": ErrorEnvelope, "description": "History version conflict"},
             503: {"model": ErrorEnvelope, "description": "Catalog is not ready"},
+            429: {"model": ErrorEnvelope, "description": "R06 CPU capacity exhausted"},
             504: {"model": ErrorEnvelope, "description": "Comparison deadline exceeded"},
         },
     )
@@ -629,7 +632,8 @@ def create_app(
     @app.post(
         "/api/v1/strategy-comparisons", response_model=ComparisonSavedResponse, tags=["demo"],
         responses={401: {"model": ErrorEnvelope}, 404: {"model": ErrorEnvelope},
-                   409: {"model": ErrorEnvelope}, 503: {"model": ErrorEnvelope},
+                   409: {"model": ErrorEnvelope}, 429: {"model": ErrorEnvelope},
+                   503: {"model": ErrorEnvelope},
                    504: {"model": ErrorEnvelope}},
     )
     async def save_comparison(

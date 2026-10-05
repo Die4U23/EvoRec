@@ -8,6 +8,8 @@ Database ownership is the trust boundary, not a cryptographic signature.
 from dataclasses import dataclass
 import hashlib
 import json
+from types import MappingProxyType
+from typing import Mapping
 
 from evorec.domain.errors import ManagementError
 from evorec.domain.models import ModelSnapshot
@@ -19,6 +21,19 @@ from evorec.infrastructure.residual_ranker import ControlledLoadError
 @dataclass(frozen=True)
 class ManagedR06Runtime:
     bundle: FrozenR06Bundle
+    catalog_items: Mapping[str, FrozenCatalogItem]
+
+    def __post_init__(self):
+        # Pay canonical text hashing once at load. Requests still compare actual
+        # DB text/time, not a cached client claim, before using these identities.
+        records = dict(self.catalog_items)
+        if (type(self.bundle) is not FrozenR06Bundle
+                or set(records) != set(self.bundle.adapter.features.item_ids)
+                or any(type(item) is not FrozenCatalogItem or item.item_id != key
+                       or _item_digest(item) != self.bundle.catalog_item_sha256[key]
+                       for key, item in records.items())):
+            raise ManagementError("r06_catalog_changed", "approved runtime source table differs", 422)
+        object.__setattr__(self, "catalog_items", MappingProxyType(records))
 
     @property
     def bundle_id(self):
@@ -74,7 +89,8 @@ def restore_request(bundle, context):
         raise ManagementError(error.code, "frozen R06 input validation failed", 422) from error
 
 
-def capture_model(connection, bundle, session, catalog, rows):
+def capture_model(connection, runtime, session, catalog, rows):
+    bundle = runtime.bundle
     row = connection.execute(
         "SELECT runtime_kind, manifest_sha256 FROM bundle_versions WHERE bundle_id = %s",
         (catalog.bundle_id,),
@@ -86,17 +102,14 @@ def capture_model(connection, bundle, session, catalog, rows):
             or any(row["internal_item_id"] != index for index, row in enumerate(rows))):
         raise ManagementError("bundle_members_changed", "approved ordered membership changed", 409)
     identities = []
-    try:
-        for row in rows:
-            if not row["is_active"]:
-                continue
-            item = FrozenCatalogItem(row["item_id"], row["r06_model_text"], row["r06_first_seen_ms"])
-            digest = _item_digest(item)
-            if bundle.catalog_item_sha256.get(item.item_id) != digest:
-                raise ManagementError("r06_catalog_changed", "actual model text/time changed", 409)
-            identities.append((item.item_id, digest))
-    except ControlledLoadError as error:
-        raise ManagementError("r06_catalog_changed", "actual model text/time is invalid", 409) from error
+    for row in rows:
+        if not row["is_active"]:
+            continue
+        item_id = row["item_id"]
+        approved = runtime.catalog_items[item_id]
+        if row["r06_model_text"] != approved.text or row["r06_first_seen_ms"] != approved.first_seen_ms:
+            raise ManagementError("r06_catalog_changed", "actual model text/time changed", 409)
+        identities.append((item_id, bundle.catalog_item_sha256[item_id]))
     if frozenset(item for item, _ in identities) != catalog.eligible_items or len(identities) != len(catalog.eligible_items):
         raise ManagementError("r06_catalog_changed", "eligible catalog changed during admission", 409)
     seen = set(session.history) | session.hidden_items | session.favorite_items
