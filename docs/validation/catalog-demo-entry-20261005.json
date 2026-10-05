@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-05",
+  "scope": "独立临时内容基线演示与合成新品工程闭环；不是研究实验",
+  "implementation_commit": "d1fa274fe9efd01943c1076511bdf27b77bf608b",
+  "entry": "python -m scripts.run_catalog_demo artifacts/demo/catalog-first-run",
+  "model": {"kind": "content-baseline", "initial_synthetic_items": 24, "after_synthetic_import": 26, "dimension": 128, "r06_enabled": false, "api_deadline_seconds": 2.0},
+  "local_python": {
+    "scope": "catalog_demo、r06_demo、catalog_build、catalog_file_jobs、repository_hygiene 五文件",
+    "module_absent": {"collection_errors": 1, "private_xml_sha256": "8a305f0866c677cae83bcb9fc7d9749d0dc57134aecfe82801359a6083bf7fa5"},
+    "first": {"passed": 30, "failed": 2, "errors": 0, "skipped": 0, "private_xml_sha256": "a7bb2e21e3a9c01d380f666cbdfd9e0cb6da8fc1a2c970eb64c5d21acec5e207", "causes": ["根 artifacts 输出按边界拒绝为 ValueError，测试误期待 FileExistsError", "内容 RuntimeBundle 没有 R06 的 model_version 属性，入口误用"]},
+    "second": {"passed": 10, "failed": 1, "errors": 0, "skipped": 0, "private_xml_sha256": "dd4ce7dd11c0fb0bf086c387e916c090f76ef1130ec5f876f16f9eaffe5ed0e8", "cause": "已完成文件任务重放按契约返回 200，验收误期待 202"},
+    "intermediate": {"passed": 70, "failed": 0, "errors": 0, "skipped": 0, "private_xml_sha256": "43d8b61bf313ddd6e02c69b54a06c06746139d8e9db5148ae37c6dc292b2b7f8"},
+    "final": {"passed": 71, "failed": 0, "errors": 0, "skipped": 0, "new_cases": 15, "private_xml_sha256": "4a584cc0c97363d856c722a9180a2681729be870fcb18430fc84250c2a27c048"},
+    "overlapping_runs_not_added": true
+  },
+  "real_tcp": {
+    "owned_child_uvicorn_postgresql": true,
+    "request_path_not_asgi_transport": true,
+    "invalid_csv_row_3_title_error_and_atomic_rejection": true,
+    "file_idempotency_replay_and_changed_payload_conflict": true,
+    "single_background_worker_validates_and_builds": true,
+    "preview_not_published_and_old_bundle_preserved": true,
+    "explicit_publication_makes_synthetic_cold_item_recommendable": true,
+    "deactivation_and_guarded_rollback_do_not_reactivate": true,
+    "old_recommendation_key_replays_original_after_rollback": true,
+    "no_inherited_admin_or_r06_configuration": true,
+    "normal_stop_worker_drained_token_deleted_owned_schema_removed": true
+  },
+  "fault_tests": ["占用端口在输出与数据库操作前拒绝", "启动失败只删除确切自有 schema，没有 ready 标记", "关闭必须等待人工阻塞的实际 worker 线程返回", "worker 异常停止 listener 并传播失败，不静默继续"],
+  "source_binding": "以上 XML 对应提交中的生产/验收代码字节；运行时文档未提交，不称整个工作区干净或完整源码归档",
+  "security": "只监听 loopback，管理员令牌临时且仅在忽略目录，正常关闭删除；旧业务配置/8000 不变。原始失败 XML 可能含 pytest 参数与临时凭据，保持本地不公开。摘要不是完整秘密扫描",
+  "review": "主线程质量、性能、复用复查，不称独立 Agent 审查",
+  "not_claimed": ["新入口浏览器文件选择、UI 回滚或浏览器重置通过", "新电脑复建、Ctrl+C 实机验收、强杀恢复或保留数据的独立进程重启", "合成同标题新品第一名代表真实偏好效果提升", "R06 支持任意新品、训练或实验效果改变", "负载、在线效果、SLA 或完整作品集 Demo 已交付", "本轮本地完整服务回归：最新 head CI 执行完整选定套件"]
+}

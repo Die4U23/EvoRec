@@ -10,9 +10,9 @@
 | --- | --- | --- | --- |
 | 1 | 正确基线与诚实策略标签 | 热门按可追溯训练热度排序；实际路径明确；固定 dense 别名不称学习路由 | 语义与页面脚本通过；完整包热门组件及 ASGI 原统计核对通过，见[最新复验](../validation/r06-request-deadline-20261005.json) |
 | 2 | 可重复的推荐演示 | 示例/新用户、详情、收藏、屏蔽、撤销与重置；真实模型在独立演示配置中可用 | 独立启动入口和完整包真实 TCP 闭环已通过；浏览器用户、dense、反馈、刷新与身份已检查，卡片实际标题已[补齐并核对](../validation/demo-card-metadata-20261005.json)；浏览器重置仍待确认，见[入口记录](../validation/r06-demo-entry-20261005.json) |
-| 3 | 新品演示 | 导入、逐行错误、构建、预览、人工发布、下架和回滚；入库与可推荐资格分开 | 现有内容基线可用；不宣称冻结 R06 支持任意新 ID |
+| 3 | 新品演示 | 导入、逐行错误、构建、预览、人工发布、下架和回滚；入库与可推荐资格分开 | 新增下方独立合成内容基线入口和自有 worker；完整真实 TCP 闭环通过，见[分层记录](../validation/catalog-demo-entry-20261005.json)；新入口浏览器操作仍待验收，不宣称冻结 R06 支持任意新 ID |
 | 4 | 真实结果展示 | 同协议基线与一个改进/消融、冷物品分组、样本数、版本、局限和失败案例 | `/app/results` 已接入原公开 R06 档案；摘要/绑定、负面脚本和实际浏览器通过，见[结果页记录](../validation/demo-results-page-20261005.json)；不宣称新实验或线上收益 |
-| 5 | 可交付入口 | 按说明启动；三分钟演示；测试和恢复记录；作者能解释并修改关键代码 | 已有独立 R06 启动及结果页步骤；新品入口的最终复验和完整三分钟交付仍待收尾 |
+| 5 | 可交付入口 | 按说明启动；三分钟演示；测试和恢复记录；作者能解释并修改关键代码 | 新品与 R06 均有隔离启动入口，结果页可用；新品浏览器最终复验、重置及完整三分钟交付仍待收尾 |
 
 “实际 HTTP”“浏览器测试”“离线实验”“Node 页面脚本”和“持续负载”分别记录，不相互代替。历史 V0.2 浏览器验收不能直接作为新增 R06 路径的验收。通过的旧结果保留，不把新草稿计为已完成。
 
@@ -23,6 +23,38 @@
 1. 选择用户历史，获取合法且去重的推荐，查看实际策略与模型身份。
 2. 收藏/屏蔽并确认状态变化；在内容基线演示新品校验、发布和候选资格，明确该路径与冻结 R06 的区别。
 3. 查看同快照策略差异和真实离线结果；说明一个失败样例、未获得支持的改进，以及测量边界。
+
+## 独立新品内容基线入口
+
+这是另一条演示路径：Python 3.12 服务环境 `.venv`（按根目录 README 安装）与本地 PostgreSQL 即可，不需要原始数据、训练权重或 NumPy。使用合成的 24 件目录、128 维标题/类别哈希内容基线，不是真实偏好预测或 R06 模型。
+
+在项目根目录 PowerShell 读取已有数据库配置并启动，输出目录必须全新：
+
+```powershell
+$catalogDemoDbLine = Get-Content .env | Where-Object { $_ -match '^EVOREC_DATABASE_URL=' } | Select-Object -First 1
+if (-not $catalogDemoDbLine) { throw '缺少 EVOREC_DATABASE_URL' }
+$env:EVOREC_DATABASE_URL = $catalogDemoDbLine.Substring(20).Trim().Trim('"').Trim("'")
+.\.venv\Scripts\python.exe -m scripts.run_catalog_demo artifacts/demo/catalog-first-run
+```
+
+等待 `status: ready`，打开输出随机 loopback 地址的 `/app`。入口自动创建自己的 schema、受管目录、初始内容 bundle 和单个文件校验/构建 worker；后台比较 worker 不启动。继承的业务管理令牌、R06 开关和模型路径不会用于这个演示。初始合成目录会发布，但后来导入的文件仅在显式确认后才发布。
+
+1. 选择示例用户，获取 dense 推荐；初始历史为 `demo-coop`。
+2. 展开管理操作，从本轮输出目录的 `admin-token.txt` 复制临时令牌填入页面。它只属于这次隔离服务；不要复制业务令牌、截图令牌或提交到 Git。
+3. 文件选择 `invalid-items.csv`，提交校验，观察第 3 行空标题错误；合法行也不会部分入库。
+4. 改选 `new-items.csv`，提交并等待导入。点击“处理／重试当前构建”，等待 worker 完成并预览：完整版本 26 件，新品待发布，旧推荐仍不包含新品。
+5. 明确点击“确认发布”，再重新请求 dense 推荐；合成 `demo-new-coop` 与历史商品标题/类别相同，用于展示内容资格闭环，不拿第一名声称质量提升。
+6. 在商品 ID 输入 `demo-new-coop` 并下架，新请求应排除；旧请求编号重放仍保留原完成记录。真实 TCP 验收另覆盖带活动版本守卫的 rollback API，页面回滚动作尚未在本轮浏览器验收。
+
+`ready.json` 保存初始 bundle 身份与生命周期，不是通过报告。推荐与管理修改只进入本轮 schema；对同数据库的业务 schema 不迁移、不发布，也不重启 8000。临时输出保留构建文件和合成 CSV；令牌在正常关闭时删除，本轮数据库删除且不可恢复。强杀/断电可能残留数据和令牌，须按确切 `owned.json` 核对，不能批量删除测试 schema。
+
+在另一个项目根目录 PowerShell 窗口请求正常关闭：
+
+```powershell
+New-Item -ItemType File -Path artifacts/demo/catalog-first-run/stop
+```
+
+等待启动窗口退出并核对 `stopped.json` 的 `owned_schema_removed` 与 `worker_drained` 都为 true。本轮测试使用 stop 文件验证实际线程清退，不把取消等待任务当作 worker 已退出；没有执行硬杀恢复或这条新入口的 Ctrl+C 实机验收。再次演示换全新输出目录。原 2 秒推荐期限保持不变。
 
 ## 独立 R06 推荐入口
 
