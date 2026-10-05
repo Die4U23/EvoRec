@@ -154,23 +154,56 @@ class PostgresDemoBackend:
         return psycopg.connect(self.database_url, row_factory=dict_row)
 
     async def create_session(self, profile_id: str = "new") -> CreatedSession:
+        if profile_id == "sample" and self.manager is not None:
+            await asyncio.to_thread(self.manager.ensure_ready)
         return await asyncio.to_thread(self._create_session, profile_id)
 
-    def _create_session(self, profile_id: str = "new") -> CreatedSession:
+    def _profile_history(self, connection, profile_id):
         history = initial_history(profile_id)
-        snapshot = SessionSnapshot(uuid4(), 0, 0, history, frozenset(), profile_id=profile_id)
+        if not history:
+            return history
+        active = connection.execute(
+            "SELECT b.bundle_id, b.runtime_kind FROM catalog_control c "
+            "JOIN bundle_versions b ON b.bundle_id=c.active_bundle_id "
+            "WHERE c.singleton=1 AND c.admission_open FOR SHARE OF c",
+        ).fetchone()
+        if active is None:
+            raise ValueError("sample profile requires an active catalog")
+        runtime = self.runtimes.get(str(active["bundle_id"]))
+        if active["runtime_kind"] == "r06-frozen-bundle-v1":
+            if not self.r06_enabled or not isinstance(runtime, ManagedR06Runtime):
+                raise ValueError("sample profile requires the approved R06 runtime")
+            features = runtime.bundle.adapter.features
+            # Fixed package order, not target labels, user data or quality tuning.
+            index = next((i for i, metadata in enumerate(features._metadata)
+                          if metadata.training_item and features._present[i]), None)
+            if index is None:
+                raise ValueError("approved R06 catalog has no represented training sample")
+            history = (features.item_ids[index],)
+            approved = runtime.catalog_items[history[0]]
+        elif isinstance(runtime, ManagedR06Runtime):
+            raise ValueError("registered sample runtime kind differs")
+        row = connection.execute(
+            "SELECT bi.internal_item_id, i.r06_model_text, i.r06_first_seen_ms, "
+            "floor(extract(epoch FROM clock_timestamp())*1000)::bigint AS now_ms "
+            "FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id "
+            "WHERE bi.bundle_id=%s AND bi.item_id=%s AND i.is_active",
+            (active["bundle_id"], history[0]),
+        ).fetchone()
+        if row is None:
+            raise ValueError("fixed sample item is unavailable in the active catalog")
+        if isinstance(runtime, ManagedR06Runtime) and (
+                row["internal_item_id"] != index or row["r06_model_text"] != approved.text
+                or row["r06_first_seen_ms"] != approved.first_seen_ms
+                or approved.first_seen_ms >= row["now_ms"]):
+            raise ValueError("fixed R06 sample representation or time differs")
+        return history
+
+    def _create_session(self, profile_id: str = "new") -> CreatedSession:
         access_token = secrets.token_urlsafe(32)
         with self._connect() as connection:
-            if history:
-                available = connection.execute(
-                    """SELECT 1 FROM catalog_control c
-                       JOIN bundle_items bi ON bi.bundle_id = c.active_bundle_id
-                       JOIN items i ON i.item_id = bi.item_id
-                       WHERE c.singleton = 1 AND bi.item_id = %s AND i.is_active""",
-                    (history[0],),
-                ).fetchone()
-                if available is None:
-                    raise ValueError("sample profile requires the active demo catalog")
+            history = self._profile_history(connection, profile_id)
+            snapshot = SessionSnapshot(uuid4(), 0, 0, history, frozenset(), profile_id=profile_id)
             connection.execute(
                 "INSERT INTO sessions (session_id, owner_token_sha256, seed_user_id, history) "
                 "VALUES (%s, %s, %s, %s)",
@@ -238,7 +271,7 @@ class PostgresDemoBackend:
             if owner is None:
                 raise ResourceNotFound("session does not exist")
             self._authorize(owner, access_token)
-            history = initial_history(owner["seed_user_id"] or "new")
+            history = self._profile_history(connection, owner["seed_user_id"] or "new")
             cursor = connection.execute(
                 """
                 UPDATE sessions

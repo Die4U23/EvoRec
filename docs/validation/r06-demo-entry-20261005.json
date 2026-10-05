@@ -1,0 +1,129 @@
+{
+  "date": "2026-10-05",
+  "scope": "Isolated approved R06 Demo entry, real TCP HTTP, layered browser observations",
+  "status": "layered_pass_with_unverified_browser_reset",
+  "implementation_commit": "617c82651aa40b74b0de82f129e115bae076f1d4",
+  "frontend_fix_commit": "296c33f6eafa78c3f2c38f3114d08691fd97b06c",
+  "bundle": {
+    "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+    "item_count": 137249,
+    "sample_item_id": "0060501960",
+    "sample_policy": "First represented training item in immutable package order, not a real user or target-selected quality profile",
+    "retrained": false, "test_targets_evaluated": false
+  },
+  "real_tcp": {
+    "backend": "numpy", "api_deadline_seconds": 2.0, "client_timeout_seconds": 10.0,
+    "transport": "httpx TCP -> separate uvicorn process -> isolated PostgreSQL, not ASGITransport",
+    "instrumented": false,
+    "runs": [
+      {
+        "source_commit": "617c82651aa40b74b0de82f129e115bae076f1d4",
+        "local_report": "artifacts/replays/r06-tcp-20261005-a/verification.json",
+        "report_sha256": "17a9f5ff2e3c98aabeae4bddd4ed023f9ce55933789c5f15cbda2f6a5d4ba533",
+        "status": "passed", "single_dense_seconds": 1.721040999997058,
+        "archived_sources": 55, "source_dirty": false
+      },
+      {
+        "source_commit": "296c33f6eafa78c3f2c38f3114d08691fd97b06c",
+        "local_report": "artifacts/replays/r06-tcp-20261005-b/verification.json",
+        "report_sha256": "9807803a021ecc866890660a6e48cc69e2478d334ead7ae02c9bdc2f76b8a6ca",
+        "status": "passed", "single_dense_seconds": 1.3398432999965735,
+        "archived_sources": 55, "source_dirty": false
+      }
+    ],
+    "archives_match_exact_git_blobs_and_current_files": true,
+    "checks": [
+      "readiness, page, admin disabled, explicit R06 capability",
+      "sample independent raw item/vector oracle; new user empty",
+      "dense actual identity, requested Top-10, uniqueness, source and seen exclusion",
+      "sample/new-user popular exactly matches approved raw training statistics",
+      "same-key exact result, changed input 409, wrong owner 401",
+      "actual returned detail, detail_view, favorite/unfavorite, hide/undo and feedback replay",
+      "full_seen retains undone feedback until reset",
+      "reset restores seed, old epoch feedback 409, original completed result replays after reset",
+      "CPU drained, graceful process exit and owned schema absent before passed report"
+    ]
+  },
+  "manual_browser": {
+    "status": "partial",
+    "backend_loaded_commit": "617c82651aa40b74b0de82f129e115bae076f1d4",
+    "frontend_loaded_commit": "296c33f6eafa78c3f2c38f3114d08691fd97b06c",
+    "backend_bytes_unchanged_between_commits": true,
+    "observations": [
+      "fixed sample and empty new-user profiles; popular and dense Top-10",
+      "training-heat label and response bundle/model identity",
+      "original detail text and history update; favorite, hide and undo",
+      "reload restores history/favorite; subsequent dense excludes previous feedback",
+      "no console errors at focused inspection"
+    ],
+    "browser_reset_executed": false,
+    "browser_reset_reason": "UI reset confirmation requested but not received; no success claim",
+    "local_observations": "artifacts/replays/r06-browser-20261005-a/observations.json",
+    "observations_sha256": "b9bac524cd5a6c2f4b3ce0e614741b8483010ae94f530b907bd53304576fe71a",
+    "model_identity_screenshot_sha256": "acabdea8d29f17873a0ad7c85fa9343c647417cb10affb353003fcc0a0be86b1",
+    "new_user_screenshot_sha256": "35c700175d162199982c5581102218f0bfeafd46a885469a0008763316c4defc",
+    "graceful_exit_owned_schema_removed_and_cpu_drained": true,
+    "stopped_record_sha256": "d18c50f10b884a6c5003cda8399a846a2c27b547e68dc8f69d4eed4a017d86cb",
+    "automated_acceptance_report": false
+  },
+  "regressions": {
+    "initial_targeted": {
+      "passed": 21, "failed": 2, "errors": 0, "skipped": 0,
+      "xml_sha256": "eda625c9544d0f079b13ac147fc9a97726e1832f52c38823d60eba2930c0d461",
+      "failures": [
+        "Windows venv redirector PID differs from service PID; controller now binds parent invocation UUID and stopped service PID equality",
+        "Test ignored manager admission recovery; split reset rejection from create-time publication recovery"
+      ]
+    },
+    "final_targeted": {
+      "passed": 45, "failed": 0, "errors": 0, "skipped": 0,
+      "xml_sha256": "4e735df7c10b13df99e23852e065c8f23f48d11c1f9e4342e1d1b1a82d77332f"
+    },
+    "workflow_selected_service": {
+      "files": 30, "passed": 725, "failed": 0, "errors": 0, "skipped": 0,
+      "xml_sha256": "902e0ff0c3f3a18fe46e55c1d1cc98c5893f6d3aead3b05300027c2ca33c0825"
+    },
+    "optional_numpy_union": {
+      "passed": 151, "failed": 0, "errors": 0, "skipped": 0,
+      "xml_sha256": "3fa12cbbc66bd22e40f5395573c26b076be42605f2bb24aaf09de63a31c08afc"
+    },
+    "node_page_tests": {"passed": 36, "failed": 0, "skipped": 0},
+    "overlapping_suites_not_added": true,
+    "new_service_cases": 20, "new_page_cases": 2,
+    "mechanism": [
+      "Synthetic controlled bundle actual child TCP flow; wrong hash cannot create ready server and owned schema absent after failure",
+      "Seed active/text/time/index/membership drift rejects without replacement or failed-reset mutation; wrong owner rejected first",
+      "Remote/implicit DB host, protected/invalid port and direct admin-enabled run refuse before writes",
+      "Complete exclusive lifecycle marker cannot overwrite a prior marker",
+      "Model-identity test first failed on old page, passed after fix; missing identity not inferred as R06"
+    ]
+  },
+  "environment_and_cleanup": {
+    "three_environment_pip_checks_passed": true,
+    "numpy_absent_from_pure_service": true,
+    "four_contract_exports_match_committed_files": true,
+    "remaining_test_schemas_after_all_tests_and_browser_exit": 0,
+    "business_schema_migrated": false, "business_active_model_switched": false,
+    "existing_port_8000_restarted": false,
+    "temporary_demo_data_deleted_on_graceful_exit": true,
+    "temporary_data_recoverable": false, "hard_kill_cleanup_guaranteed": false
+  },
+  "review": {
+    "main_thread_quality_performance_and_reuse_checks": true,
+    "independent_agent_review": false,
+    "team_mode_limit": "Spawn tool has no required agent_type parameter; no generic child used as a reviewer"
+  },
+  "not_proven": [
+    "Browser reset; not all browser operations form a fully accepted loop",
+    "Stdlib full-corpus nonempty sample or deactivated full-corpus subset within original deadline",
+    "Real process restart replay in this ephemeral entry; prior ASGI recovery remains separate",
+    "Numerical quality or historical target metrics from current-time service requests",
+    "Sustained load, QPS, p99, production SLA or fresh-machine rebuild",
+    "Arbitrary new IDs in frozen R06, learned routing or generative/hybrid retrieval",
+    "Automatic titles outside loaded catalog page; IDs and unknown image/category remain honest fallbacks",
+    "Root cause of historical unrelated old NULL-owner replay 503; failure evidence retained"
+  ],
+  "remote_ci": "Local evidence only; verify latest PR head and main merge separately"
+}

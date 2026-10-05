@@ -8,6 +8,12 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'web', 'index.html'), 'u
 const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(script, 'inline application script exists');
 
+test('sample profile is fixed demo history, not a real user or a fabricated R06 item', () => {
+  assert.ok(html.includes('示例用户（固定演示历史）'));
+  assert.ok(html.includes('并非真实用户画像'));
+  assert.ok(html.includes('固定商品下架或表示变动时明确拒绝'));
+});
+
 function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFetch = null,
   comparisonFetch = null, tabStorage = new Map(), recommendationFetch = null, r06Serving = false) {
   const elements = new Map();
@@ -67,6 +73,22 @@ const recommendationSession = {session_id: 'session-1', access_token: 'token-1',
   history_version: 2, history: [], hidden_items: [], favorite_items: [], profile_id: 'new'};
 const recommendationOk = {ok: true, json: async () => ({request_id: 'request-1', actual_strategy: 'popular',
   fallback_reason: null, items: []})};
+
+test('recommendation displays response bundle and model identity, never inferring it from strategy', async () => {
+  const p = page([], null, [], null, null, new Map(), () => ({ok: true, json: async () => ({
+    actual_strategy: 'dense', fallback_reason: null, items: [], bundle_id: 'approved-bundle', model_version: 'approved-model',
+  })}));
+  await p.ready; p.setSession(recommendationSession);
+  p.element('strategy').value = 'dense'; p.element('count').value = '3';
+  await p.element('recommend').onclick();
+  assert.match(p.element('recommendations').children[0].textContent, /商品包 approved-bundle；模型 approved-model/);
+  const unknown = page([], null, [], null, null, new Map(), () => recommendationOk);
+  await unknown.ready; unknown.setSession(recommendationSession);
+  unknown.element('strategy').value = 'popular'; unknown.element('count').value = '3';
+  await unknown.element('recommend').onclick();
+  assert.match(unknown.element('recommendations').children[0].textContent, /模型 未提供/);
+  assert.doesNotMatch(unknown.element('recommendations').children[0].textContent, /approved-model/);
+});
 
 test('strategy selector and enabled switch never claim a learned router or active R06 publication', async () => {
   assert.match(html, /value="adaptive">兼容入口（非学习路由）/);

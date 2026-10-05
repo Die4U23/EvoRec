@@ -14,7 +14,7 @@
     section { background: white; border: 1px solid #dce5df; border-radius: 12px; padding: 20px; }
     .recommend-section { grid-column: span 2; }
     #recommendations { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
-    #recommendations > .status { grid-column: 1 / -1; }
+    #recommendations > .status { grid-column: 1 / -1; overflow-wrap: anywhere; }
     #recommendations > .item { margin: 0; }
     #items { max-height: 670px; overflow: auto; }
     label { display: block; font-weight: 600; margin: 12px 0 5px; }
@@ -47,11 +47,11 @@
     <section class="recommend-section">
       <h2>推荐体验</h2>
       <label for="profile">体验身份</label>
-      <select id="profile"><option value="sample">示例用户（已有合作商品浏览历史）</option><option value="new">新用户（无历史，从热门开始）</option></select>
+      <select id="profile"><option value="sample">示例用户（固定演示历史）</option><option value="new">新用户（无历史，从热门开始）</option></select>
       <button id="new-session">开始体验</button>
       <button id="reset-session" class="secondary">重置会话</button>
       <p id="session">尚未创建会话。</p>
-      <p>示例用户初始浏览了 Co-op Demo；重置会恢复此历史。新用户直接走热门推荐。</p>
+      <p>示例用户使用当前活动库的固定演示历史：普通库为 Co-op Demo，R06 为批准包中的固定训练商品，并非真实用户画像。重置恢复此历史；固定商品下架或表示变动时明确拒绝。新用户无初始历史，可选择热门或已加载的模型。</p>
       <label for="strategy">策略</label>
       <select id="strategy"><option value="popular">热门（口径见结果）</option><option value="dense">受控稠密模型</option><option value="adaptive">兼容入口（非学习路由）</option></select>
       <p>dense 依赖当前活动模型包；R06 的 adaptive 固定执行 dense，其他演示路径可能回退热门。尚无生成式检索或学习型预算路由。</p>
@@ -464,6 +464,7 @@
         list.replaceChildren();
         const note = document.createElement('p'); note.className = 'status';
         note.textContent = `实际策略：${latest.actual_strategy}${latest.fallback_reason ? '（回退原因：' + latest.fallback_reason + '）' : ''}。返回 ${latest.items.length}/${pending.payload.k} 项。${latest.items.length < pending.payload.k ? '商品不足，不补造重复结果。' : ''}${strategyExplanation(pending.payload.strategy, latest.actual_strategy, latest.items)}`;
+        note.textContent += ` 商品包 ${latest.bundle_id || '未提供'}；模型 ${latest.model_version || '未提供（不推断为 R06）'}。`;
         list.append(note);
         for (const item of latest.items) list.append(card(item));
         if (!latest.items.length) { const empty = document.createElement('p'); empty.textContent = '暂无可推荐商品。可重置会话或检查商品目录。'; list.append(empty); }

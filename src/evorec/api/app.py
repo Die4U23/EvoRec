@@ -500,6 +500,7 @@ def create_app(
 
     @app.post(
         "/api/v1/sessions", response_model=SessionCreatedResponse, status_code=201, tags=["demo"],
+        responses={409: {"model": ErrorEnvelope, "description": "Fixed sample is unavailable in the active catalog"}},
     )
     async def create_session(payload: SessionCreateInput | None = None):
         try:
@@ -534,6 +535,7 @@ def create_app(
         responses={
             401: {"model": ErrorEnvelope, "description": "Missing or invalid session token"},
             404: {"model": ErrorEnvelope, "description": "Session not found"},
+            409: {"model": ErrorEnvelope, "description": "Fixed sample is unavailable in the active catalog"},
         },
     )
     async def reset_session(
@@ -548,6 +550,8 @@ def create_app(
             return _error(404, "session_not_found", str(exc))
         except AccessDenied as exc:
             return _error(401, "session_access_denied", str(exc))
+        except ValueError as exc:
+            return _error(409, "sample_profile_unavailable", str(exc))
 
     @app.post(
         "/api/v1/recommendations",
