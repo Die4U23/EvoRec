@@ -54,6 +54,65 @@ async def _command(application, *, history=(), strategy=Strategy.DENSE, timeout=
                                  0, strategy, 6, timeout)
 
 
+def test_popular_uses_training_heat_not_item_id_or_zero_prior(online):
+    app, _, _ = online
+    async def run():
+        result = await app.recommend.execute(await _command(app, strategy=Strategy.POPULAR))
+        # Independent fixture statistics: a=4, zero=3, b=2, c=d=1, e=0.
+        assert [(i.item_id, i.score) for i in result.items] == [
+            ("a", 4.), ("zero", 3.), ("b", 2.), ("c", 1.), ("d", 1.)]
+        assert all(i.source == "r06-training-recent-popular-v1" for i in result.items)
+        assert result.actual_strategy == Strategy.POPULAR and result.fallback_reason is None
+        assert result.model_version == app.backend.runtime.bundle.model_version
+    asyncio.run(run())
+
+
+def test_popular_filters_history_and_deactivation_before_top_k(online):
+    app, _, _ = online
+    app.manager.deactivate_item("zero")
+    async def run():
+        command = replace(await _command(app, history=("a",), strategy=Strategy.POPULAR), k=2)
+        result = await app.recommend.execute(command)
+        assert [(i.item_id, i.score) for i in result.items] == [("b", 2.), ("c", 1.)]
+    asyncio.run(run())
+
+
+def test_popular_legacy_saved_results_replay_unchanged_after_fix(online):
+    app, _, _ = online
+    async def run():
+        command = replace(await _command(app, strategy=Strategy.POPULAR), k=3)
+        body = dict(session_id=str(command.session_id), expected_history_version=0, strategy="popular", k=3)
+        headers = {"X-Session-Token": command.session_token, "Idempotency-Key": str(command.request_id)}
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(demo_application=app)),
+                                     base_url="http://test") as client:
+            first = await client.post("/api/v1/recommendations", json=body, headers=headers)
+            assert first.status_code == 200
+            assert [(i["item_id"], i["score"]) for i in first.json()["items"]] == [("a", 4.), ("zero", 3.), ("b", 2.)]
+            # Explicit synthetic historical record, not a claim of running old code.
+            legacy = [dict(item_id=i, score=1./p, source="r06-frozen-popular-baseline")
+                      for p, i in enumerate(("a", "b", "c"), 1)]
+            with app.backend._connect() as c:
+                c.execute("DELETE FROM request_items WHERE request_id=%s", (command.request_id,))
+                c.cursor().executemany(
+                    "INSERT INTO request_items (request_id,item_id,position,score,source) VALUES (%s,%s,%s,%s,%s)",
+                    [(command.request_id, i["item_id"], p, i["score"], i["source"]) for p, i in enumerate(legacy, 1)])
+            replay = await client.post("/api/v1/recommendations", json=body, headers=headers)
+            assert replay.status_code == 200
+            assert replay.json() == {**first.json(), "items": legacy}
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("requested", ["generative", "hybrid"])
+def test_unloaded_r06_strategy_reports_actual_training_popular_without_fake_generation(online, requested):
+    app, _, _ = online
+    async def run():
+        result = await app.recommend.execute(await _command(app, strategy=Strategy(requested)))
+        assert result.requested_strategy == requested and result.actual_strategy == Strategy.POPULAR
+        assert result.fallback_reason == "strategy_not_loaded_in_r06"
+        assert [(i.item_id, i.score) for i in result.items] == [("a", 4.), ("zero", 3.), ("b", 2.), ("c", 1.), ("d", 1.)]
+    asyncio.run(run())
+
+
 def test_api_dense_independent_scores_adaptive_replay_restart_and_client_rejection(online):
     app, identity, _ = online
     app.manager.deactivate_item("a")
@@ -105,7 +164,8 @@ def test_api_dense_independent_scores_adaptive_replay_restart_and_client_rejecti
 def test_full_seen_includes_exposure_removed_state_old_history_and_resets_by_epoch(online):
     app, _, _ = online
     async def run():
-        first = await _command(app, strategy=Strategy.POPULAR)
+        # Only the content path can expose zero-prior e; it is no longer a hot item.
+        first = await _command(app, history=("a",), strategy=Strategy.DENSE)
         result = await app.recommend.execute(first)
         for item, kind, desired in (("c", FeedbackKind.EXPOSURE, None),
                                     ("d", FeedbackKind.FAVORITE_SET, True),
@@ -429,7 +489,7 @@ def test_lifespan_closes_cpu_queue_after_pending_work(online):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("failure", [None, "publish", "report"])
+@pytest.mark.parametrize("failure", [None, "publish", "report", "popular"])
 def test_real_verifier_owns_schema_and_never_publishes_partial_report(online, tmp_path, monkeypatch, failure):
     from pathlib import Path
     import psycopg
@@ -444,6 +504,9 @@ def test_real_verifier_owns_schema_and_never_publishes_partial_report(online, tm
     if failure == "publish":
         def fail(*args): raise ManagementError("injected_failure", "test failure")
         monkeypatch.setattr(type(app.manager), "publish", fail)
+    elif failure == "popular":
+        from evorec.infrastructure.r06_retrieval import R06Retrieval
+        monkeypatch.setattr(R06Retrieval, "popular", lambda *args, **kwargs: (("a", 1.), ("b", .5)))
     elif failure == "report":
         original = Path.open
         def fail(path, *args, **kwargs):
@@ -453,7 +516,7 @@ def test_real_verifier_owns_schema_and_never_publishes_partial_report(online, tm
     with psycopg.connect(app.backend.database_url) as c:
         before = c.execute("SELECT nspname FROM pg_namespace WHERE nspname LIKE 'test_evorec_%'").fetchall()
     if failure:
-        with pytest.raises((ManagementError, OSError)):
+        with pytest.raises((ManagementError, OSError, ValueError)):
             verifier.verify(output, app.backend.database_url, app.manager.managed_root, identity, digest)
         assert not report.exists()
     else:

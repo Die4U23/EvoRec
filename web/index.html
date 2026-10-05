@@ -39,7 +39,7 @@
 <body>
   <header>
     <h1>EvoRec</h1>
-    <p>本地推荐与商品管理演示。内置商品为虚构演示数据；受控 CPU bundle 不代表 R06 研究模型已上线。</p>
+    <p>本地推荐与商品管理演示。内置商品为虚构数据；普通导入内容基线与冻结 R06 是不同路径，真实模型身份以实际响应为准。</p>
     <div id="system">正在读取服务状态…</div>
     <div id="message" role="status" aria-live="polite"></div>
   </header>
@@ -53,7 +53,8 @@
       <p id="session">尚未创建会话。</p>
       <p>示例用户初始浏览了 Co-op Demo；重置会恢复此历史。新用户直接走热门推荐。</p>
       <label for="strategy">策略</label>
-      <select id="strategy"><option value="popular">热门</option><option value="dense">受控稠密模型</option><option value="adaptive">自适应（可能回退）</option></select>
+      <select id="strategy"><option value="popular">热门（口径见结果）</option><option value="dense">受控稠密模型</option><option value="adaptive">兼容入口（非学习路由）</option></select>
+      <p>dense 依赖当前活动模型包；R06 的 adaptive 固定执行 dense，其他演示路径可能回退热门。尚无生成式检索或学习型预算路由。</p>
       <label for="count">推荐数量</label><input id="count" type="number" min="1" max="50" value="10">
       <button id="recommend">获取推荐</button>
       <div id="recommendations"></div>
@@ -62,7 +63,7 @@
     </section>
     <section class="wide">
       <h2>策略对比</h2>
-      <p>固定当前会话与商品库，查看各策略的结果、共同商品、独有商品和耗时。保存后可重查当时的结果。</p>
+      <p>固定当前会话与商品库，查看结果、共同商品、独有商品和耗时。adaptive 是兼容入口，不算第三种独立算法；保存后可重查当时的结果。</p>
       <button id="compare-strategies">对比当前会话</button>
       <button id="save-comparison">运行并保存对比</button>
       <button id="new-comparison" class="secondary">开始新对比</button>
@@ -142,6 +143,17 @@
     const pendingFeedback = new Map();
     const hiddenUndo = new Map();
     const message = value => { el('message').textContent = value; };
+    function strategyExplanation(requested, actual, items) {
+      const notes = [];
+      if (requested === 'adaptive') notes.push(actual === 'dense'
+        ? 'adaptive 固定执行 dense，不是学习型预算路由。'
+        : 'adaptive 是兼容入口，不是学习型预算路由。');
+      if (items.some(item => item.source === 'r06-frozen-popular-baseline'))
+        notes.push('历史热门演示结果按商品 ID 选取，不是训练热度排序；保留原记录。');
+      else if (items.length && items.every(item => item.source === 'r06-training-recent-popular-v1'))
+        notes.push('训练期衰减热度：365 天半衰期，分数为衰减计数；非实时热度、纯次数或点击概率。');
+      return notes.join('');
+    }
     function rememberComparison() {
       try { sessionStorage.setItem('evorec.comparison', JSON.stringify({
         session, pending: pendingComparison, id: el('comparison-id').value,
@@ -451,7 +463,7 @@
         rememberComparison();
         list.replaceChildren();
         const note = document.createElement('p'); note.className = 'status';
-        note.textContent = `实际策略：${latest.actual_strategy}${latest.fallback_reason ? '（回退原因：' + latest.fallback_reason + '）' : ''}。返回 ${latest.items.length}/${pending.payload.k} 项。${latest.items.length < pending.payload.k ? '商品不足，不补造重复结果。' : ''}`;
+        note.textContent = `实际策略：${latest.actual_strategy}${latest.fallback_reason ? '（回退原因：' + latest.fallback_reason + '）' : ''}。返回 ${latest.items.length}/${pending.payload.k} 项。${latest.items.length < pending.payload.k ? '商品不足，不补造重复结果。' : ''}${strategyExplanation(pending.payload.strategy, latest.actual_strategy, latest.items)}`;
         list.append(note);
         for (const item of latest.items) list.append(card(item));
         if (!latest.items.length) { const empty = document.createElement('p'); empty.textContent = '暂无可推荐商品。可重置会话或检查商品目录。'; list.append(empty); }
@@ -496,7 +508,7 @@
           const heading = document.createElement('strong');
           heading.textContent = `${entry.requested_strategy} → 实际 ${entry.actual_strategy} · ${entry.elapsed_ms.toFixed(1)} ms`;
           const detail = document.createElement('small');
-          detail.textContent = `${entry.fallback_reason ? `回退：${entry.fallback_reason}。` : ''}Top ${entry.items.length}：${entry.items.map(item => item.item_id).join('、') || '无可用商品'}。独有商品：${entry.unique_item_ids.join('、') || '无'}。`;
+          detail.textContent = `${entry.fallback_reason ? `回退：${entry.fallback_reason}。` : ''}Top ${entry.items.length}：${entry.items.map(item => item.item_id).join('、') || '无可用商品'}。独有商品：${entry.unique_item_ids.join('、') || '无'}。${strategyExplanation(entry.requested_strategy, entry.actual_strategy, entry.items)}`;
           row.append(heading, detail); area.append(row);
         }
     }
@@ -763,7 +775,7 @@
       await api('/api/v1/admin/publication/recover', {method: 'POST', headers: admin()}); await publication();
     });
     const startup = run(async () => {
-      const system = await api('/api/v1/system'); el('system').textContent = `服务版本 ${system.version} · 持久化 ${system.capabilities.persistence ? '已配置' : '未配置'} · 发布 ${system.capabilities.catalog_publication ? '可用' : '未配置'}`;
+      const system = await api('/api/v1/system'); el('system').textContent = `服务版本 ${system.version} · 持久化 ${system.capabilities.persistence ? '已配置' : '未配置'} · 发布 ${system.capabilities.catalog_publication ? '可用' : '未配置'} · R06 开关 ${system.capabilities.r06_serving ? '已启用（不代表已发布 R06）' : '关闭'}`;
       el('save-comparison').disabled = !system.capabilities.persistence;
       el('submit-comparison-job').disabled = !system.capabilities.persistence;
       if (session) {

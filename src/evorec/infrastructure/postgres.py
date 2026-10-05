@@ -673,13 +673,12 @@ class PostgresDemoBackend:
             # Explicit baseline: same frozen eligibility/time/full-seen exclusions.
             def baseline():
                 bundle = runtime.bundle
-                ids = sorted(item for item in context.catalog.eligible_items
-                             if item not in port.request.full_seen
-                             and bundle.adapter.features._metadata[bundle.adapter.features._indices[item]].first_seen_ms
-                             < port.request.timestamp_ms)[:command.k]
+                popular = bundle.adapter.retrieval.popular(
+                    port.request.full_seen, port.request.timestamp_ms,
+                    eligible_items=context.catalog.eligible_items, k=command.k)
                 return RankedBatch(context.binding, Strategy.POPULAR, tuple(
-                    ScoredCandidate(item, 1.0 / position, "r06-frozen-popular-baseline")
-                    for position, item in enumerate(ids, 1)),
+                    ScoredCandidate(item, heat, "r06-training-recent-popular-v1")
+                    for item, heat in popular),
                     None if command.strategy == Strategy.POPULAR else "strategy_not_loaded_in_r06",
                     runtime.bundle.model_version)
             return await self.r06_queue.run(baseline)

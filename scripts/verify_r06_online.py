@@ -43,6 +43,17 @@ SOURCE_FILES = (*SOURCE_FILES, "src/evorec/infrastructure/recommendation_executi
                 "db/migrations/0011_recommendation_execution_lease.sql", "tests/test_recommendation_recovery.py")
 
 
+def _expected_popular(directory, full_seen, timestamp_ms, k):
+    """Independent baseline oracle from approved files, not runtime popular()."""
+    directory = Path(directory)
+    rows = json.loads((directory / "features" / "items.json").read_bytes())
+    counts = json.loads((directory / "retrieval" / "statistics.json").read_bytes())
+    ranked = sorted(((row["item_id"], count) for row, count in zip(rows, counts, strict=True)
+                     if count > 0 and row["first_seen_ms"] < timestamp_ms and row["item_id"] not in full_seen),
+                    key=lambda pair: (-pair[1], pair[0]))[:k]
+    return [dict(item_id=item, score=count, source="r06-training-recent-popular-v1") for item, count in ranked]
+
+
 def verify(output, database_url, managed_root, bundle_id, digest, *, content_backend="stdlib"):
     project = Path(__file__).resolve().parents[1]
     output = Path(output).resolve()
@@ -107,6 +118,20 @@ def verify(output, database_url, managed_root, bundle_id, digest, *, content_bac
                         raise ValueError("actual API batch identity/legal items differ")
                     if (await client.post("/api/v1/recommendations", json=body, headers=headers)).json() != result:
                         raise ValueError("API idempotency replay differs")
+                    popular_body = {**body, "strategy": "popular"}
+                    popular_headers = {**headers, "Idempotency-Key": str(uuid4())}
+                    popular_response = await client.post("/api/v1/recommendations", json=popular_body, headers=popular_headers)
+                    if popular_response.status_code != 200:
+                        raise ManagementError(popular_response.json()["error"]["code"], "actual popular verification failed",
+                                              popular_response.status_code)
+                    popular = popular_response.json()
+                    if (popular["actual_strategy"] != "popular" or popular["fallback_reason"] is not None
+                            or popular["model_version"] != result["model_version"]
+                            or popular["items"] != _expected_popular(Path(managed_root) / str(bundle_id), history,
+                                                                     popular["captured_at_ms"], 10)):
+                        raise ValueError("popular output differs from approved raw training statistics")
+                    if (await client.post("/api/v1/recommendations", json=popular_body, headers=popular_headers)).json() != popular:
+                        raise ValueError("popular idempotency replay differs")
                 comparison = ComparisonCommand(uuid4(), session.snapshot.session_id, session.access_token, 0,
                                                (Strategy.POPULAR, Strategy.DENSE, Strategy.ADAPTIVE), 10, 60.)
                 await app.comparison_jobs.enqueue(comparison)
@@ -116,6 +141,8 @@ def verify(output, database_url, managed_root, bundle_id, digest, *, content_bac
                 saved = await restarted.compare.get(comparison.comparison_id, comparison.session_id, comparison.session_token)
                 if (saved.context.model.model_version != result["model_version"]
                         or saved.context.model.full_seen != frozenset(history)
+                        or [dict(item_id=i.item_id, score=i.score, source=i.source) for i in saved.strategies[0].items]
+                        != _expected_popular(Path(managed_root) / str(bundle_id), history, saved.context.model.timestamp_ms, 10)
                         or saved.strategies[1].actual_strategy != Strategy.DENSE
                         or saved.strategies[1].items != saved.strategies[2].items
                         or await restarted.compare.save(comparison) != saved):
@@ -131,6 +158,8 @@ def verify(output, database_url, managed_root, bundle_id, digest, *, content_bac
                             single_asgi_request_seconds=elapsed,
                             actual_asgi_recommendation=True, adaptive_resolves_dense=True,
                             api_idempotency_exact=True, restart_recovery_exact=True,
+                            training_recent_popular_matches_raw_statistics=True,
+                            popular_idempotency_exact=True,
                             frozen_background_job_replay_exact=True, cpu_jobs_drained=True)
             finally:
                 await app.backend.aclose()

@@ -65,6 +65,7 @@ class R06Retrieval:
     _priors: tuple[float, ...]
     _offsets: tuple[int, ...]
     _edges: bytes
+    _counts: tuple[float, ...]
     content_backend: str = "stdlib"
     _content_scanner: object = None
 
@@ -73,17 +74,34 @@ class R06Retrieval:
                 and self._features.item_ids[index] not in seen
                 and (eligible_items is None or self._features.item_ids[index] in eligible_items))
 
-    def retrieve(self, history, seen, timestamp_ms, *, eligible_items=None):
-        history, seen, timestamp_ms = validate_request(history, seen, timestamp_ms)
-        features = self._features
+    def _eligible(self, eligible_items):
         if eligible_items is not None:
             if isinstance(eligible_items, (set, frozenset)):
                 if len(eligible_items) > MAX_ITEMS:
                     _fail("resource_limit", "eligible catalog exceeds the frozen limit")
                 eligible_items = tuple(eligible_items)
             eligible_items = frozenset(_ids(eligible_items, MAX_ITEMS, unique=True))
-            if not eligible_items.issubset(features._indices):
+            if not eligible_items.issubset(self._features._indices):
                 _fail("catalog_changed", "eligible catalog is outside the frozen item snapshot")
+        return eligible_items
+
+    def popular(self, seen, timestamp_ms, *, eligible_items=None, k=10):
+        """Frozen RecentPopular-365d; scores are decayed training counts.
+
+        Only positive priors qualify. Do not substitute lexical IDs, zero-prior
+        products, current feedback or rounded/log-normalized ranking scores.
+        """
+        if type(k) is not int or not 1 <= k <= 50:
+            _fail("input_shape", "popular k must be an integer between 1 and 50")
+        _, seen, timestamp_ms = validate_request((), seen, timestamp_ms)
+        eligible_items = self._eligible(eligible_items)
+        available = (i for i in self._ordered if self._available(i, seen, timestamp_ms, eligible_items))
+        return tuple((self._features.item_ids[i], self._counts[i]) for i in islice(available, k))
+
+    def retrieve(self, history, seen, timestamp_ms, *, eligible_items=None):
+        history, seen, timestamp_ms = validate_request(history, seen, timestamp_ms)
+        features = self._features
+        eligible_items = self._eligible(eligible_items)
         if any(features._metadata[features._indices[item]].first_seen_ms >= timestamp_ms
                for item in history if item in features._indices):
             _fail("input_shape", "known history item is not strictly available at the request time")
@@ -236,7 +254,7 @@ def load_r06_retrieval(component_dir, features, *, expected_manifest_sha256=None
         from evorec.infrastructure._content_numpy import numpy_scanner
         scanner = numpy_scanner()
     runtime = R06Retrieval(digest, len(samples), edges, MappingProxyType(dict(provenance)),
-                           features, ordered, priors, offsets, edge_bytes, content_backend, scanner)
+                           features, ordered, priors, offsets, edge_bytes, tuple(counts), content_backend, scanner)
     represented, empty = False, False
     for sample in samples:
         _object(sample, ("history", "seen", "timestamp_ms", "collaborative", "content"))
