@@ -134,6 +134,7 @@
     const el = id => document.getElementById(id);
     let session = null, latest = null, catalog = new Map(), pendingRecommendation = null;
     let recommendationCards = [];
+    let activeRecommendation = null;
     let itemsOffset = 0;
     const itemsPageSize = 20;
     let pendingCatalogFile = null;
@@ -494,6 +495,10 @@
         };
       }
       const pending = pendingRecommendation, currentSession = session.session_id, currentEpoch = session.epoch;
+      // Start/reset can also request automatically. Coalesce only the exact
+      // active attempt; failures still release it for same-key manual retry.
+      if (activeRecommendation === pending) return;
+      activeRecommendation = pending;
       rememberComparison();
       const list = el('recommendations'); list.replaceChildren();
       for (let i = 0; i < 3; i++) { const skeleton = document.createElement('div'); skeleton.className = 'item skeleton'; list.append(skeleton); }
@@ -530,6 +535,8 @@
         if (error.code === 'recommendation_recovery_unavailable')
           throw Object.assign(new Error('旧请求缺少执行租约，无法确定是否仍在运行；请联系管理员核对，不自动换编号重算'), {retryable: false});
         throw Object.assign(new Error(`暂时无法生成推荐，请稍后重试：${error.message}`), {retryable: error.retryable});
+      } finally {
+        if (activeRecommendation === pending) activeRecommendation = null;
       }
     }
     async function compareStrategies() {

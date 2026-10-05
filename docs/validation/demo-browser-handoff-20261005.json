@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-05",
+  "scope": "隔离内容基线页面快速推荐竞态修复与三分钟讲解稿；不是完整 Demo 最终验收",
+  "implementation_commit": "0dac8b0b26686de44412c0e8e0ef91dfc024c61a",
+  "browser": {
+    "url": "http://127.0.0.1:59148/app",
+    "backend_started_at": "1951477ae350f684ed9f0fde2f1a1c45e0838b49",
+    "frontend_reloaded_at": "0dac8b0b26686de44412c0e8e0ef91dfc024c61a",
+    "frontend_sha256": "28512b97a576804ae0abba5ace661ff7bc4560916f738a028c3f8bd2f25d8953",
+    "backend_changed_between_commits": false,
+    "synthetic_bundle_id": "262653de-3e9b-47bc-801b-b0aeeafc43ae",
+    "before_fix": "开始体验自动请求后立即手动获取推荐，实际显示 dense 10/10，但全局错误仍为 recommendation is still executing；初始观察未另存截图",
+    "after_fix": "刷新已提交页面，选择 dense、开始体验后立即获取推荐，返回去重的 10 件合成商品，错误栏为空；模型身份未提供，页面不推断为 R06",
+    "feedback": "实际详情文本、收藏、隐藏移除卡片、撤销恢复 10 件卡片及收藏状态，history_version 0→2→3→4",
+    "refresh": "刷新后恢复 demo-coop / demo-coop-space 历史、demo-coop-space 收藏和版本 4；此时标题仍为 ID。先等待标题的定位器超时，改为记录实际 ID 与版本，不称刷新标题及时补齐通过",
+    "private_observation_sha256": "d156ed83416dc27bbe6f08195327a1289539c70d75e841cf68d98388656504a1",
+    "private_screenshot_sha256": "d78732e97eaead766870aa8d9db37ac56e4eef16891bfbc60ea37c17420a0d2c",
+    "private_feedback_observation_sha256": "9212fb55f0590de58b1603b34b9cadc5237008e360912cf845392972ccfbb659",
+    "private_feedback_screenshot_sha256": "b565838f8cd16f7401b384bcdee8c65aaa94c304a7f777fa3edacfa74e72057d",
+    "private_refresh_observation_sha256": "c461578cf0aad319073de4b6938444781ef8c8b7d91b673f3aa2c7e29144ebaf"
+  },
+  "local_node": {
+    "files": 2, "passed": 66, "failed": 0, "skipped": 0,
+    "new_cases": 2,
+    "negative_before_fix": "快速点击用例在修改页面前实测失败，发送 2 次而非 1 次；终端观察未保存报告，不补造哈希",
+    "coverage": ["开始体验/重置自动请求与手动点击合并", "进行中失败释放活动标记，但重试复用原键与正文", "成功后下一次生成新键", "保留跨会话迟到响应和元数据补齐隔离用例"],
+    "changed_existing_case": "将原同键两次并发、迟到错误用例改为断言根本不产生第二次并发；没有放宽网络状态或后端幂等契约"
+  },
+  "local_python": {
+    "files": ["test_api.py", "test_v01_experience.py", "test_recommendation_recovery.py", "test_catalog_demo.py"],
+    "passed": 47, "failed": 0, "errors": 0, "skipped": 0,
+    "private_xml_sha256": "5c364a44351660c91e272b9e2edfaf41743ed5e12d627dcef1123b299a33a801",
+    "overlapping_runs_not_added": true
+  },
+  "cleanup": {
+    "normal_stop_exit_code": 0,
+    "worker_drained": true,
+    "owned_schema_removed": true,
+    "temporary_token_removed": true,
+    "own_tab_closed": true,
+    "business_env_database_model_and_port_8000_unchanged": true
+  },
+  "review": "主线程质量/性能/复用复查；角色参数不可用，未启动独立 Agent",
+  "pending": ["本次浏览器临时令牌与合成 CSV 上传尚未获确认，未执行", "新品文件选择、错误/成功、构建/发布/下架 UI 全闭环", "浏览器永久重置须行动时确认，未执行", "页面无回滚按钮，已有真实 TCP rollback 验收不当作 UI 验收", "三分钟讲解稿未计时复演，作者理解需现场验收"],
+  "not_claimed": ["完整作品集 Demo 已交付", "R06 任意新品、真实模型质量提升、新训练", "完整本地服务回归、持续负载、SLA、独立进程重启恢复", "浏览器观察代替 Node/HTTP/离线实验或独立审查"]
+}
