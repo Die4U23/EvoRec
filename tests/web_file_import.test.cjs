@@ -74,6 +74,22 @@ const recommendationSession = {session_id: 'session-1', access_token: 'token-1',
 const recommendationOk = {ok: true, json: async () => ({request_id: 'request-1', actual_strategy: 'popular',
   fallback_reason: null, items: []})};
 
+test('recommendation displays response bundle and model identity, never inferring it from strategy', async () => {
+  const p = page([], null, [], null, null, new Map(), () => ({ok: true, json: async () => ({
+    actual_strategy: 'dense', fallback_reason: null, items: [], bundle_id: 'approved-bundle', model_version: 'approved-model',
+  })}));
+  await p.ready; p.setSession(recommendationSession);
+  p.element('strategy').value = 'dense'; p.element('count').value = '3';
+  await p.element('recommend').onclick();
+  assert.match(p.element('recommendations').children[0].textContent, /商品包 approved-bundle；模型 approved-model/);
+  const unknown = page([], null, [], null, null, new Map(), () => recommendationOk);
+  await unknown.ready; unknown.setSession(recommendationSession);
+  unknown.element('strategy').value = 'popular'; unknown.element('count').value = '3';
+  await unknown.element('recommend').onclick();
+  assert.match(unknown.element('recommendations').children[0].textContent, /模型 未提供/);
+  assert.doesNotMatch(unknown.element('recommendations').children[0].textContent, /approved-model/);
+});
+
 test('strategy selector and enabled switch never claim a learned router or active R06 publication', async () => {
   assert.match(html, /value="adaptive">兼容入口（非学习路由）/);
   const p = page([], null, [], null, null, new Map(), null, true);
