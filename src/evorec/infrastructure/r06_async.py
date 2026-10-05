@@ -6,13 +6,14 @@ The caller drains that real computation before releasing its captured bundle.
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from threading import Lock
 
 from evorec.domain.errors import ManagementError, SnapshotMismatch
 from evorec.domain.models import RankedBatch, RecommendationCommand, RequestContext, Strategy
 from evorec.infrastructure.r06_bundle import FrozenR06Bundle
 from evorec.infrastructure.r06_serving import FrozenR06Request, R06ServingResult
+from evorec.infrastructure.residual_ranker import ControlledLoadError
 
 
 async def _drain(waiter):
@@ -131,19 +132,36 @@ class R06RankingPort:
         object.__setattr__(self, "bundle", bundle)
         object.__setattr__(self, "request", captured)
 
+    @classmethod
+    def from_snapshot(cls, queue, bundle, context):
+        from evorec.infrastructure.r06_admission import restore_request
+
+        if type(queue) is not R06CPUQueue or type(bundle) is not FrozenR06Bundle:
+            raise TypeError("a runtime-owned CPU pool and approved frozen bundle are required")
+        captured = restore_request(bundle, context)
+        port = object.__new__(cls)
+        object.__setattr__(port, "queue", queue)
+        object.__setattr__(port, "bundle", bundle)
+        object.__setattr__(port, "request", captured)
+        return port
+
     @property
     def model_version(self):
         return self.bundle.model_version
 
     def _score(self):
-        result = self.bundle.adapter.score(self.request)
+        try:
+            result = self.bundle.adapter.score(self.request)
+        except ControlledLoadError as error:
+            raise ManagementError(error.code, "R06 CPU input validation failed", 422) from error
         if (type(result) is not R06ServingResult or type(result.batch) is not RankedBatch
                 or result.batch.binding != self.request.context.binding
                 or result.batch.actual_strategy != Strategy.DENSE or result.batch.fallback_reason is not None
                 or result.model_version != self.bundle.adapter.model_version
                 or result.timestamp_ms != self.request.timestamp_ms):
             raise SnapshotMismatch("R06 CPU result differs from the captured request or model")
-        return result.batch
+        return (replace(result.batch, model_version=self.bundle.model_version)
+                if self.request.context.model else result.batch)
 
     async def rank(self, context, command):
         if (type(context) is not RequestContext or type(command) is not RecommendationCommand

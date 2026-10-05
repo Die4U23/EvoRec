@@ -9,6 +9,8 @@ def select_results(
     if type(k) is not int or not 1 <= k <= 50:
         raise ValueError("k must be an integer between 1 and 50")
     excluded = frozenset(context.session.history) | context.session.hidden_items
+    if context.model is not None:
+        excluded |= context.model.full_seen | context.session.favorite_items
     best: dict[str, ScoredCandidate] = {}
     for candidate in candidates:
         if candidate.item_id not in context.catalog.eligible_items or candidate.item_id in excluded:

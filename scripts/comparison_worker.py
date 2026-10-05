@@ -21,18 +21,21 @@ def main() -> int:
         parser.error('EVOREC_DATABASE_URL is required')
 
     async def run():
-        while True:
-            try:
-                worked = await application.comparison_jobs.run_next()
-            except psycopg.Error:
-                print('comparison database unavailable; retrying', flush=True)
+        try:
+            while True:
+                try:
+                    worked = await application.comparison_jobs.run_next()
+                except psycopg.Error:
+                    print('comparison database unavailable; retrying', flush=True)
+                    if args.once:
+                        return 1
+                    worked = False
                 if args.once:
-                    return 1
-                worked = False
-            if args.once:
-                return 0
-            if not worked:
-                await asyncio.sleep(args.poll_seconds)
+                    return 0
+                if not worked:
+                    await asyncio.sleep(args.poll_seconds)
+        finally:
+            await application.backend.aclose()
 
     try:
         return asyncio.run(run())

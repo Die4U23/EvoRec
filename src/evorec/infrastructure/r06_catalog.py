@@ -61,7 +61,7 @@ class R06CatalogPreparation:
     def __init__(self, manager):
         self.manager = manager
 
-    def load_registered(self, connection, bundle_id):
+    def load_registered(self, connection, bundle_id, *, content_backend="stdlib", ranker_backend="stdlib", verify_sources=True):
         row = connection.execute(
             "SELECT artifact_path, manifest_sha256, runtime_kind, status FROM bundle_versions WHERE bundle_id = %s",
             (bundle_id,),
@@ -69,16 +69,18 @@ class R06CatalogPreparation:
         if (row is None or row["artifact_path"] != f"managed/{bundle_id}" or row["runtime_kind"] != KIND
                 or row["status"] not in {"ready", "retired", "active"} or not row["manifest_sha256"]):
             raise ManagementError("bundle_not_registered", "approved R06 bundle is not registered", 404)
-        runtime = self._load(bundle_id, row["manifest_sha256"].strip())
-        verify_database_sources(connection, runtime)
+        runtime = self._load(bundle_id, row["manifest_sha256"].strip(),
+                             content_backend=content_backend, ranker_backend=ranker_backend)
+        if verify_sources:
+            verify_database_sources(connection, runtime)
         return runtime
 
-    def _load(self, bundle_id, digest):
+    def _load(self, bundle_id, digest, *, content_backend="stdlib", ranker_backend="stdlib"):
         if self.manager.managed_root is None:
             raise ManagementError("bundle_root_not_configured", "managed bundle root is not configured", 503)
         try:
             return load_r06_bundle(self.manager.managed_root, self.manager.managed_root / str(bundle_id),
-                                   expected_manifest_sha256=digest)
+                                   expected_manifest_sha256=digest, content_backend=content_backend, ranker_backend=ranker_backend)
         except ControlledLoadError as error:
             raise ManagementError(error.code, "approved R06 package validation failed", 422) from error
 

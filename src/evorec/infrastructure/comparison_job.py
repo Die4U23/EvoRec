@@ -11,6 +11,7 @@ from evorec.domain.errors import (
 )
 from evorec.domain.models import Strategy
 from evorec.infrastructure.comparison_store import PostgresComparisonStore, decode_result, encode_result
+from evorec.infrastructure.r06_async import _drain
 
 
 class ComparisonCancelled(Exception):
@@ -214,7 +215,9 @@ class ComparisonJobService:
         bundle_id = snapshot.binding.bundle_id
         if expected_manifest:
             with self.backend._connect() as connection:
-                runtime = self.backend.manager._registered_runtime(connection, bundle_id)
+                runtime = self.backend.manager._registered_runtime(
+                    connection, bundle_id, frozen_snapshot=snapshot.context.model is not None,
+                )
             if runtime.manifest_sha256 != expected_manifest:
                 raise ManagementError('bundle_changed', 'frozen runtime manifest changed', 503)
             self.backend.runtimes[str(bundle_id)] = runtime
@@ -249,7 +252,7 @@ class ComparisonJobService:
                 result = await asyncio.shield(work)
             except asyncio.CancelledError:
                 if work is not None:
-                    await asyncio.gather(work, return_exceptions=True)
+                    await _drain(work)
                 raise
             except ComparisonCancelled:
                 await asyncio.to_thread(self._finish, claim, error_code='cancelled')

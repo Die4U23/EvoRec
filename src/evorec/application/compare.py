@@ -148,7 +148,9 @@ class CompareStrategies:
                 raise SnapshotMismatch("comparison snapshot belongs to a different request or session")
             if context.session.history_version != command.expected_history_version:
                 raise HistoryConflict("history changed before comparison")
-            return ComparisonPreview(context, datetime.now(timezone.utc), (), (), command.k)
+            captured_at = (datetime.fromtimestamp(context.model.timestamp_ms / 1000, timezone.utc)
+                           if context.model else datetime.now(timezone.utc))
+            return ComparisonPreview(context, captured_at, (), (), command.k)
 
     async def execute(self, command: ComparisonCommand, snapshot: ComparisonPreview,
                       progress: Callable[[int], Awaitable[None]] | None = None) -> ComparisonPreview:
@@ -168,6 +170,8 @@ class CompareStrategies:
                 batch = await self.ranking.rank(context, request)
                 if batch.binding != context.binding:
                     raise SnapshotMismatch("comparison ranking changed the snapshot binding")
+                if batch.model_version != (context.model.model_version if context.model else None):
+                    raise SnapshotMismatch("comparison ranking changed the frozen model")
                 if (strategy != Strategy.ADAPTIVE and batch.actual_strategy != strategy
                         and batch.fallback_reason is None):
                     raise UnreportedFallback("a fixed strategy changed without a fallback reason")

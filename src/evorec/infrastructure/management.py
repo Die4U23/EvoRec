@@ -16,7 +16,7 @@ from evorec.infrastructure.catalog_file_job import CatalogFileJobService
 from evorec.infrastructure.model_runtime import ControlledLoadError, RuntimeBundle, load_runtime_bundle
 from evorec.infrastructure.postgres import PostgresDemoBackend
 from evorec.infrastructure.r06_bundle import KIND as R06_KIND
-from evorec.infrastructure.r06_catalog import R06CatalogPreparation
+from evorec.infrastructure.r06_catalog import R06CatalogPreparation, source_records
 
 
 class CatalogManager:
@@ -200,7 +200,7 @@ class CatalogManager:
         return {"bundle_id": bundle_id, "manifest_sha256": runtime.manifest_sha256,
                 "item_count": len(runtime.item_ids), "replayed": False}
 
-    def _registered_runtime(self, connection, bundle_id: UUID) -> RuntimeBundle:
+    def _registered_runtime(self, connection, bundle_id: UUID, *, frozen_snapshot=False):
         row = connection.execute(
             "SELECT artifact_path, manifest_sha256, runtime_kind FROM bundle_versions WHERE bundle_id = %s",
             (bundle_id,),
@@ -208,7 +208,20 @@ class CatalogManager:
         if row is None or row["artifact_path"] != f"managed/{bundle_id}":
             raise ManagementError("bundle_not_registered", "controlled bundle is not registered", 404)
         if row["runtime_kind"] == R06_KIND:
-            raise ManagementError("r06_online_not_enabled", "R06 package is prepared but online ranking is not enabled", 503)
+            if not self.backend.r06_enabled:
+                raise ManagementError("r06_online_not_enabled", "R06 online ranking is explicitly disabled", 503)
+            from evorec.infrastructure.r06_admission import ManagedR06Runtime
+
+            bundle = self.r06.load_registered(
+                connection, bundle_id, content_backend=self.backend.r06_content_backend,
+                ranker_backend=self.backend.r06_ranker_backend,
+                verify_sources=not frozen_snapshot,
+            )
+            try:
+                records = source_records(self.managed_root / str(bundle_id), bundle)
+                return ManagedR06Runtime(bundle, {item.item_id: item for item in records})
+            except ValueError as error:
+                raise ManagementError("r06_catalog_changed", "approved runtime source table changed", 422) from error
         runtime = self._load(bundle_id)
         if row["manifest_sha256"].strip() != runtime.manifest_sha256:
             raise ManagementError("bundle_changed", "registered manifest hash changed")
@@ -414,7 +427,7 @@ class CatalogManager:
                             "UPDATE catalog_control SET admission_open = true WHERE singleton = 1"
                         )
                     return
-                if row["runtime_kind"] == R06_KIND:
+                if row["runtime_kind"] == R06_KIND and not self.backend.r06_enabled:
                     connection.execute("UPDATE catalog_control SET admission_open = false WHERE singleton = 1")
                     return
                 if (self.backend.runtime is None

@@ -183,10 +183,34 @@ class RequestBinding:
 
 
 @dataclass(frozen=True)
+class ModelSnapshot:
+    """Server-captured input identity; never accepted from a client."""
+
+    manifest_sha256: str
+    model_version: str
+    timestamp_ms: int
+    full_seen: frozenset[str]
+    catalog_sha256: str
+
+    def __post_init__(self) -> None:
+        for digest in (self.manifest_sha256, self.model_version, self.catalog_sha256):
+            if (type(digest) is not str or len(digest) != 64
+                    or any(char not in "0123456789abcdef" for char in digest)):
+                raise ValueError("model snapshot requires canonical SHA-256 identities")
+        if type(self.timestamp_ms) is not int or not 0 <= self.timestamp_ms <= 253402300799999:
+            raise ValueError("model snapshot time must be UTC milliseconds")
+        seen = frozenset(self.full_seen)
+        if len(seen) > 10000 or any(type(item) is not str or not item or len(item) > 300 for item in seen):
+            raise ValueError("full seen set exceeds the trusted input limits")
+        object.__setattr__(self, "full_seen", seen)
+
+
+@dataclass(frozen=True)
 class RequestContext:
     request_id: UUID
     session: SessionSnapshot
     catalog: CatalogSnapshot
+    model: ModelSnapshot | None = None
 
     @property
     def binding(self) -> RequestBinding:
@@ -215,6 +239,7 @@ class RankedBatch:
     actual_strategy: Strategy
     candidates: tuple[ScoredCandidate, ...]
     fallback_reason: str | None = None
+    model_version: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "actual_strategy", Strategy(self.actual_strategy))
@@ -232,6 +257,8 @@ class RecommendationResult:
     actual_strategy: Strategy
     items: tuple[ScoredCandidate, ...]
     fallback_reason: str | None
+    model_version: str | None = None
+    captured_at_ms: int | None = None
 
 
 @dataclass(frozen=True)

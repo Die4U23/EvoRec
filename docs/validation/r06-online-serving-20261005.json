@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "date_local": "2026-10-05",
+  "scope": "Default-off trusted R06 request capture, publication/recovery and optional recommendation service",
+  "main_base": "7934b708130e8a0a20b83676becdc3ac8a32d1d1",
+  "implementation_anchor": "61e835728ecb65954800af5f34ad24b9425c7d74",
+  "final_executed_source_commit": "424781365f90d43fa517fad6a7b6d313d0d35c8f",
+  "approved_package": {
+    "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+    "assembly_source_commit": "ba2e056a6046dfbc4f844a9bd5a5e8a22385f6fa",
+    "item_count": 137249,
+    "original_time_catalog_sha256": "f47c61b27e858ff30e46b42c2dcb3e7f6c7800c652fec0b08b7ead4a59b4d24f",
+    "original_text_metadata_sha256": "58d8d7c2e45034596c6c6c55871e808f82ee8b49f94885d1a3f8ac8f3093d8c7",
+    "retrained_or_reselected": false
+  },
+  "real_service_verifications": [
+    {
+      "local_directory": "artifacts/replays/r06-online-20261005-e",
+      "report_sha256": "5f9ae79befd2a316cfddb2d5a8b75b24bd233ae8c2fa1fcd069a29639499307e",
+      "status": "passed",
+      "content_backend": "numpy",
+      "ranker_backend": "numpy",
+      "history_count": 1,
+      "returned_items": 10,
+      "single_asgi_request_seconds": 1.9709988000031444,
+      "source_files_current_archived_git_exact": 47,
+      "source_working_tree_dirty": false,
+      "owned_temporary_schema_removed": true
+    },
+    {
+      "local_directory": "artifacts/replays/r06-online-20261005-f",
+      "report_sha256": "cb054f22de11b73fce4529ec208dfdc8a04e4c72ed00a714e67c213ee47c4b16",
+      "status": "passed",
+      "content_backend": "stdlib",
+      "ranker_backend": "stdlib",
+      "history_count": 0,
+      "returned_items": 10,
+      "single_asgi_request_seconds": 1.7292961999992258,
+      "source_files_current_archived_git_exact": 47,
+      "source_working_tree_dirty": false,
+      "owned_temporary_schema_removed": true
+    }
+  ],
+  "real_checks_shared_by_both_runs": {
+    "activated_only_in_owned_schema": true,
+    "business_schema_untouched": true,
+    "actual_asgi_recommendation": true,
+    "adaptive_resolves_dense": true,
+    "api_idempotency_exact": true,
+    "restart_recovery_exact": true,
+    "frozen_background_job_replay_exact": true,
+    "cpu_jobs_drained": true,
+    "browser_tested": false,
+    "network_server_tested": false,
+    "sla_proven": false,
+    "test_targets_evaluated": false
+  },
+  "tests": {
+    "full_research_environment": {
+      "local_report": "tmp/r06-online-full-20261005-b.xml",
+      "report_sha256": "2731f7f23b4523e32db8f412cce89ddfdbcf2b3aee5aa0ad1c72a9ad807a2530",
+      "tests": 866,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 417.980
+    },
+    "service_ci_list": {
+      "local_report": "tmp/r06-online-service-20261005-a.xml",
+      "report_sha256": "f25e799643da66b131038faa34ce10f398a558ddfefcbd86c88ce0a437e8dd01",
+      "workflow_files": 27,
+      "tests": 651,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 380.621
+    },
+    "optional_ci_list": {
+      "local_report": "tmp/r06-online-optional-20261005-b.xml",
+      "report_sha256": "0883f186e97b3da516ef0a9e082679742c4d372463c3ecd078792cb01db4287c",
+      "workflow_files": 4,
+      "tests": 140,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 18.860,
+      "local_union_matches_two_ci_invocations": true
+    },
+    "page_scripts": {"tests": 23, "failures": 0, "skipped": 0},
+    "new_trusted_online_cases": 33,
+    "new_optional_ranker_cases": 16,
+    "new_pure_service_dependency_guard": 1,
+    "overlapping_suites_not_added": true,
+    "database_suites_finally_serialized": true
+  },
+  "negative_evidence": [
+    {
+      "attempt": "Initial direct script invocation",
+      "cause": "ModuleNotFoundError scripts; no schema, artifact directory or passed report created",
+      "repair": "Document python -m scripts.verify_r06_online instead of modifying sys.path",
+      "counted_as_passed": false
+    },
+    {
+      "local_directories": ["artifacts/replays/r06-online-20261005-b", "artifacts/replays/r06-online-20261005-c", "artifacts/replays/r06-online-20261005-d"],
+      "source_commits": ["2b0c7cd41b1c0a3b44d523a1a9e5efb282792404", "fc476e947464b9f094ec2a566af6606c8f138e2a", "1329ef093c4943e29a82602ed665c9c261f4dc3f"],
+      "cause": "Three actual full-package ASGI recommendations exceeded the unchanged nominal 2-second deadline: recommendation_timeout",
+      "repair": "Verify immutable original text/time once at load but compare actual SQL values at admission; add explicit NumPy MLP with independent reference guards; remove redundant seal recomputation only after trusted fresh capture",
+      "diagnostic_sources_retained": true,
+      "passed_reports_created": false,
+      "counted_as_passed": false
+    },
+    {
+      "local_report": "tmp/r06-online-ranker-20261005-a.xml",
+      "tests": 80,
+      "failures": 1,
+      "cause": "Incorrect test expected backend arithmetic failure for an input already rejected by existing numeric bounds",
+      "repair": "Inject a real host FloatingPointError with valid inputs; retain input bounds and explicit failure policy",
+      "counted_as_passed": false
+    }
+  ],
+  "review": {
+    "mode": "Main-thread quality, performance and reuse review; required custom agent_type unavailable",
+    "claims_independent_agent_review": false,
+    "reuse": "Existing controlled manifests, source identity, request idempotency, publication lock, queue, comparison store and migration runner",
+    "numerics": "Original float64 scalar policy, erf GELU and final float32 retained; NumPy reduction order differs, both scalar and accelerated original score/Top-20 reference checks required",
+    "performance": "Profiling used only to diagnose admission/seal/ranker overhead; formal service report timings are single observations with different histories, not a speed comparison or load benchmark"
+  },
+  "checks": {
+    "pip_check_all_three_environments": "passed",
+    "four_exported_api_contracts_match_index": true,
+    "temporary_test_evorec_schemas_remaining_after_all_runs": 0,
+    "git_index_hygiene": {
+      "status": "passed",
+      "tracked_files": 376,
+      "local_links_checked": 479,
+      "python_files_parsed": 159,
+      "raw_local_artifacts_tracked": false,
+      "credential_scan": "Common token and private-key signatures only; not exhaustive"
+    },
+    "remote_ci": "Not claimed by this pre-push local evidence; verify latest PR head before merge"
+  },
+  "boundaries": [
+    "EVOREC_R06_SERVING_ENABLED defaults to 0; content and ranker backends default to stdlib with no silent fallback",
+    "No current business-schema migration/import, active model switch or port-8000 restart",
+    "Approved frozen corpus only: no arbitrary new merchant-item model coverage",
+    "First interaction is a time proxy, not proven merchant availability; original static text has no historical visibility guarantee",
+    "Stored content seal authenticates trusted capture against the approved package, not a cryptographic signature independent of database trust",
+    "Full seen includes current-epoch exposure and removed state; explicit history/seen limits reject rather than truncate",
+    "Completed recommendations replay saved results; crashed accepted recommendations have no automatic reranking recovery or persisted full eligible-ID set",
+    "Background comparisons persist the full frozen input and restore it against the original approved package",
+    "Nominal 2-second deadline was not extended; CPU cancellation drains actual work and may confirm later",
+    "The measured NumPy historical request is close to the deadline; neither backend choice nor these observations proves stable latency",
+    "No network, browser, concurrency/load, cross-process global queue capacity, model eviction or production SLA acceptance",
+    "No new research quality/target evaluation, training or generated/hybrid strategy integration",
+    "Abrupt process termination may strand a temporary schema; no forced-termination cleanup, fsync or whole-machine reproducibility claim"
+  ]
+}

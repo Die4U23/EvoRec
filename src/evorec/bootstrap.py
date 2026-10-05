@@ -30,6 +30,7 @@ class DemoApplication:
 
 def build_demo_application(
     backend: DemoBackendPort | None = None,
+    *, managed_root: Path | None = None,
 ) -> DemoApplication:
     database_url = os.getenv("EVOREC_DATABASE_URL")
     if backend is None:
@@ -50,7 +51,7 @@ def build_demo_application(
         if not isinstance(backend, PostgresDemoBackend):
             raise TypeError("unsupported persistent demo backend")
         root = os.getenv("EVOREC_BUNDLE_ROOT")
-        manager = CatalogManager(backend, Path(root) if root else None)
+        manager = CatalogManager(backend, managed_root if managed_root is not None else Path(root) if root else None)
         backend.manager = manager
         readiness = ReadinessQuery(PostgresDemoReadiness(backend))
         comparison_records = PostgresComparisonStore(backend)

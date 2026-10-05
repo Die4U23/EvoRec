@@ -3,7 +3,9 @@
 import asyncio
 import hashlib
 import hmac
+import os
 import secrets
+from dataclasses import replace
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
@@ -22,6 +24,7 @@ from evorec.domain.errors import (
     ResourceNotFound,
     SessionEpochConflict,
     SnapshotMismatch,
+    ManagementError,
 )
 from evorec.domain.models import (
     CatalogSnapshot,
@@ -42,6 +45,11 @@ from evorec.domain.models import (
     detail_exposure_payload_sha256,
 )
 from evorec.domain.session_profiles import initial_history
+from evorec.infrastructure.r06_admission import (
+    ManagedR06Runtime, capture_model, decode_model, encode_model,
+    validate_captured_context,
+)
+from evorec.infrastructure.r06_async import R06CPUQueue, R06RankingPort, _drain
 
 if TYPE_CHECKING:
     from evorec.infrastructure.management import CatalogManager
@@ -51,11 +59,64 @@ if TYPE_CHECKING:
 class PostgresDemoBackend:
     """Persist sessions, admitted requests, and completed recommendation items."""
 
-    def __init__(self, database_url: str) -> None:
+    def __init__(self, database_url: str, *, r06_enabled: bool | None = None,
+                 r06_content_backend: str | None = None, r06_ranker_backend: str | None = None) -> None:
         self.database_url = database_url
         self.runtime: RuntimeBundle | None = None
         self.runtimes: dict[str, RuntimeBundle] = {}
         self.manager: CatalogManager | None = None
+        if r06_enabled is not None and type(r06_enabled) is not bool:
+            raise ValueError("R06 serving flag must be a boolean")
+        enabled = (os.getenv("EVOREC_R06_SERVING_ENABLED", "0") if r06_enabled is None
+                   else "1" if r06_enabled else "0")
+        backend = (os.getenv("EVOREC_R06_CONTENT_BACKEND", "stdlib")
+                   if r06_content_backend is None else r06_content_backend)
+        ranker_backend = (os.getenv("EVOREC_R06_RANKER_BACKEND", "stdlib")
+                          if r06_ranker_backend is None else r06_ranker_backend)
+        if enabled not in {"0", "1"} or backend not in {"stdlib", "numpy"} or ranker_backend not in {"stdlib", "numpy"}:
+            raise ValueError("R06 serving requires an explicit 0/1 flag and stdlib/numpy backend")
+        self.r06_enabled = enabled == "1"
+        self.r06_content_backend = backend
+        self.r06_ranker_backend = ranker_backend
+        self.r06_queue = R06CPUQueue() if self.r06_enabled else None
+
+    async def aclose(self):
+        if self.r06_queue is not None:
+            await self.r06_queue.aclose()
+
+    def _capture_context(self, connection, request_id, session, control):
+        bundle_id = control["active_bundle_id"]
+        runtime = self.runtimes.get(str(bundle_id))
+        kind = connection.execute("SELECT runtime_kind FROM bundle_versions WHERE bundle_id = %s",
+                                  (bundle_id,)).fetchone()
+        model = None
+        if kind and kind["runtime_kind"] == "r06-frozen-bundle-v1":
+            if not self.r06_enabled or not isinstance(runtime, ManagedR06Runtime):
+                raise ManagementError("r06_runtime_unavailable", "approved R06 runtime is unavailable", 503)
+            # One actual-row read supplies eligibility and content, not two READ COMMITTED views.
+            rows = connection.execute(
+                "SELECT bi.item_id, bi.internal_item_id, i.is_active, i.r06_model_text, i.r06_first_seen_ms "
+                "FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id "
+                "WHERE bi.bundle_id=%s ORDER BY bi.internal_item_id", (bundle_id,),
+            ).fetchall()
+            eligible = frozenset(row["item_id"] for row in rows if row["is_active"])
+            catalog = CatalogSnapshot(bundle_id, control["exclusion_version"], eligible)
+            model = capture_model(connection, runtime, session, catalog, rows)
+        elif isinstance(runtime, ManagedR06Runtime):
+            raise ManagementError("r06_snapshot_changed", "registered runtime kind differs", 503)
+        else:
+            eligible = frozenset(row["item_id"] for row in connection.execute(
+                "SELECT bi.item_id FROM bundle_items bi JOIN items i ON i.item_id = bi.item_id "
+                "WHERE bi.bundle_id = %s AND i.is_active", (bundle_id,),
+            ).fetchall())
+            catalog = CatalogSnapshot(bundle_id, control["exclusion_version"], eligible)
+        context = RequestContext(request_id, session, catalog, model)
+        if model is not None:
+            # Validate full history/state limits before any accepted request is written.
+            # Actual rows just produced the seal; avoid hashing it again here.
+            # Ranking/restoration still verify the persisted identity in full.
+            validate_captured_context(runtime.bundle, context)
+        return context
 
     def activate_runtime(self, runtime: "RuntimeBundle") -> None:
         self.runtimes[runtime.bundle_id] = runtime
@@ -141,15 +202,8 @@ class PostgresDemoBackend:
             ).fetchone()
             if control is None or control["active_bundle_id"] is None:
                 raise RuntimeError("catalog admission is not ready")
-            eligible = frozenset(row["item_id"] for row in connection.execute(
-                "SELECT bi.item_id FROM bundle_items bi JOIN items i ON i.item_id = bi.item_id "
-                "WHERE bi.bundle_id = %s AND i.is_active",
-                (control["active_bundle_id"],),
-            ).fetchall())
-            catalog = CatalogSnapshot(
-                control["active_bundle_id"], control["exclusion_version"], eligible,
-            )
-        return RequestContext(command.request_id, session, catalog)
+            context = self._capture_context(connection, command.request_id, session, control)
+        return context
 
     def _get_session(self, session_id: UUID, access_token: str) -> SessionSnapshot:
         with self._connect() as connection:
@@ -205,7 +259,16 @@ class PostgresDemoBackend:
     async def acquire(self, command: RecommendationCommand):
         if self.manager is not None:
             await asyncio.to_thread(self.manager.ensure_ready)
-        context = await asyncio.to_thread(self._admit, command)
+        admission = asyncio.create_task(asyncio.to_thread(self._admit, command))
+        try:
+            context = await asyncio.shield(admission)
+        except asyncio.CancelledError:
+            # A cancelled waiter cannot undo a committed thread transaction.
+            await _drain(admission)
+            if not admission.cancelled() and admission.exception() is None:
+                failure = asyncio.create_task(asyncio.to_thread(self._mark_failed, command.request_id))
+                await _drain(failure)
+            raise
         try:
             yield context
         except BaseException:
@@ -231,7 +294,7 @@ class PostgresDemoBackend:
                 """
                 SELECT session_id, session_epoch, history_version, bundle_id,
                        exclusion_version, requested_strategy, requested_k,
-                       actual_strategy, fallback_reason, status
+                       actual_strategy, fallback_reason, status, model_snapshot
                 FROM recommendation_requests WHERE request_id = %s FOR UPDATE
                 """,
                 (command.request_id,),
@@ -258,12 +321,14 @@ class PostgresDemoBackend:
                     previous["history_version"], previous["bundle_id"],
                     previous["exclusion_version"],
                 )
+                model = decode_model(previous["model_snapshot"])
                 raise IdempotencyReplay(RecommendationResult(
                     binding, Strategy(previous["requested_strategy"]),
                     Strategy(previous["actual_strategy"]),
                     tuple(ScoredCandidate(row["item_id"], row["score"], row["source"])
                           for row in items),
                     previous["fallback_reason"],
+                    model.model_version if model else None, model.timestamp_ms if model else None,
                 ))
             if session.history_version != command.expected_history_version:
                 raise HistoryConflict("history changed before admission")
@@ -278,32 +343,22 @@ class PostgresDemoBackend:
             control = cursor.fetchone()
             if control is None or control["active_bundle_id"] is None:
                 raise RuntimeError("catalog admission is not ready")
-            cursor = connection.execute(
-                """
-                SELECT bi.item_id
-                FROM bundle_items bi JOIN items i ON i.item_id = bi.item_id
-                WHERE bi.bundle_id = %s AND i.is_active
-                """,
-                (control["active_bundle_id"],),
-            )
-            eligible = frozenset(row["item_id"] for row in cursor.fetchall())
-            catalog = CatalogSnapshot(
-                control["active_bundle_id"], control["exclusion_version"], eligible,
-            )
-            context = RequestContext(command.request_id, session, catalog)
+            context = self._capture_context(connection, command.request_id, session, control)
+            catalog = context.catalog
             connection.execute(
                 """
                 INSERT INTO recommendation_requests (
                     request_id, session_id, session_epoch, history_version,
                     history_snapshot, hidden_snapshot, bundle_id, exclusion_version,
-                    requested_strategy, requested_k, status
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'accepted')
+                    requested_strategy, requested_k, model_snapshot, status
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'accepted')
                 """,
                 (
                     command.request_id, command.session_id, session.epoch,
                     session.history_version, Jsonb(list(session.history)),
                     Jsonb(sorted(session.hidden_items)),
                     catalog.bundle_id, catalog.exclusion_version, command.strategy, command.k,
+                    Jsonb(encode_model(context.model)) if context.model else None,
                 ),
             )
         return context
@@ -571,6 +626,25 @@ class PostgresDemoBackend:
         actual = command.strategy
         fallback = None
         runtime = self.runtimes.get(str(context.catalog.bundle_id))
+        if context.model is not None or isinstance(runtime, ManagedR06Runtime):
+            if (not self.r06_enabled or self.r06_queue is None or not isinstance(runtime, ManagedR06Runtime)):
+                raise ManagementError("r06_runtime_unavailable", "frozen R06 runtime is unavailable", 503)
+            port = await asyncio.to_thread(R06RankingPort.from_snapshot, self.r06_queue, runtime.bundle, context)
+            if command.strategy in {Strategy.DENSE, Strategy.ADAPTIVE}:
+                return await port.rank(context, replace(command, strategy=Strategy.DENSE))
+            # Explicit baseline: same frozen eligibility/time/full-seen exclusions.
+            def baseline():
+                bundle = runtime.bundle
+                ids = sorted(item for item in context.catalog.eligible_items
+                             if item not in port.request.full_seen
+                             and bundle.adapter.features._metadata[bundle.adapter.features._indices[item]].first_seen_ms
+                             < port.request.timestamp_ms)[:command.k]
+                return RankedBatch(context.binding, Strategy.POPULAR, tuple(
+                    ScoredCandidate(item, 1.0 / position, "r06-frozen-popular-baseline")
+                    for position, item in enumerate(ids, 1)),
+                    None if command.strategy == Strategy.POPULAR else "strategy_not_loaded_in_r06",
+                    runtime.bundle.model_version)
+            return await self.r06_queue.run(baseline)
         if (runtime is not None and runtime.bundle_id == str(context.catalog.bundle_id)
                 and command.strategy == Strategy.DENSE):
             candidate_ids = tuple(sorted(context.catalog.eligible_items))[:runtime.ranking_budget]
@@ -608,7 +682,7 @@ class PostgresDemoBackend:
                 """
                 SELECT session_id, session_epoch, history_version, bundle_id,
                        exclusion_version, requested_strategy, actual_strategy,
-                       fallback_reason, status
+                       fallback_reason, status, model_snapshot
                 FROM recommendation_requests WHERE request_id = %s FOR UPDATE
                 """,
                 (binding.request_id,),
@@ -622,6 +696,10 @@ class PostgresDemoBackend:
             )
             if stored != binding:
                 raise SnapshotMismatch("result binding differs from the accepted request")
+            model = decode_model(row["model_snapshot"])
+            if ((result.model_version, result.captured_at_ms)
+                    != (model.model_version if model else None, model.timestamp_ms if model else None)):
+                raise SnapshotMismatch("result model differs from accepted input")
             if row["status"] == "completed":
                 cursor = connection.execute(
                     """

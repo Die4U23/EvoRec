@@ -14,6 +14,7 @@ from evorec.domain.models import (
     CatalogSnapshot, RequestContext, ScoredCandidate, SessionSnapshot, Strategy,
 )
 from evorec.infrastructure.postgres import PostgresDemoBackend
+from evorec.infrastructure.r06_admission import decode_model, encode_model
 
 
 def encode_result(result: ComparisonPreview) -> dict:
@@ -27,6 +28,7 @@ def encode_result(result: ComparisonPreview) -> dict:
                     "favorite_items": sorted(session.favorite_items), "profile_id": session.profile_id},
         "catalog": {"bundle_id": str(catalog.bundle_id), "exclusion_version": catalog.exclusion_version,
                     "eligible_items": sorted(catalog.eligible_items)},
+        "model_snapshot": encode_model(result.context.model),
         "common_item_ids": list(result.common_item_ids),
         "strategies": [{"requested_strategy": entry.requested_strategy.value,
                         "actual_strategy": entry.actual_strategy.value,
@@ -45,7 +47,8 @@ def decode_result(data: dict) -> ComparisonPreview:
         entry["fallback_reason"], entry["elapsed_ms"],
         tuple(ScoredCandidate(**item) for item in entry["items"]), tuple(entry["unique_item_ids"]),
     ) for entry in data["strategies"])
-    return ComparisonPreview(RequestContext(UUID(data["comparison_id"]), session, catalog),
+    return ComparisonPreview(RequestContext(UUID(data["comparison_id"]), session, catalog,
+                                            decode_model(data.get("model_snapshot"))),
                              datetime.fromisoformat(data["snapshot_at"]),
                              tuple(data["common_item_ids"]), entries, data["requested_k"])
 
