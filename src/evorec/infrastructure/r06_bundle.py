@@ -149,7 +149,8 @@ class FrozenR06Bundle:
         return replace(result, model_version=self.model_version)
 
 
-def load_r06_bundle(managed_root, bundle_dir, *, expected_manifest_sha256, content_backend="stdlib"):
+def load_r06_bundle(managed_root, bundle_dir, *, expected_manifest_sha256,
+                    content_backend="stdlib", ranker_backend="stdlib"):
     """Approval is mandatory; all components and raw sources are revalidated."""
     approved = _digest(expected_manifest_sha256)
     root = _root(managed_root, bundle_dir)
@@ -177,7 +178,7 @@ def load_r06_bundle(managed_root, bundle_dir, *, expected_manifest_sha256, conte
     features = load_r06_features(root / "features", expected_manifest_sha256=digests["features"])
     retrieval = load_r06_retrieval(root / "retrieval", features,
                                    expected_manifest_sha256=digests["retrieval"], content_backend=content_backend)
-    ranker = load_residual_ranker(root / "ranker", expected_manifest_sha256=digests["ranker"])
+    ranker = load_residual_ranker(root / "ranker", expected_manifest_sha256=digests["ranker"], cpu_backend=ranker_backend)
     encoder = load_content_encoder(root / "encoder", expected_manifest_sha256=digests["encoder"])
     encoder.check_features(features)
     adapter = R06SnapshotRanker(bundle_id, features, retrieval, ranker)

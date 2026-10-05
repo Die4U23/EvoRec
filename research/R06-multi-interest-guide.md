@@ -251,7 +251,7 @@ $bundleId = [guid]::NewGuid().ToString()
 
 ## 可信请求快照与可选服务接入（2026-10-05）
 
-`EVOREC_R06_SERVING_ENABLED=0` 默认保留原受控 demo 与未启用发布拒绝。仅在隔离验收后，为**另一个明确选择的服务实例**设置 `EVOREC_R06_SERVING_ENABLED=1`；`EVOREC_R06_CONTENT_BACKEND` 只能为 `stdlib` 或 `numpy`，无自动依赖回退。NumPy 使用独立 `requirements-retrieval.lock.txt` 环境，默认 `.venv` 仍不增加研究库或 NumPy。标准库有效历史的全语料扫描可能超过现有 2 秒推荐期限，超时须等待实际 CPU 清退；不能把名义期限当作强制杀线程或 SLA。
+`EVOREC_R06_SERVING_ENABLED=0` 默认保留原受控 demo 与未启用发布拒绝。仅在隔离验收后，为**另一个明确选择的服务实例**设置 `EVOREC_R06_SERVING_ENABLED=1`；`EVOREC_R06_CONTENT_BACKEND` 和 `EVOREC_R06_RANKER_BACKEND` 各自只能为 `stdlib` 或 `numpy`，默认均为标准库，无自动依赖回退。交互式真实历史需在独立 `requirements-retrieval.lock.txt` 环境显式将**两者**设为 `numpy`，默认 `.venv` 仍不增加研究库或 NumPy。单独加速召回不保证残差 MLP 在现有 2 秒推荐期限内完成。超时须等待实际 CPU 清退；不能把名义期限当作强制杀线程或 SLA。
 
 启动前对所选数据库按正式迁移入口追加 `0010`（历史请求的 `model_snapshot` 为 NULL，不修改旧迁移）；不要直接对正在使用的业务 schema 执行本地验收脚本。将已批准 `r06-frozen-bundle-v1` 放在配置的受管根目录下 UUID 子目录，管理员先通过既有 R06 `prepare` 接口提交**外层 manifest 批准 SHA-256**，然后用普通 `publish` 接口提交操作 ID 和预期旧活动 UUID。关闭开关时仍拒绝 R06 发布；准备不是发布。发布/恢复重新验证实际完整来源与有序成员，失败保持旧活动版本或关闭入场，不能按旧 dot-product 格式解释 R06。
 
@@ -262,6 +262,8 @@ $bundleId = [guid]::NewGuid().ToString()
 R06 活动版本下 `dense` 是 CF+content 召回及冻结残差排序，来源为 `r06-a-frozen-s17`；`adaptive` 解析为该 `dense`。`popular` 是明确标记的同快照基线，不是质量对照实验；生成式/混合策略仍未实现。缺失模型、错配或队列满返回明确错误，不将失败包装成 popular。推荐与比较 API 返回完整 `model_version` 和 `captured_at_ms`；已保存比较还提供来源 manifest、内容摘要与完整已见。幂等重放使用原模型身份与结果，不随后续发布改变。
 
 每个应用进程共享一个有界 CPU 池，发布后保留旧捕获对象直至实际计算结束；服务退出和独立比较 worker 显式关闭并清退。重复取消准入线程会等到其事务结束，已提交而未执行的请求标记失败；后台取消也不能提前释放实际工作锁。当前仍是本地单发布协调器路线，没有跨进程总容量、模型淘汰、真实网络/浏览器或线上 SLA 保证。
+
+可选残差排序采用与标准库相同的 float64 输入/权重、标量 `math.erf` GELU 和最终 float32 分数，矩阵乘法的归约次序不同，不能泛称所有输入位级相同。最多 400 候选与原形状/有限数值守卫不变；只读权重视图来自不可写 bytes，运行不改 NumPy 宿主错误策略。加载时标准库和 NumPy 两者都必须通过原固定参考分数容差及 Top-20 **顺序**核验，失败拒绝而非切回标准库。没有改权重、来源指纹或模型版本，也不引入 Torch/SciPy。
 
 使用新的 `artifacts/` 输出目录，在**干净实现提交**上执行隔离真实服务验证（只创建并删除自有临时 schema，不切换业务库）：
 

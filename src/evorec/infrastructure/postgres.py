@@ -59,7 +59,7 @@ class PostgresDemoBackend:
     """Persist sessions, admitted requests, and completed recommendation items."""
 
     def __init__(self, database_url: str, *, r06_enabled: bool | None = None,
-                 r06_content_backend: str | None = None) -> None:
+                 r06_content_backend: str | None = None, r06_ranker_backend: str | None = None) -> None:
         self.database_url = database_url
         self.runtime: RuntimeBundle | None = None
         self.runtimes: dict[str, RuntimeBundle] = {}
@@ -70,10 +70,13 @@ class PostgresDemoBackend:
                    else "1" if r06_enabled else "0")
         backend = (os.getenv("EVOREC_R06_CONTENT_BACKEND", "stdlib")
                    if r06_content_backend is None else r06_content_backend)
-        if enabled not in {"0", "1"} or backend not in {"stdlib", "numpy"}:
+        ranker_backend = (os.getenv("EVOREC_R06_RANKER_BACKEND", "stdlib")
+                          if r06_ranker_backend is None else r06_ranker_backend)
+        if enabled not in {"0", "1"} or backend not in {"stdlib", "numpy"} or ranker_backend not in {"stdlib", "numpy"}:
             raise ValueError("R06 serving requires an explicit 0/1 flag and stdlib/numpy backend")
         self.r06_enabled = enabled == "1"
         self.r06_content_backend = backend
+        self.r06_ranker_backend = ranker_backend
         self.r06_queue = R06CPUQueue() if self.r06_enabled else None
 
     async def aclose(self):

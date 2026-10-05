@@ -94,4 +94,6 @@ jobs:
           python -m pytest -q -ra --junitxml=accelerated-tests.xml \
             tests/test_r06_retrieval_numpy.py tests/test_r06_retrieval_runtime.py \
             tests/test_r06_retrieval_benchmark.py
+          python -m pytest -q -ra --junitxml=ranker-accelerated-tests.xml tests/test_residual_ranker_numpy.py
+          python -c 'import xml.etree.ElementTree as ET; s = ET.parse("ranker-accelerated-tests.xml").getroot().find("testsuite"); assert int(s.attrib["tests"]) > 0 and all(int(s.attrib[k]) == 0 for k in ("errors", "failures", "skipped")), "accelerated ranker must pass without skips"'
           python -c 'import xml.etree.ElementTree as ET; s = ET.parse("accelerated-tests.xml").getroot().find("testsuite"); assert int(s.attrib["tests"]) > 0 and all(int(s.attrib[k]) == 0 for k in ("errors", "failures", "skipped")), "acceleration tests must pass without skips"'

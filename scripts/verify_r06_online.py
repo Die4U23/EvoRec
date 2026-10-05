@@ -38,6 +38,7 @@ SOURCE_FILES = tuple(dict.fromkeys((*CATALOG_SOURCES,
     "src/evorec/domain/models.py", "src/evorec/domain/recommendation.py",
     "src/evorec/domain/errors.py", "db/migrations/0010_r06_request_snapshot.sql",
     "scripts/comparison_worker.py", "scripts/verify_r06_online.py", "tests/test_r06_online.py")))
+SOURCE_FILES = (*SOURCE_FILES, "src/evorec/infrastructure/_ranker_numpy.py", "tests/test_residual_ranker_numpy.py")
 
 
 def verify(output, database_url, managed_root, bundle_id, digest, *, content_backend="stdlib"):
@@ -68,7 +69,7 @@ def verify(output, database_url, managed_root, bundle_id, digest, *, content_bac
 
         def application():
             return build_demo_application(PostgresDemoBackend(
-                isolated, r06_enabled=True, r06_content_backend=content_backend,
+                isolated, r06_enabled=True, r06_content_backend=content_backend, r06_ranker_backend=content_backend,
             ), managed_root=Path(managed_root))
 
         async def run():
@@ -141,7 +142,8 @@ def verify(output, database_url, managed_root, bundle_id, digest, *, content_bac
             with psycopg.connect(database_url) as c:
                 c.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
     result.update(status="passed", activated_only_in_owned_schema=True, business_schema_untouched=True,
-                  content_backend=content_backend, bundle_id=str(bundle_id), manifest_sha256=digest,
+                  content_backend=content_backend, ranker_backend=content_backend,
+                  bundle_id=str(bundle_id), manifest_sha256=digest,
                   owned_temporary_schema_removed=True, browser_tested=False, network_server_tested=False,
                   sla_proven=False, test_targets_evaluated=False, retrained=False,
                   source=dict(base_commit=base, working_tree_dirty=False, source_sha256=hashes))

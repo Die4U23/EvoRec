@@ -214,6 +214,7 @@ class CatalogManager:
 
             bundle = self.r06.load_registered(
                 connection, bundle_id, content_backend=self.backend.r06_content_backend,
+                ranker_backend=self.backend.r06_ranker_backend,
                 verify_sources=not frozen_snapshot,
             )
             try:

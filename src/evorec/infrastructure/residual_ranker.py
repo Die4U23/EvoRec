@@ -6,7 +6,7 @@ candidate retrieval and publication intentionally remain outside this component.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 import hashlib
 import json
 import math
@@ -142,6 +142,7 @@ class ResidualRanker:
     provenance: Mapping[str, str]
     validation_samples_checked: int
     _layers: tuple
+    _accelerated: object = field(default=None, repr=False, compare=False)
 
     def score(self, context: Sequence[float], candidates: Sequence[Sequence[float]],
               scalars: Sequence[Sequence[float]]) -> tuple[float, ...]:
@@ -157,6 +158,10 @@ class ResidualRanker:
                 or len(scalars) != len(candidates)):
             _fail("input_shape", "candidate count or scalar shape mismatch")
         empty = math.sqrt(sum(value * value for value in context)) <= 1e-8
+        if self._accelerated is not None:
+            rows = tuple(_vector(candidate, self.dimension) for candidate in candidates)
+            fields = tuple(_vector(scalar, len(SCALAR_NAMES)) for scalar in scalars)
+            return self._accelerated.score(context, rows, fields, empty=empty)
         result = []
         for candidate, scalar in zip(candidates, scalars, strict=True):
             candidate = _vector(candidate, self.dimension)
@@ -175,7 +180,8 @@ class ResidualRanker:
         return tuple(result)
 
 
-def load_residual_ranker(component_dir: Path, *, expected_manifest_sha256: str | None = None
+def load_residual_ranker(component_dir: Path, *, expected_manifest_sha256: str | None = None,
+                         cpu_backend: str = "stdlib"
                          ) -> ResidualRanker:
     """Validate hashes, shapes, finite weights and mandatory reference replay.
 
@@ -183,6 +189,8 @@ def load_residual_ranker(component_dir: Path, *, expected_manifest_sha256: str |
     pin expected_manifest_sha256 when selecting a previously approved component.
     No registration, database access or active-model mutation takes place.
     """
+    if cpu_backend not in {"stdlib", "numpy"}:
+        _fail("unsupported_backend", "ranker backend must be explicitly stdlib or numpy")
     supplied = Path(component_dir)
     if supplied.is_symlink():
         _fail("unsafe_path", "component directory cannot be a symlink")
@@ -245,6 +253,16 @@ def load_residual_ranker(component_dir: Path, *, expected_manifest_sha256: str |
         _fail("resource_limit", "one to four reference samples are required")
     runtime = ResidualRanker(dimension, hidden, bottleneck, base_scale, residual_scale,
                              digest, MappingProxyType(dict(provenance)), len(samples), tuple(layers))
+    _validate_samples(runtime, samples)
+    if cpu_backend == "numpy":
+        from evorec.infrastructure._ranker_numpy import numpy_mlp
+
+        runtime = replace(runtime, _accelerated=numpy_mlp(runtime))
+        _validate_samples(runtime, samples)  # Both CPU and accelerated execution must pass.
+    return runtime
+
+
+def _validate_samples(runtime, samples):
     for sample in samples:
         _object(sample, ("context", "candidates", "scalars", "expected_scores", "expected_top20"))
         actual = runtime.score(sample["context"], sample["candidates"], sample["scalars"])
@@ -256,4 +274,3 @@ def load_residual_ranker(component_dir: Path, *, expected_manifest_sha256: str |
         if (not isinstance(reference_order, list) or any(type(i) is not int for i in reference_order)
                 or reference_order != order):
             _fail("validation_mismatch", "reference Top-20 order differs from the checkpoint")
-    return runtime

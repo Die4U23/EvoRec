@@ -72,5 +72,7 @@ def test_optional_retrieval_ci_remains_separate_from_pure_service():
     assert "requirements-retrieval.lock.txt" in accelerated
     assert "tests/test_r06_retrieval_numpy.py" in accelerated
     assert "tests/test_r06_retrieval_benchmark.py" in accelerated
+    assert "tests/test_residual_ranker_numpy.py" in accelerated
+    assert "tests/test_residual_ranker_numpy.py" not in service
     assert '"errors", "failures", "skipped"' in accelerated
     assert "numpy" not in (root / "requirements-dev.lock.txt").read_text(encoding="utf-8").lower()

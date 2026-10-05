@@ -101,6 +101,19 @@ def test_independent_numerics_empty_history_and_immutable_runtime(tmp_path):
         load_residual_ranker(root)
 
 
+def test_default_ranker_does_not_import_optional_backend_and_missing_dependency_refuses(tmp_path, monkeypatch):
+    import builtins
+    root, _, _ = _fixture(tmp_path)
+    original = builtins.__import__
+    def reject(name, *args, **kwargs):
+        if name == "numpy": raise ImportError("synthetic absent optional dependency")
+        return original(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, "__import__", reject)
+    assert load_residual_ranker(root)._accelerated is None
+    with pytest.raises(ControlledLoadError) as error: load_residual_ranker(root, cpu_backend="numpy")
+    assert error.value.code == "backend_unavailable"
+
+
 @pytest.mark.parametrize("key,value,code", [
     ("kind", "pickle", "unsupported_format"), ("dtype", "float64", "unsupported_format"),
     ("schema_version", True, "unsupported_format"), ("dimension", True, "resource_limit"),

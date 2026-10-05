@@ -32,6 +32,7 @@ def online(isolated_database, tmp_path, monkeypatch):
     monkeypatch.setenv("EVOREC_BUNDLE_ROOT", str(root))
     monkeypatch.setenv("EVOREC_R06_SERVING_ENABLED", "1")
     monkeypatch.setenv("EVOREC_R06_CONTENT_BACKEND", "stdlib")
+    monkeypatch.setenv("EVOREC_R06_RANKER_BACKEND", "stdlib")
     monkeypatch.setenv("EVOREC_ADMIN_TOKEN", "local-admin-test-token-32-characters")
     application = build_demo_application()
     identity = UUID(target.name)
