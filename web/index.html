@@ -132,6 +132,7 @@
   <script>
     const el = id => document.getElementById(id);
     let session = null, latest = null, catalog = new Map(), pendingRecommendation = null;
+    let recommendationCards = [];
     let itemsOffset = 0;
     const itemsPageSize = 20;
     let pendingCatalogFile = null;
@@ -369,6 +370,7 @@
     }
     function clearResults() {
       latest = null; pendingRecommendation = null; pendingFeedback.clear(); hiddenUndo.clear();
+      recommendationCards = [];
       el('recommendations').replaceChildren(); el('undo').replaceChildren(); el('detail').replaceChildren();
       el('comparison').replaceChildren();
       pendingComparison = null; el('comparison-id').value = '';
@@ -396,13 +398,20 @@
       return result;
     }
     function card(item) {
-      const data = catalog.get(item.item_id);
       const row = document.createElement('article'); row.className = 'item';
-      const picture = data?.image_url && /^https?:\/\//i.test(data.image_url) ? document.createElement('img') : document.createElement('div');
-      if (picture.tagName === 'IMG') { picture.src = data.image_url; picture.alt = data.title; }
-      else { picture.className = 'placeholder'; picture.textContent = '暂无图片'; }
-      const title = document.createElement('strong'); title.textContent = data?.title || item.item_id;
-      const meta = document.createElement('small'); meta.textContent = `${data?.category || '未知分类'} · ${item.item_id}`;
+      const picture = document.createElement('div');
+      const title = document.createElement('strong');
+      const meta = document.createElement('small');
+      function showMetadata(data) {
+        title.textContent = data?.title || item.item_id;
+        meta.textContent = `${data?.category || '未知分类'} · ${item.item_id}`;
+        const image = data?.image_url && /^https?:\/\//i.test(data.image_url)
+          ? document.createElement('img') : document.createElement('div');
+        if (image.tagName === 'IMG') { image.src = data.image_url; image.alt = title.textContent; }
+        else { image.className = 'placeholder'; image.textContent = '暂无图片'; }
+        picture.replaceChildren(image);
+      }
+      showMetadata(catalog.get(item.item_id));
       const detail = document.createElement('button'); detail.textContent = '查看详情';
       detail.onclick = () => run(async () => {
         const full = await api(`/api/v1/items/${encodeURIComponent(item.item_id)}`);
@@ -422,10 +431,40 @@
       const hide = document.createElement('button'); hide.className = 'secondary'; hide.textContent = '隐藏';
       hide.onclick = () => run(async () => {
         await sendFeedback(item.item_id, 'hide_set', true);
+        const index = recommendationCards.findIndex(view => view.row === row);
+        if (index >= 0) recommendationCards.splice(index, 1);
         row.remove(); hiddenUndo.set(item.item_id, item); renderUndo(); message('已隐藏，下一次推荐将排除此商品');
       });
       row.append(picture, title, meta, detail, favorite, hide);
-      return row;
+      return {row, itemId: item.item_id, showMetadata};
+    }
+    async function hydrateCards(views, isCurrent, status) {
+      const missing = [...new Set(views.map(view => view.itemId))].filter(id => !catalog.has(id));
+      if (!missing.length) return;
+      status.textContent = '正在读取商品信息；推荐结果已返回。';
+      let cursor = 0, failed = 0;
+      async function worker() {
+        while (isCurrent() && cursor < missing.length) {
+          const id = missing[cursor++];
+          let data;
+          try {
+            data = await api(`/api/v1/items/${encodeURIComponent(id)}`);
+            if (data?.item_id !== id) throw new Error('商品信息 ID 不匹配');
+          } catch (_) {
+            if (isCurrent()) failed++;
+            continue;
+          }
+          // Never cache or repaint a superseded recommendation/session epoch.
+          if (!isCurrent()) return;
+          catalog.set(id, data);
+          for (const view of views) if (view.itemId === id) view.showMetadata(data);
+        }
+      }
+      await Promise.all(Array.from({length: Math.min(4, missing.length)}, worker));
+      if (!isCurrent()) return;
+      showSession(); renderUndo();
+      status.textContent = failed ? `${failed} 件商品信息未能读取，保留商品 ID；推荐结果不变。`
+        : '商品信息已补齐；没有原始图片的商品保留占位。';
     }
     function renderUndo() {
       const area = el('undo'); area.replaceChildren();
@@ -433,7 +472,8 @@
         const button = document.createElement('button'); button.textContent = `撤销隐藏 ${catalog.get(id)?.title || id}`;
         button.onclick = () => run(async () => {
           await sendFeedback(id, 'hide_set', false); hiddenUndo.delete(id);
-          el('recommendations').append(card(item)); renderUndo(); message('已撤销隐藏');
+          const view = card(item); recommendationCards.push(view);
+          el('recommendations').append(view.row); renderUndo(); message('已撤销隐藏');
         });
         area.append(button);
       }
@@ -449,7 +489,7 @@
             expected_history_version: session.history_version, strategy: el('strategy').value, k}
         };
       }
-      const pending = pendingRecommendation, currentSession = session.session_id;
+      const pending = pendingRecommendation, currentSession = session.session_id, currentEpoch = session.epoch;
       rememberComparison();
       const list = el('recommendations'); list.replaceChildren();
       for (let i = 0; i < 3; i++) { const skeleton = document.createElement('div'); skeleton.className = 'item skeleton'; list.append(skeleton); }
@@ -466,8 +506,16 @@
         note.textContent = `实际策略：${latest.actual_strategy}${latest.fallback_reason ? '（回退原因：' + latest.fallback_reason + '）' : ''}。返回 ${latest.items.length}/${pending.payload.k} 项。${latest.items.length < pending.payload.k ? '商品不足，不补造重复结果。' : ''}${strategyExplanation(pending.payload.strategy, latest.actual_strategy, latest.items)}`;
         note.textContent += ` 商品包 ${latest.bundle_id || '未提供'}；模型 ${latest.model_version || '未提供（不推断为 R06）'}。`;
         list.append(note);
-        for (const item of latest.items) list.append(card(item));
+        const views = latest.items.map(card);
+        recommendationCards = views;
+        for (const view of views) list.append(view.row);
         if (!latest.items.length) { const empty = document.createElement('p'); empty.textContent = '暂无可推荐商品。可重置会话或检查商品目录。'; list.append(empty); }
+        else {
+          const metadataStatus = document.createElement('p'); metadataStatus.className = 'status';
+          list.append(metadataStatus);
+          await hydrateCards(views, () => session?.session_id === currentSession &&
+            session.epoch === currentEpoch && latest === result && pendingRecommendation === null, metadataStatus);
+        }
       } catch (error) {
         if (session?.session_id !== currentSession || pendingRecommendation !== pending) return;
         list.replaceChildren();
