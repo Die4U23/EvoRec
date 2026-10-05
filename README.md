@@ -84,19 +84,21 @@ python -m venv .venv
 
 使用 PostgreSQL 模式时，先将 `.env` 的变量载入启动服务的终端，并运行 `python scripts/migrate_database.py`；仅填写 `.env` 不会自动载入变量。商品处理还需配置 `EVOREC_BUNDLE_ROOT` 和至少 32 字符的 `EVOREC_ADMIN_TOKEN`。
 
+想演示已批准的真实 R06 模型而不改动当前业务库，可用[独立 R06 启动入口](docs/product/demo-scope.md#独立-r06-推荐入口)：自有临时 schema、随机本地端口、管理员关闭；正常退出后删除本轮演示数据。首次克隆仍需另行准备批准包和可选 NumPy 环境，不会自动下载或训练模型。
+
 商品工作台使用后台构建任务。完成数据库迁移后，在另一个终端载入相同的 `EVOREC_DATABASE_URL` 与 `EVOREC_BUNDLE_ROOT`，运行 `python -m scripts.catalog_worker`；可用 `--once` 只处理一个排队任务。停止 worker 不会发布半成品；重启后中断的后台任务按原快照重排。只启动 API、不启动 worker 时任务会保持排队，可通过构建 ID 查询。页面应从 `http://127.0.0.1:8000/app` 打开，直接打开 `web/index.html` 的 `file://` 地址无法调用 API。
 
-策略对比另有独立的 `python -m scripts.comparison_worker`。应用最新迁移后，页面支持提交后台单次对比、进度查询、取消与编号恢复；完整结果仍与普通推荐记录隔离。worker 终端也需载入相同的数据库及受管目录环境变量，`.env` 不会自动读取。当前只接入热门、受控 CPU 稠密和自适应路径，不代表真实 R06 或批量评估已完成。
+策略对比另有独立的 `python -m scripts.comparison_worker`。应用最新迁移后，页面支持提交后台单次对比、进度查询、取消与编号恢复；完整结果仍与普通推荐记录隔离。worker 终端也需载入相同的数据库及受管目录环境变量，`.env` 不会自动读取。默认内容基线与显式启用、批准发布的 R06 路径不同，adaptive 不代表学习型路由，单次对比不代表批量评估完成。
 
 - `GET /health/live`：进程存活，返回 200。
 - `GET /health/ready`：检查数据库发布屏障和活动受控运行时；仅配置旧演示种子时仍返回 503，发布受控 bundle 且恢复对齐后可以返回 200。
 - `GET /api/v1/system`：返回真实版本、阶段与能力状态；配置数据库后 persistence 为 true。
-- `POST /api/v1/sessions`：默认创建无历史的新用户会话；传入 `{"profile_id":"sample"}` 创建有 `demo-coop` 初始浏览历史的示例用户。访问令牌只在创建响应中返回。示例用户要求活动商品库包含该演示商品，否则返回 409。
+- `POST /api/v1/sessions`：默认创建无历史的新用户会话；`{"profile_id":"sample"}` 使用固定演示历史，普通库为 `demo-coop`，活动 R06 为批准包顺序中首个有非零向量的训练商品；不是实际用户画像。访问令牌只在创建响应中返回。固定商品不可用或表示漂移时创建/重置返回 409，不另选种子。
 - `GET /api/v1/sessions/{id}`、`POST /api/v1/sessions/{id}/reset`：通过 `X-Session-Token` 查询或重置会话。
-- `POST /api/v1/recommendations`：通过同一令牌执行快照绑定、回退、过滤、Top-K 与结果记录；可选 UUID `Idempotency-Key` 对相同输入重放原结果，不同输入返回 409。受控 bundle 的 `dense` 路径是可移植 CPU 基线，不是 R06 研究模型。
+- `POST /api/v1/recommendations`：通过同一令牌执行快照绑定、回退、过滤、Top-K 与结果记录；可选 UUID `Idempotency-Key` 对相同输入重放原结果，不同输入返回 409。默认内容 bundle 的 `dense` 是 CPU 基线；显式启用、批准发布 R06 后才执行冻结研究模型，以响应的模型身份为准。
 - `POST /api/v1/feedback`：校验反馈来自该会话真实返回的商品；按 `event_id` 幂等记录，并在有效状态变化时推进历史版本。
 - `GET /app`：本地 Web 页面，选择用户后自动推荐，支持详情、收藏切换、隐藏撤销和重置；`GET /api/v1/items` 与 `GET /api/v1/items/{id}` 读取商品，进程内模式提供 24 件明确标记的虚构演示商品。更新代码后需重启服务，旧会话不迁移。
-- `/api/v1/admin/`：使用 `X-Admin-Token` 导入商品、排队构建标题/类别内容基线、查询进度与分页预览、确认发布、下架及恢复。旧同步构建接口保留；新页面使用独立 worker 的持久队列。完整版本最多 5,000 件；这是非训练的本地基线，真实 R06 权重仍未接入。未配置令牌时拒绝管理操作。
+- `/api/v1/admin/`：使用 `X-Admin-Token` 导入商品、排队构建标题/类别内容基线、查询进度与分页预览、确认发布、下架及恢复。旧同步构建接口保留；新页面使用独立 worker 的持久队列。新品内容基线最多 5,000 件，与已接入但默认关闭的冻结 R06 路径不同，不会训练 R06 或让任意新 ID 获得旧权重资格。未配置令牌时拒绝管理操作。
 - `GET /openapi.json`：当前已经实现的接口说明。交互文档入口 `/docs` 的页面资源可能需要网络。
 
 检查与契约导出：
