@@ -266,7 +266,7 @@ R06 活动版本下 `dense` 是 CF+content 召回及冻结残差排序，来源�
 使用新的 `artifacts/` 输出目录，在**干净实现提交**上执行隔离真实服务验证（只创建并删除自有临时 schema，不切换业务库）：
 
 ```powershell
-python scripts/verify_r06_online.py artifacts/replays/<new-run> `
+python -m scripts.verify_r06_online artifacts/replays/<new-run> `
   artifacts/bundles/<approved-root> <bundle-uuid> `
   --expected-manifest-sha256 <approved-outer-sha256> --content-backend numpy
 ```
