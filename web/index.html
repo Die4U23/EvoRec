@@ -440,7 +440,10 @@
     }
     async function hydrateCards(views, isCurrent, status) {
       const missing = [...new Set(views.map(view => view.itemId))].filter(id => !catalog.has(id));
-      if (!missing.length) return;
+      if (!missing.length) {
+        status.textContent = '商品信息来自已读取目录；没有原始图片的商品保留占位。';
+        return;
+      }
       status.textContent = '正在读取商品信息；推荐结果已返回。';
       let cursor = 0, failed = 0;
       async function worker() {

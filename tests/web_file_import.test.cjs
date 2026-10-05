@@ -166,6 +166,23 @@ test('hydration uses at most four concurrent lookups and keeps recommendation or
   assert.deepEqual(cards(p).map(row => row.children[1].textContent), ids.map(id => `Original ${id}`));
 });
 
+test('superseded batch stops queued lookups and late failures cannot change the new status', async () => {
+  const waiting = [];
+  let calls = 0;
+  const p = metadataPage(Array.from({length: 8}, (_, i) => `old-${i}`), () =>
+    new Promise(resolve => { waiting.push(resolve); }), [], null,
+    () => ok(recItems(++calls === 1 ? Array.from({length: 8}, (_, i) => `old-${i}`) : [])));
+  const old = startMetadata(p); await settle();
+  assert.equal(waiting.length, 4);
+  await p.element('recommend').onclick();
+  const before = p.element('recommendations').children.map(row => row.textContent);
+  for (const resolve of waiting) resolve({ok: false, status: 503, json: async () => ({error: {code: 'unavailable'}})});
+  await old;
+  assert.equal(p.requests.filter(r => r.url.startsWith('/api/v1/items/')).length, 4);
+  assert.deepEqual(p.element('recommendations').children.map(row => row.textContent), before);
+  assert.equal(p.element('message').textContent, '');
+});
+
 for (const change of ['session', 'epoch', 'clear', 'recommendation']) {
   test(`late metadata after ${change} cannot replace current cards or cache old data`, async () => {
     let complete, calls = 0;
