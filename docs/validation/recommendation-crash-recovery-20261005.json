@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "date_local": "2026-10-05",
+  "scope": "On-retry terminal reconciliation of guarded recommendation executions; not automatic reranking",
+  "main_base": "7ae1f5d5e03b08c03712ac236bc508a10cdbc019",
+  "final_executed_source_commit": "b0ef781852621323c22d59aaf6fdd5b2d3a22144",
+  "frontend_source_commit": "03b0da6049d4785f2b2890e760e593b116f96999",
+  "frontend_followup_changes_backend_source": false,
+  "implementation": {
+    "migration": "0011_recommendation_execution_lease.sql",
+    "new_request_requires_owned_session_lock": true,
+    "request_owner_persisted_atomically": true,
+    "lock_namespace_includes_schema_and_request_uuid": true,
+    "authorized_matching_retry_reconciles_orphan_to_failed": true,
+    "orphan_terminal_code": "recommendation_interrupted",
+    "legacy_unknown_code": "recommendation_recovery_unavailable",
+    "legacy_null_owner_not_assumed_dead": true,
+    "completed_results_replay_without_execution_lease": true,
+    "result_writes_check_owner_and_actual_lock": true,
+    "admission_cpu_result_write_and_cleanup_drained_on_repeated_cancel": true,
+    "client_retains_original_key_and_input_across_refresh": "When current-tab sessionStorage is available",
+    "terminal_failure_new_key_requires_explicit_click": true,
+    "late_session_or_same_key_response_protected": true
+  },
+  "real_service_verifications": [
+    {
+      "local_directory": "artifacts/replays/rec-recovery-numpy-20261005-a",
+      "report_sha256": "51746bac3b32f39656af03bad4546749e120f74c2e432ed3b7795eca926d179a",
+      "status": "passed",
+      "content_backend": "numpy",
+      "ranker_backend": "numpy",
+      "history_count": 1,
+      "returned_items": 10,
+      "single_asgi_request_seconds": 1.8453860000008717,
+      "source_files_current_archived_git_exact": 50,
+      "source_working_tree_dirty": false,
+      "owned_temporary_schema_removed": true
+    },
+    {
+      "local_directory": "artifacts/replays/rec-recovery-stdlib-20261005-a",
+      "report_sha256": "51892d708fee4fb35157b8edb9e8a5215128cf46ae36df5e78ada6647dcf90a6",
+      "status": "passed",
+      "content_backend": "stdlib",
+      "ranker_backend": "stdlib",
+      "history_count": 0,
+      "returned_items": 10,
+      "single_asgi_request_seconds": 1.8199059999969904,
+      "source_files_current_archived_git_exact": 50,
+      "source_working_tree_dirty": false,
+      "owned_temporary_schema_removed": true
+    }
+  ],
+  "real_checks_shared_by_both_runs": {
+    "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+    "item_count": 137249,
+    "activated_only_in_owned_schema": true,
+    "business_schema_untouched": true,
+    "actual_asgi_recommendation": true,
+    "adaptive_resolves_dense": true,
+    "api_idempotency_exact": true,
+    "restart_recovery_exact": true,
+    "frozen_background_job_replay_exact": true,
+    "cpu_jobs_drained": true,
+    "browser_tested": false,
+    "network_server_tested": false,
+    "sla_proven": false,
+    "test_targets_evaluated": false,
+    "retrained": false
+  },
+  "tests": {
+    "full_research_environment": {
+      "local_report": "tmp/rec-recovery-full-20261005-a.xml",
+      "report_sha256": "78b6aef961e2e70a4bf1658f7bb959aa3ea36897402bd73273a0b869634dd82d",
+      "backend_source_commit": "b0ef781852621323c22d59aaf6fdd5b2d3a22144",
+      "tests": 884,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 481.175
+    },
+    "final_pure_service_focused": {
+      "local_report": "tmp/rec-recovery-final-target-20261005-b.xml",
+      "report_sha256": "3cea0ae5ce532959b69b89b2d15e2914f9955cb586abfc60c007e34b2ef4c28b",
+      "tests": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 47.468
+    },
+    "service_ci_list": {
+      "local_report": "tmp/rec-recovery-service-20261005-a.xml",
+      "report_sha256": "8964bdf9a88ce14d765109837e25b4fffa93ec2bb76472735fd0548d98f5c681",
+      "backend_source_commit": "b0ef781852621323c22d59aaf6fdd5b2d3a22144",
+      "workflow_files": 28,
+      "tests": 669,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 482.136,
+      "numpy_installed": false
+    },
+    "optional_ci_list": {
+      "local_report": "tmp/rec-recovery-optional-20261005-a.xml",
+      "report_sha256": "93d85f15dd45962dc92d4de943fb17486c92682d798cc16e4d46cc8e154a022f",
+      "workflow_files": 4,
+      "tests": 140,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 17.698
+    },
+    "page_scripts": {"tests": 31, "failures": 0, "skipped": 0},
+    "new_recovery_cases": 18,
+    "new_page_cases": 8,
+    "actual_owned_process_killed_during_ranking_thread": true,
+    "forced_termination_test_schema_isolated": true,
+    "overlapping_suites_not_added": true,
+    "database_suites_finally_serialized": true
+  },
+  "checks": {
+    "pip_check": {"service": "passed", "research": "passed", "accelerated": "passed"},
+    "exported_api_contracts": {"files": 4, "reexport_matches_git": true},
+    "remaining_test_schema_count": 0,
+    "repository_hygiene": {
+      "status": "passed",
+      "scope": "Git index only",
+      "local_report": "tmp/rec-recovery-hygiene-20261005-c.json",
+      "tracked_files": 380,
+      "local_links_checked": 484,
+      "python_files_parsed": 161,
+      "no_tracked_local_materials_or_raw_artifacts": true,
+      "credential_scan": "Common token and private-key signatures only; not an exhaustive secret audit"
+    },
+    "remote_ci": "Not claimed by this pre-push local evidence; inspect latest PR head checks"
+  },
+  "review": {
+    "mode": "Main-thread quality, performance and reuse review; required custom agent_type unavailable",
+    "claims_independent_agent_review": false,
+    "quality": "Guard new admissions against an unleased private-method bypass; preserve old NULL-owner writes without inferring liveness; serialize terminal outcomes and reject late output",
+    "performance": "One additional dedicated database connection per executing request; combine auth/prior/key precheck in one query, no connection-pool or throughput claim",
+    "reuse": "Existing admission/idempotency transaction, result recorder, queue drain, API ManagementError envelope and current-tab storage",
+    "passed_preliminary_tests_are_not_final_source_proof": true
+  },
+  "boundaries": [
+    "Only guarded owner-marked admissions can be reconciled automatically on an authorized matching retry",
+    "Ordinary recommendations are not automatically reranked, scanned or resumed; full eligible-ID input is still not persisted for ordinary reranking",
+    "A new key creates a new request using current inputs, not a recovered result of the failed old request",
+    "Only actual PostgreSQL lock release permits reconciliation; no age-based takeover or fixed network-partition detection deadline",
+    "Dedicated physical PostgreSQL session required; transaction-pooling proxies and cross-machine fault detection not accepted",
+    "Already-running older producers omit the owner and remain explicitly unknown until administrator reconciliation",
+    "No current business-schema migration/import, active model switch or port-8000 restart",
+    "R06 remains default-off; no original weights, selection or provenance change",
+    "The two real service observations use different histories and are not a speed comparison, network test or production SLA",
+    "Browser logic tested in Node VM; no real browser acceptance or concurrent HTTP load acceptance",
+    "Abrupt verifier termination may strand an owned temporary schema; no forced-termination verifier-cleanup or fsync guarantee"
+  ]
+}

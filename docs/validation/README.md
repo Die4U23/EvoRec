@@ -19,6 +19,7 @@
 | R06 数据库准备 | [原子准备与实际表示重放](r06-catalog-preparation-20261004.json) | 真实全量包只在隔离 schema 验收；未接通的 R06 发布明确拒绝 |
 | R06 异步排序与取消 | [有界队列与双环境实际批次](r06-async-ranking-20261004.json) | 运行线程须清退后确认取消；仍未接通数据库 admission 与在线发布 |
 | R06 可选推荐服务 | [可信数据库快照、发布恢复与实际 API](r06-online-serving-20261005.json) | 默认关闭；完整包仅在隔离 schema 验收，单次延迟接近期限，不是生产 SLA |
+| 普通推荐中断收敛 | [执行租约与客户端原键恢复](recommendation-crash-recovery-20261005.json) | 新协议重试时收敛失败，不自动续算；旧 NULL owner 的存活状态保持未知 |
 | R02–R05 来源与干净复验 | [历史来源复原](r02-r05-provenance-reconstruction.json)、[干净复验汇总](r02-r05-clean-replications.json) | [R02 审计](r02-clean-replication-audit.json)、[R03 审计](r03-verified-clean-audit.json)、[R04 审计](r04-verified-clean-audit.json)、[R05 审计](r05-verified-clean-audit.json) |
 | 发布前检查 | [发布预检](release-preflight.json) | 仍须按[验证与发布框架](../07-validation-release.md)核对未完成项 |
 
