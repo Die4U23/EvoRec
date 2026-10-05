@@ -124,8 +124,11 @@
       <h3>高级版本操作</h3>
       <label for="bundle-id">受管 bundle UUID</label><input id="bundle-id" placeholder="预先放入受管目录的 bundle ID">
       <button id="register-bundle">校验并登记</button>
-      <button id="publish-bundle">发布</button>
+      <p>发布目标须先受控校验；回滚目标须曾经发布且不同于活动版本。回滚不会恢复下架商品，也不改写旧推荐记录。不确定失败请按原目标与操作重试；刷新后重新输入令牌。</p>
+      <button id="publish-bundle">发布／重试</button>
+      <button id="rollback-bundle" class="secondary">回滚／重试</button>
       <button id="recover" class="secondary">检查／恢复发布</button>
+      <p id="version-operation" role="status">尚无版本操作。</p>
       <p id="publication">尚未读取发布状态。</p>
       </details>
     </section>
@@ -135,6 +138,8 @@
     let session = null, latest = null, catalog = new Map(), pendingRecommendation = null;
     let recommendationCards = [];
     let activeRecommendation = null;
+    let pendingVersionOperation = null, switchingVersion = false, publishingCatalog = false;
+    const bundleUUID = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
     let itemsOffset = 0;
     const itemsPageSize = 20;
     let pendingCatalogFile = null;
@@ -215,6 +220,77 @@
       const state = await api('/api/v1/admin/publication', {headers: admin()});
       el('publication').textContent = `活动 bundle：${state.active_bundle_id || '无'} · 接收：${state.admission_open ? '开放' : '关闭'} · 下架版本：${state.exclusion_version}`;
       return state;
+    }
+    function rememberVersionOperation() {
+      try {
+        if (pendingVersionOperation) sessionStorage.setItem('evorec.publication', JSON.stringify(pendingVersionOperation));
+        else sessionStorage.removeItem('evorec.publication');
+      } catch (_) {
+        el('version-operation').textContent += '（页面存储不可用，请勿刷新；原操作只保留于内存）';
+      }
+    }
+    function showVersionOperation(phase) {
+      const op = pendingVersionOperation;
+      el('bundle-id').readOnly = !!op;
+      if (op) el('version-operation').textContent = `${op.action === 'rollback' ? '回滚' : '发布'} ${op.target} · 操作 ${op.operationId} · 预期活动 ${op.expected ?? '无'} · ${phase}`;
+    }
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('evorec.publication'));
+      if (saved && ['publish', 'rollback'].includes(saved.action) && bundleUUID(saved.target) &&
+          typeof saved.operationId === 'string' && saved.operationId.length > 0 && saved.operationId.length <= 64 &&
+          (saved.expected === null || bundleUUID(saved.expected))) {
+        pendingVersionOperation = {action: saved.action, target: saved.target,
+          operationId: saved.operationId, expected: saved.expected};
+        el('bundle-id').value = saved.target;
+        showVersionOperation('上次结果尚未核对；填入令牌后按原操作重试，不自动执行');
+      }
+    } catch (_) { /* Malformed tab state never triggers an automatic switch. */ }
+    async function switchBundle(action) {
+      if (switchingVersion || publishingCatalog) return;
+      switchingVersion = true;
+      el('publish-bundle').disabled = el('rollback-bundle').disabled = true;
+      try {
+        const target = el('bundle-id').value.trim();
+        if (!bundleUUID(target)) throw Object.assign(new Error('请填写合法的受管 bundle UUID'), {retryable: false});
+        if (!el('admin-token').value) throw Object.assign(new Error('请先填入本次服务的管理员令牌'), {retryable: false});
+        if (pendingVersionOperation && (pendingVersionOperation.target !== target || pendingVersionOperation.action !== action))
+          throw Object.assign(new Error('上次结果未确认，请按原目标与操作重试，不可直接改目标或换操作'), {retryable: false});
+        if (!pendingVersionOperation) {
+          const state = await publication();
+          if (!state.admission_open || state.pending_operation)
+            throw Object.assign(new Error('发布状态尚未恢复，请先检查／恢复发布'), {retryable: false});
+          if (action === 'rollback' && (!state.active_bundle_id || state.active_bundle_id === target))
+            throw Object.assign(new Error('回滚要求当前有活动版本，且目标不同于活动版本'), {retryable: false});
+          pendingVersionOperation = {action, target, operationId: crypto.randomUUID(), expected: state.active_bundle_id};
+        }
+        const op = pendingVersionOperation;
+        showVersionOperation('执行中；不更换编号或版本守卫'); rememberVersionOperation();
+        const result = await api(`/api/v1/admin/bundles/${op.target}/${op.action}`, {
+          method: 'POST', headers: admin(), body: JSON.stringify({operation_id: op.operationId, expected_active_bundle_id: op.expected}),
+        });
+        if (result.operation_id !== op.operationId || result.active_bundle_id !== op.target || result.status !== 'completed')
+          throw new Error('版本操作响应身份不一致，保留原编号等待核对');
+        showVersionOperation('请求已确认，当前状态待核对');
+        await publication(); await refreshItems();
+        showVersionOperation(`已完成${result.replayed ? '（原操作重放；不代表目标仍是当前活动版本）' : ''}`);
+        pendingVersionOperation = null; el('bundle-id').readOnly = false; rememberVersionOperation();
+        message('版本操作已完成；当前活动版本以上方状态为准，旧推荐不会改写，下架商品不会恢复');
+      } catch (error) {
+        if (pendingVersionOperation)
+          el('publication').textContent = '当前活动版本尚未重新核对；请检查／恢复发布，不将操作前快照当作当前状态。';
+        if (['publication_version_conflict', 'build_base_conflict', 'publication_aborted',
+             'rollback_target_invalid', 'rollback_target_unpublished'].includes(error.code)) {
+          showVersionOperation('已拒绝；核对状态后再次点击才创建新操作');
+          pendingVersionOperation = null; el('bundle-id').readOnly = false; rememberVersionOperation();
+          if (error.code === 'publication_version_conflict') error.message = '活动版本已变化，本次操作已拒绝；核对状态后再次点击才创建新操作';
+        } else if (pendingVersionOperation) {
+          showVersionOperation('结果尚未核对；请按原目标与操作重试'); rememberVersionOperation();
+        }
+        throw error;
+      } finally {
+        switchingVersion = false;
+        el('publish-bundle').disabled = el('rollback-bundle').disabled = false;
+      }
     }
     function selectImport(batchId) {
       stopImportPolling();
@@ -794,12 +870,15 @@
     el('preview-previous').onclick = () => run(async () => { buildPreviewOffset = Math.max(0, buildPreviewOffset - 20); await previewBuild(); });
     el('preview-next').onclick = () => run(async () => { buildPreviewOffset += 20; await previewBuild(); });
     el('publish-catalog').onclick = () => run(async () => {
+      if (publishingCatalog) return;
+      if (switchingVersion || pendingVersionOperation) throw Object.assign(new Error('版本操作尚未确认，请先按原目标与操作核对'), {retryable: false});
       const id = el('catalog-build').value.trim();
       if (!currentBuild || currentBuild.build_id !== id || currentBuild.status !== 'ready') throw new Error('请先完成处理并查询预览');
       if (!pendingBuildPublication || pendingBuildPublication.buildId !== id) {
         pendingBuildPublication = {buildId: id, operationId: crypto.randomUUID()};
       }
       el('publish-catalog').disabled = true;
+      publishingCatalog = true;
       try {
         await api(`/api/v1/admin/catalog/builds/${encodeURIComponent(id)}/publish`, {
           method: 'POST', headers: admin(), body: JSON.stringify({operation_id: pendingBuildPublication.operationId}),
@@ -815,6 +894,8 @@
         }
         await previewBuild().catch(() => {});
         throw error;
+      } finally {
+        publishingCatalog = false;
       }
     });
     el('deactivate').onclick = () => run(async () => {
@@ -825,13 +906,10 @@
       await api(`/api/v1/admin/bundles/${encodeURIComponent(el('bundle-id').value)}/register`, {method: 'POST', headers: admin()});
       message('bundle 已完成受控校验并登记');
     });
-    el('publish-bundle').onclick = () => run(async () => {
-      const state = await publication();
-      await api(`/api/v1/admin/bundles/${encodeURIComponent(el('bundle-id').value)}/publish`, {method: 'POST', headers: admin(),
-        body: JSON.stringify({operation_id: crypto.randomUUID(), expected_active_bundle_id: state.active_bundle_id})});
-      await publication(); message('发布已记录并完成运行时对齐');
-    });
+    el('publish-bundle').onclick = () => run(() => switchBundle('publish'));
+    el('rollback-bundle').onclick = () => run(() => switchBundle('rollback'));
     el('recover').onclick = () => run(async () => {
+      if (switchingVersion || publishingCatalog) throw Object.assign(new Error('版本操作仍在执行，请等待完成再恢复'), {retryable: false});
       await api('/api/v1/admin/publication/recover', {method: 'POST', headers: admin()}); await publication();
     });
     const startup = run(async () => {

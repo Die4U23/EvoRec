@@ -42,7 +42,7 @@ function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFet
     document: {getElementById: element, createElement: tag => Object.assign(element(Symbol()), {tagName: tag.toUpperCase()})},
     crypto: {randomUUID: () => `batch-${nextId++}`},
     sessionStorage: {getItem: key => tabStorage.get(key) || null,
-      setItem: (key, value) => tabStorage.set(key, value)},
+      setItem: (key, value) => tabStorage.set(key, value), removeItem: key => tabStorage.delete(key)},
     setInterval: callback => { interval = callback; return 1; },
     clearInterval: () => { interval = null; },
     fetch: async (url, options) => {
@@ -73,7 +73,8 @@ function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFet
       if (recommendationFetch && url === '/api/v1/recommendations') return recommendationFetch(url, options);
       if (catalogFetch && url.startsWith('/api/v1/admin/catalog/') &&
           url !== '/api/v1/admin/catalog/file-import-jobs') return catalogFetch(url, options);
-      if (catalogFetch && url === '/api/v1/admin/publication') return catalogFetch(url, options);
+      if (catalogFetch && (url.startsWith('/api/v1/admin/publication') ||
+          url.startsWith('/api/v1/admin/bundles/'))) return catalogFetch(url, options);
       assert.equal(url, '/api/v1/admin/catalog/file-import-jobs');
       const reply = fileReplies.shift();
       if (reply instanceof Error) throw reply;
@@ -93,6 +94,222 @@ const recommendationOk = {ok: true, json: async () => ({request_id: 'request-1',
   fallback_reason: null, items: []})};
 
 const ok = value => ({ok: true, json: async () => value});
+const oldBundle = '11111111-1111-4111-8111-111111111111';
+const nextBundle = '22222222-2222-4222-8222-222222222222';
+const thirdBundle = '33333333-3333-4333-8333-333333333333';
+const publicationState = id => ok({active_bundle_id: id, admission_open: true,
+  exclusion_version: 0, pending_operation: null});
+const completedPublication = (options, target, replayed = false) => ok({
+  operation_id: JSON.parse(options.body).operation_id, active_bundle_id: target,
+  status: 'completed', replayed,
+});
+
+test('rollback control names its target and warns that deactivation is not undone', () => {
+  assert.match(html, /id="rollback-bundle"/);
+  assert.match(html, /回滚不会恢复下架商品/);
+});
+
+for (const mode of ['publish', 'rollback']) {
+  test(`${mode} lost response retains target, guard and operation across retry and reload`, async () => {
+    const storage = new Map(), posts = [];
+    let stateReads = 0;
+    const fetchPublication = (url, options) => {
+      if (url === '/api/v1/admin/publication') {
+        stateReads++;
+        return publicationState(posts.length ? thirdBundle : nextBundle);
+      }
+      assert.equal(url, `/api/v1/admin/bundles/${oldBundle}/${mode}`);
+      posts.push(options);
+      if (posts.length === 1) throw new Error('lost response');
+      return completedPublication(options, oldBundle, true);
+    };
+    const initial = page([], fetchPublication, [], null, null, storage);
+    await initial.ready; initial.element('admin-token').value = 'fixture-admin';
+    initial.element('bundle-id').value = oldBundle;
+    await initial.element(`${mode}-bundle`).onclick();
+    assert.match(initial.element('message').textContent, /lost response/);
+    const restored = page([], fetchPublication, [], null, null, storage);
+    await restored.ready; restored.element('admin-token').value = 'fixture-admin';
+    assert.equal(restored.element('bundle-id').value, oldBundle);
+    await restored.element(`${mode}-bundle`).onclick();
+    assert.equal(posts.length, 2);
+    assert.equal(posts[0].body, posts[1].body);
+    assert.equal(JSON.parse(posts[1].body).expected_active_bundle_id, nextBundle);
+    assert.equal(stateReads, 2, 'read once for guard, then current state after confirmed replay');
+    assert.match(restored.element('publication').textContent, new RegExp(thirdBundle));
+    assert.match(restored.element('version-operation').textContent, /已完成.*重放/);
+    assert.ok(![...storage.values()].join('').includes('fixture-admin'));
+  });
+}
+
+test('version operation excludes concurrent switches before its first state read finishes', async () => {
+  let resolveState;
+  const posts = [], p = page([], (url, options) => {
+    if (url === '/api/v1/admin/publication' && !posts.length)
+      return new Promise(resolve => { resolveState = resolve; });
+    if (url === '/api/v1/admin/publication') return publicationState(oldBundle);
+    posts.push({url, options}); return completedPublication(options, oldBundle);
+  });
+  await p.ready; p.element('admin-token').value = 'fixture-admin';
+  p.element('bundle-id').value = oldBundle;
+  const first = p.element('rollback-bundle').onclick(); await settle();
+  await p.element('publish-bundle').onclick();
+  resolveState(publicationState(nextBundle)); await first;
+  assert.equal(posts.length, 1);
+  assert.match(posts[0].url, /rollback$/);
+});
+
+test('uncertain version operation cannot silently change its target or action', async () => {
+  const posts = [], p = page([], (url, options) => {
+    if (url === '/api/v1/admin/publication') return publicationState(nextBundle);
+    posts.push(options); throw new Error('lost response');
+  });
+  await p.ready; p.element('admin-token').value = 'fixture-admin'; p.element('bundle-id').value = oldBundle;
+  await p.element('rollback-bundle').onclick();
+  p.element('bundle-id').value = thirdBundle;
+  await p.element('rollback-bundle').onclick();
+  p.element('bundle-id').value = oldBundle;
+  await p.element('publish-bundle').onclick();
+  assert.equal(posts.length, 1);
+  assert.match(p.element('message').textContent, /原目标与操作/);
+});
+
+test('guard rejection is visible and only a subsequent explicit click creates a fresh operation', async () => {
+  const posts = [], p = page([], (url, options) => {
+    if (url === '/api/v1/admin/publication') return publicationState(posts.length ? thirdBundle : nextBundle);
+    posts.push(options);
+    return posts.length === 1 ? {ok: false, status: 409, json: async () => ({error: {
+      code: 'publication_version_conflict', message: 'changed', retryable: false}})} : completedPublication(options, oldBundle);
+  });
+  await p.ready; p.element('admin-token').value = 'fixture-admin'; p.element('bundle-id').value = oldBundle;
+  await p.element('rollback-bundle').onclick();
+  assert.equal(posts.length, 1); assert.match(p.element('version-operation').textContent, /已拒绝/);
+  await p.element('rollback-bundle').onclick();
+  assert.equal(posts.length, 2);
+  const before = JSON.parse(posts[0].body), after = JSON.parse(posts[1].body);
+  assert.notEqual(before.operation_id, after.operation_id);
+  assert.equal(after.expected_active_bundle_id, thirdBundle);
+});
+
+test('failed post-success state refresh keeps operation for replay, not a fresh switch', async () => {
+  const posts = []; let reads = 0;
+  const p = page([], (url, options) => {
+    if (url === '/api/v1/admin/publication') {
+      if (++reads === 2) throw new Error('state unavailable');
+      return publicationState(nextBundle);
+    }
+    posts.push(options); return completedPublication(options, oldBundle, posts.length > 1);
+  });
+  await p.ready; p.element('admin-token').value = 'fixture-admin'; p.element('bundle-id').value = oldBundle;
+  await p.element('rollback-bundle').onclick();
+  await p.element('rollback-bundle').onclick();
+  assert.equal(posts.length, 2); assert.equal(posts[0].body, posts[1].body);
+});
+
+for (const [target, token, active, admission, pending] of [
+  ['not-a-uuid', 'fixture-admin', nextBundle, true, null],
+  [oldBundle, '', nextBundle, true, null],
+  [oldBundle, 'fixture-admin', oldBundle, true, null],
+  [oldBundle, 'fixture-admin', null, true, null],
+  [oldBundle, 'fixture-admin', nextBundle, false, null],
+  [oldBundle, 'fixture-admin', nextBundle, true, {operation_id:'other',status:'switched'}],
+]) {
+  test(`rollback refuses invalid target/token/state: ${target}/${!!token}/${active}/${admission}/${!!pending}`, async () => {
+    const p = page([], () => ok({active_bundle_id: active, admission_open: admission,
+      pending_operation: pending, exclusion_version: 0}));
+    await p.ready; p.element('bundle-id').value = target; p.element('admin-token').value = token;
+    await p.element('rollback-bundle').onclick();
+    assert.equal(p.requests.filter(r => r.options?.method === 'POST').length, 0);
+    assert.match(p.element('message').textContent, /操作失败/);
+  });
+}
+
+test('recovery does not replace an uncertain operation and catalog publish cannot bypass it', async () => {
+  const posts = [], p = page([], (url, options) => {
+    if (url.startsWith('/api/v1/admin/publication')) return publicationState(nextBundle);
+    posts.push(options); throw new Error('uncertain');
+  });
+  await p.ready; p.element('bundle-id').value = oldBundle; p.element('admin-token').value = 'fixture-admin';
+  await p.element('rollback-bundle').onclick();
+  await p.element('recover').onclick();
+  await p.element('publish-catalog').onclick();
+  assert.equal(posts.length, 1); assert.match(p.element('message').textContent, /原目标与操作/);
+  await p.element('rollback-bundle').onclick();
+  assert.equal(posts.length, 2); assert.equal(posts[0].body, posts[1].body);
+});
+
+test('mismatched successful response remains uncertain instead of clearing its replay identity', async () => {
+  const posts = [], storage = new Map(), p = page([], (url, options) => {
+    if (url === '/api/v1/admin/publication') return publicationState(nextBundle);
+    posts.push(options);
+    return ok({operation_id:'wrong',active_bundle_id:oldBundle,status:'completed'});
+  }, [], null, null, storage);
+  await p.ready; p.element('bundle-id').value = oldBundle; p.element('admin-token').value = 'fixture-admin';
+  await p.element('rollback-bundle').onclick();
+  assert.match(p.element('message').textContent, /响应身份不一致/);
+  assert.ok(storage.has('evorec.publication'));
+  await p.element('rollback-bundle').onclick();
+  assert.equal(posts[0].body, posts[1].body);
+});
+
+test('malformed stored version operation never restores a path or sends a POST', async () => {
+  for (const saved of ['{', JSON.stringify({action:'delete',target:oldBundle,operationId:'old',expected:nextBundle}),
+    JSON.stringify({action:'rollback',target:'../secret',operationId:'old',expected:nextBundle})]) {
+    const p = page([], null, [], null, null, new Map([['evorec.publication',saved]]));
+    await p.ready;
+    assert.equal(p.requests.filter(r => r.options?.method === 'POST').length, 0);
+    assert.equal(p.element('bundle-id').value, '');
+  }
+});
+
+test('blocked storage warns against refresh but memory retry keeps the original identity', async () => {
+  const storage = new Map(); storage.set = () => { throw new Error('storage blocked'); };
+  const posts = [], p = page([], (url, options) => {
+    if (url === '/api/v1/admin/publication') return publicationState(nextBundle);
+    posts.push(options); throw new Error('lost');
+  }, [], null, null, storage);
+  await p.ready; p.element('bundle-id').value = oldBundle; p.element('admin-token').value = 'fixture-admin';
+  await p.element('rollback-bundle').onclick();
+  assert.match(p.element('version-operation').textContent, /请勿刷新/);
+  await p.element('rollback-bundle').onclick();
+  assert.equal(posts[0].body, posts[1].body);
+});
+
+test('completed switch unlocks target and the next explicit switch gets a fresh guard and identity', async () => {
+  const posts = [], storage = new Map(), p = page([], (url, options) => {
+    if (url === '/api/v1/admin/publication') return publicationState(posts.length ? oldBundle : nextBundle);
+    posts.push(options); return completedPublication(options, posts.length === 1 ? oldBundle : thirdBundle);
+  }, [], null, null, storage);
+  await p.ready; p.element('bundle-id').value = oldBundle; p.element('admin-token').value = 'fixture-admin';
+  await p.element('rollback-bundle').onclick();
+  assert.equal(p.element('bundle-id').readOnly, false);
+  assert.equal(storage.has('evorec.publication'), false);
+  p.element('bundle-id').value = thirdBundle;
+  await p.element('publish-bundle').onclick();
+  const before = JSON.parse(posts[0].body), after = JSON.parse(posts[1].body);
+  assert.notEqual(before.operation_id, after.operation_id);
+  assert.equal(after.expected_active_bundle_id, oldBundle);
+});
+
+test('catalog publication in flight prevents an advanced switch or concurrent recovery', async () => {
+  let complete;
+  const p = page([], (url, options) => {
+    if (url === '/api/v1/admin/catalog/builds/build-1/publish')
+      return new Promise(resolve => { complete = resolve; });
+    if (url === '/api/v1/admin/catalog/builds/build-1') return ok({
+      build_id:'build-1',status:'ready',publication_status:complete ? 'active' : 'ready'});
+    if (url.startsWith('/api/v1/admin/catalog/builds/build-1/items?'))
+      return ok({total_count:0,offset:0,items:[]});
+    assert.equal(url, '/api/v1/admin/publication'); return publicationState(nextBundle);
+  });
+  await p.ready; p.element('catalog-build').value = 'build-1';
+  await p.element('refresh-build').onclick();
+  const publishing = p.element('publish-catalog').onclick(); await settle();
+  p.element('bundle-id').value = oldBundle; p.element('admin-token').value = 'fixture-admin';
+  await p.element('rollback-bundle').onclick(); await p.element('recover').onclick();
+  assert.equal(p.requests.filter(r => r.options?.method === 'POST').length, 1);
+  complete(ok({status:'completed'})); await publishing;
+});
 const recItems = ids => ({request_id: 'metadata-request', actual_strategy: 'dense',
   bundle_id: 'bundle-real', model_version: 'model-real',
   items: ids.map(item_id => ({item_id, score: 0.125, source: 'controlled-dense'}))});
