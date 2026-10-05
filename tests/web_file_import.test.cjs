@@ -67,7 +67,7 @@ function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFet
       if (url.startsWith('/api/v1/admin/catalog/file-import-jobs/') && !options?.method)
         return fileStatusFetch ? fileStatusFetch(url) :
           {ok: false, status: 404, json: async () => ({error: {code: 'file_job_not_found'}})};
-      if (comparisonFetch && (url.startsWith('/api/v1/strategy-comparison') ||
+      if (comparisonFetch && (url === '/api/v1/sessions' || url.startsWith('/api/v1/strategy-comparison') ||
         url.startsWith('/api/v1/sessions/')))
         return comparisonFetch(url, options);
       if (recommendationFetch && url === '/api/v1/recommendations') return recommendationFetch(url, options);
@@ -296,6 +296,53 @@ test('invalid fresh recommendation count sends no request and cannot freeze a ba
   assert.equal(JSON.parse(posts[0].body).k, 3);
 });
 
+test('start and reset automatic requests coalesce with a rapid manual click', async () => {
+  const posts = [];
+  let finish;
+  const p = page([], null, [], null, () => ok(recommendationSession), new Map(), (url, options) => {
+    posts.push(options);
+    return new Promise(resolve => { finish = resolve; });
+  });
+  await p.ready;
+  p.element('profile').value = 'new';
+  p.element('strategy').value = 'dense'; p.element('count').value = '4';
+  for (const action of ['new-session', 'reset-session']) {
+    const automatic = p.element(action).onclick();
+    await settle();
+    const beforeClick = posts.length;
+    await p.element('recommend').onclick();
+    assert.equal(posts.length, beforeClick);
+    finish(recommendationOk);
+    await automatic;
+    assert.equal(p.element('message').textContent, '');
+  }
+  assert.equal(posts.length, 2);
+  assert.notEqual(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
+});
+
+test('rapid clicks coalesce an active recommendation and a failed attempt keeps its retry key', async () => {
+  const posts = [];
+  let finish;
+  const p = page([], null, [], null, null, new Map(), (url, options) => {
+    posts.push(options);
+    return posts.length === 1 ? new Promise(resolve => { finish = resolve; }) : recommendationOk;
+  });
+  await p.ready; p.setSession(recommendationSession);
+  p.element('strategy').value = 'dense'; p.element('count').value = '4';
+  const first = p.element('recommend').onclick();
+  await p.element('recommend').onclick();
+  assert.equal(posts.length, 1, 'same pending key must not be posted concurrently');
+  finish({ok: false, status: 409, json: async () => ({error: {
+    code: 'recommendation_in_progress', message: 'still executing', retryable: true}})});
+  await first;
+  assert.match(p.element('message').textContent, /still executing/);
+  await p.element('recommend').onclick();
+  assert.equal(posts.length, 2);
+  assert.equal(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
+  assert.equal(posts[0].body, posts[1].body);
+  assert.equal(p.element('message').textContent, '');
+});
+
 test('unconfirmed recommendation survives refresh with its original key and input', async () => {
   const storage = new Map(), posts = [];
   const sessionFetch = () => ({ok: true, json: async () => recommendationSession});
@@ -378,7 +425,7 @@ for (const lateOk of [true, false]) {
   });
 }
 
-test('same-key late in-progress error cannot erase a completed replay', async () => {
+test('coalesced rapid success leaves no error and the next request gets a fresh key', async () => {
   let resolveOld;
   const posts = [];
   const p = page([], null, [], null, null, new Map(), (url, options) => {
@@ -389,12 +436,14 @@ test('same-key late in-progress error cannot erase a completed replay', async ()
   p.element('strategy').value = 'popular'; p.element('count').value = '4';
   const old = p.element('recommend').onclick();
   await p.element('recommend').onclick();
-  assert.equal(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
-  resolveOld({ok: false, status: 409, json: async () => ({error: {
-    code: 'recommendation_in_progress', message: 'late processing', retryable: true}})});
+  assert.equal(posts.length, 1);
+  resolveOld(recommendationOk);
   await old;
   assert.match(p.element('recommendations').children[0].textContent, /返回 0\/4/);
   assert.equal(p.element('message').textContent, '');
+  await p.element('recommend').onclick();
+  assert.equal(posts.length, 2);
+  assert.notEqual(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
 });
 
 test('strategy comparison preview uses one session snapshot and labels fallback honestly', async () => {
