@@ -8,6 +8,12 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'web', 'index.html'), 'u
 const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(script, 'inline application script exists');
 
+test('sample profile is fixed demo history, not a real user or a fabricated R06 item', () => {
+  assert.ok(html.includes('示例用户（固定演示历史）'));
+  assert.ok(html.includes('并非真实用户画像'));
+  assert.ok(html.includes('固定商品下架或表示变动时明确拒绝'));
+});
+
 function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFetch = null,
   comparisonFetch = null, tabStorage = new Map(), recommendationFetch = null, r06Serving = false) {
   const elements = new Map();
