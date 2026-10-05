@@ -25,6 +25,8 @@ class Recommend:
                 batch = await self.ranking.rank(context, command)
                 if batch.binding != context.binding:
                     raise SnapshotMismatch("ranking result does not match the admitted snapshot")
+                if batch.model_version != (context.model.model_version if context.model else None):
+                    raise SnapshotMismatch("ranking model differs from the admitted snapshot")
                 if (
                     command.strategy != Strategy.ADAPTIVE
                     and batch.actual_strategy != command.strategy
@@ -38,6 +40,8 @@ class Recommend:
                     actual_strategy=batch.actual_strategy,
                     items=select_results(batch.candidates, context, command.k),
                     fallback_reason=batch.fallback_reason,
+                    model_version=batch.model_version,
+                    captured_at_ms=context.model.timestamp_ms if context.model else None,
                 )
                 await self.recorder.save(result)
                 return result

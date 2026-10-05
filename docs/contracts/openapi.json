@@ -66,6 +66,11 @@
             "title": "Persistence",
             "type": "boolean"
           },
+          "r06_serving": {
+            "default": false,
+            "title": "R06 Serving",
+            "type": "boolean"
+          },
           "recommendations": {
             "const": true,
             "default": true,
@@ -651,6 +656,17 @@
       },
       "ComparisonInputSnapshotResponse": {
         "properties": {
+          "catalog_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Sha256"
+          },
           "eligible_items": {
             "items": {
               "type": "string"
@@ -665,6 +681,20 @@
             "title": "Favorite Items",
             "type": "array"
           },
+          "full_seen": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Seen"
+          },
           "hidden_items": {
             "items": {
               "type": "string"
@@ -678,6 +708,17 @@
             },
             "title": "History",
             "type": "array"
+          },
+          "manifest_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest Sha256"
           },
           "profile_id": {
             "title": "Profile Id",
@@ -888,6 +929,17 @@
             "title": "Bundle Id",
             "type": "string"
           },
+          "captured_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At Ms"
+          },
           "common_item_ids": {
             "items": {
               "type": "string"
@@ -907,6 +959,17 @@
           "history_version": {
             "title": "History Version",
             "type": "integer"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
           },
           "persisted": {
             "const": false,
@@ -957,6 +1020,17 @@
             "title": "Bundle Id",
             "type": "string"
           },
+          "captured_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At Ms"
+          },
           "common_item_ids": {
             "items": {
               "type": "string"
@@ -979,6 +1053,17 @@
           },
           "input_snapshot": {
             "$ref": "#/components/schemas/ComparisonInputSnapshotResponse"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
           },
           "persisted": {
             "const": true,
@@ -1571,6 +1656,17 @@
             "title": "Bundle Id",
             "type": "string"
           },
+          "captured_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At Ms"
+          },
           "exclusion_version": {
             "title": "Exclusion Version",
             "type": "integer"
@@ -1596,6 +1692,17 @@
             },
             "title": "Items",
             "type": "array"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
           },
           "request_id": {
             "format": "uuid",
@@ -1841,7 +1948,7 @@
     }
   },
   "info": {
-    "description": "本地推荐与管理演示。未配置 PostgreSQL：会话和推荐结果只保存在当前进程。受控 CPU bundle 可发布；真实 R06 研究模型尚未在线接入。",
+    "description": "本地推荐与管理演示。未配置 PostgreSQL：会话和推荐结果只保存在当前进程。受控 CPU bundle 可发布；R06 冻结语料服务须显式启用并批准发布，不支持任意新商品。",
     "title": "EvoRec Demo API",
     "version": "0.0.1"
   },

@@ -21,6 +21,7 @@ def test_repository_migrations_have_unique_ordered_versions_and_checksums():
     assert migrations[6].path.name == "0007_comparison_history_index.sql"
     assert migrations[7].path.name == "0008_comparison_jobs.sql"
     assert migrations[8].path.name == "0009_r06_catalog_preparation.sql"
+    assert migrations[9].path.name == "0010_r06_request_snapshot.sql"
 
 
 def test_invalid_or_duplicate_migration_names_are_rejected(tmp_path: Path):

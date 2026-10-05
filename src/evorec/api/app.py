@@ -35,6 +35,7 @@ from evorec.domain.errors import (
     ManagementError,
     ResourceNotFound,
     SessionEpochConflict,
+    SnapshotMismatch,
 )
 from evorec.domain.models import (
     CreatedSession,
@@ -64,6 +65,7 @@ class Capabilities(BaseModel):
     persistence: bool = False
     recommendations: Literal[True] = True
     catalog_publication: bool = False
+    r06_serving: bool = False
     model_training: Literal[False] = False
     frontend: Literal[True] = True
 
@@ -110,6 +112,8 @@ class RecommendationResponse(BaseModel):
     requested_strategy: str
     actual_strategy: str
     fallback_reason: str | None
+    model_version: str | None = None
+    captured_at_ms: int | None = None
     items: list[RecommendationItemResponse]
 
 
@@ -130,6 +134,8 @@ class ComparisonPreviewResponse(BaseModel):
     bundle_id: UUID
     exclusion_version: int
     snapshot_at: datetime
+    model_version: str | None = None
+    captured_at_ms: int | None = None
     common_item_ids: list[str]
     strategies: list[ComparedStrategyResponse]
     persisted: Literal[False] = False
@@ -141,6 +147,9 @@ class ComparisonInputSnapshotResponse(BaseModel):
     favorite_items: list[str]
     profile_id: str
     eligible_items: list[str]
+    full_seen: list[str] | None = None
+    catalog_sha256: str | None = None
+    manifest_sha256: str | None = None
 
 
 class ComparisonSavedResponse(ComparisonPreviewResponse):
@@ -360,6 +369,8 @@ def _recommendation_response(result: RecommendationResult) -> RecommendationResp
         requested_strategy=result.requested_strategy,
         actual_strategy=result.actual_strategy,
         fallback_reason=result.fallback_reason,
+        model_version=result.model_version,
+        captured_at_ms=result.captured_at_ms,
         items=[
             RecommendationItemResponse(item_id=item.item_id, score=item.score, source=item.source)
             for item in result.items
@@ -417,14 +428,18 @@ def create_app(
                 await asyncio.to_thread(demo.manager.recover)
             except psycopg.Error:
                 pass  # Liveness remains available; readiness reports the database failure.
-        yield
+        try:
+            yield
+        finally:
+            if demo.persistent:
+                await demo.backend.aclose()
 
     app = FastAPI(
         title="EvoRec Demo API",
         version=__version__,
         description=(
             f"本地推荐与管理演示。{storage_description}"
-            "受控 CPU bundle 可发布；真实 R06 研究模型尚未在线接入。"
+            "受控 CPU bundle 可发布；R06 冻结语料服务须显式启用并批准发布，不支持任意新商品。"
         ),
         lifespan=lifespan,
     )
@@ -432,6 +447,10 @@ def create_app(
     @app.exception_handler(psycopg.Error)
     async def database_error(_, __):
         return _error(503, "database_unavailable", "database is unavailable", retryable=True)
+
+    @app.exception_handler(SnapshotMismatch)
+    async def snapshot_error(_, __):
+        return _error(503, "snapshot_mismatch", "ranking differs from the captured input")
 
     def admin_guard(token: str | None) -> JSONResponse | None:
         if demo.manager is None:
@@ -472,6 +491,7 @@ def create_app(
                           and len(configured_token) >= 32)
         return SystemInfo(capabilities=Capabilities(
             persistence=demo.persistent, catalog_publication=publishing,
+            r06_serving=bool(demo.persistent and demo.backend.r06_enabled),
         ))
 
     @app.get("/app", tags=["web"], include_in_schema=False)
@@ -573,6 +593,9 @@ def create_app(
             return _error(409, "recommendation_in_progress", str(exc), request_id, retryable=True)
         except IdempotencyConflict as exc:
             return _error(409, "recommendation_idempotency_conflict", str(exc), request_id)
+        except ManagementError as exc:
+            return _error(exc.status_code, exc.code, str(exc), request_id,
+                          retryable=exc.status_code in {429, 503})
         except RuntimeError:
             return _error(503, "catalog_unavailable", "catalog is not ready", request_id,
                           retryable=True)
@@ -623,6 +646,8 @@ def create_app(
             session_epoch=binding.session_epoch, history_version=binding.history_version,
             bundle_id=binding.bundle_id, exclusion_version=binding.exclusion_version,
             snapshot_at=result.snapshot_at, common_item_ids=list(result.common_item_ids),
+            model_version=result.context.model.model_version if result.context.model else None,
+            captured_at_ms=result.context.model.timestamp_ms if result.context.model else None,
             strategies=[ComparedStrategyResponse(
                 requested_strategy=entry.requested_strategy,
                 actual_strategy=entry.actual_strategy,
@@ -642,6 +667,9 @@ def create_app(
                 history=list(session.history), hidden_items=sorted(session.hidden_items),
                 favorite_items=sorted(session.favorite_items), profile_id=session.profile_id,
                 eligible_items=sorted(catalog.eligible_items),
+                full_seen=sorted(result.context.model.full_seen) if result.context.model else None,
+                catalog_sha256=result.context.model.catalog_sha256 if result.context.model else None,
+                manifest_sha256=result.context.model.manifest_sha256 if result.context.model else None,
             ),
         })
 
@@ -665,6 +693,9 @@ def create_app(
             return _error(409, "idempotency_conflict", str(exc), comparison_id)
         except ComparisonStorageUnavailable as exc:
             return _error(503, "comparison_storage_unavailable", str(exc), comparison_id)
+        except ManagementError as exc:
+            return _error(exc.status_code, exc.code, str(exc), comparison_id,
+                          retryable=exc.status_code in {429, 503})
         except RuntimeError:
             return _error(503, "catalog_unavailable", "catalog is not ready", comparison_id,
                           retryable=True)
