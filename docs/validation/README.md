@@ -4,6 +4,7 @@
 
 | 范围 | 首选记录 | 进一步检查 |
 | --- | --- | --- |
+| 当前 Demo 与训练热门基线 | [分层验收与完整包超时](demo-baseline-20261005.json) | [范围出口](../product/demo-scope.md)；组件/回归通过不代表完整包服务通过 |
 | 仓库交付卫生 | [仓库检查](repository-hygiene-cleanup.json) | [测试输出](repository-hygiene-tests.xml)、[仓库政策](../08-repository-policy.md) |
 | M0 框架和接口 | [框架检查](m0-framework.json)、[架构检查](architecture-checks.json) | [M0 测试](m0-tests.xml) |
 | M11 PostgreSQL | [实库迁移](m11-database-checks.json)、[服务接口](m11-postgres-api-checks.json) | 环境条件见[运行说明](../../README.md) |

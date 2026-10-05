@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "date_local": "2026-10-05",
+  "scope": "Correct frozen training-popular semantics and truthful Demo scope/strategy labels; not a complete Demo release",
+  "main_base": "7bd42d49053ab41ddc0f2e3a43d8e1e38bb1f602",
+  "executed_source_commit": "97366a86ad0d044921a2d7f546a5d649651a7bf5",
+  "evidence_followup_changes_execution_source": false,
+  "implementation": {
+    "baseline": "RecentPopular-365d, rating >= 4, frozen at original training cutoff",
+    "raw_approved_decay_counts_used": true,
+    "zero_prior_items_not_filled": true,
+    "full_seen_eligibility_and_strict_time_filtered_before_top_k": true,
+    "true_score_ties_resolve_by_sorted_item_id": true,
+    "counts_retained_as_bounded_immutable_tuple": true,
+    "no_per_request_sorting": true,
+    "existing_retrieval_normalization_and_dense_weights_unchanged": true,
+    "new_candidate_source": "r06-training-recent-popular-v1",
+    "legacy_candidate_source": "r06-frozen-popular-baseline",
+    "completed_legacy_record_replay_unchanged": "Verified with an explicit synthetic historical SQL record, not by executing the old full service",
+    "adaptive_fixed_dense_alias_disclosed": true,
+    "pure_frequency_popularity_reproduction_claimed": false,
+    "scores_are_probabilities_or_live_heat": false
+  },
+  "approved_artifact": {
+    "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+    "item_count": 137249,
+    "artifact_identity_unchanged": true,
+    "retrained": false,
+    "new_test_target_quality_evaluation": false
+  },
+  "full_corpus_popular_component": {
+    "status": "passed",
+    "observation_origin": "Actual inline command stdout, independently recorded; not verify_r06_online whole-service success",
+    "local_observation": "artifacts/replays/demo-baseline-popular-20261005-a/component-observation.json",
+    "observation_sha256": "fe62809a154c1e5271d45e91c5c514726440263582ca83cdfdcfbff97bb6e50e",
+    "backends": ["stdlib", "numpy"],
+    "timestamp_ms": 1791193697800,
+    "returned_items": 10,
+    "raw_statistics_top10_exact": true,
+    "full_seen_filter_exact": true,
+    "empty_eligibility_exact": true,
+    "source_working_tree_clean_before_and_after": true,
+    "asgi_http_or_browser_acceptance": false
+  },
+  "full_service_attempts": [
+    {
+      "local_directory": "artifacts/replays/demo-baseline-numpy-20261005-a",
+      "observation_sha256": "9e3621b266257b63b33ee764a85a67ba0aa5ded70438f458c6e60269737884c7",
+      "backend": "numpy",
+      "status": "failed",
+      "code": "recommendation_timeout",
+      "exact_stage": "Not recorded by early CLI",
+      "source_current_archived_git_exact": 50,
+      "verification_json_generated": false
+    },
+    {
+      "local_directory": "artifacts/replays/demo-baseline-stdlib-20261005-a",
+      "observation_sha256": "723047803420b33eb3619a520aafc42eda73773ef15b47a7037e8235ae7b871f",
+      "backend": "stdlib",
+      "status": "failed",
+      "code": "recommendation_timeout",
+      "exact_stage": "Not recorded by early CLI",
+      "source_current_archived_git_exact": 50,
+      "verification_json_generated": false
+    },
+    {
+      "local_directory": "artifacts/replays/demo-baseline-numpy-20261005-b",
+      "observation_sha256": "89ad47af34509caa9ceb9f889c7656901b5964b70425f87792b9513ed68dfd1c",
+      "backend": "numpy",
+      "status": "failed",
+      "code": "recommendation_timeout",
+      "exact_stage": "Initial dense ASGI request; before new popular verification",
+      "source_current_archived_git_exact": 50,
+      "verification_json_generated": false
+    }
+  ],
+  "full_service_shared_boundaries": {
+    "observation_origin": "Failure CLI/direct-call output recorded separately, not verifier-generated pass reports",
+    "api_deadline_seconds": 2.0,
+    "deadline_increased": false,
+    "root_cause_confirmed": false,
+    "full_service_pass_claimed_this_turn": false,
+    "historical_pass_reports_not_overwritten": true
+  },
+  "tests": {
+    "intentional_red_before_fix": {
+      "local_report": "tmp/demo-baseline-red-20261005-a.xml",
+      "report_sha256": "e3e136a2c3556457d3a99ae5bdda0d02fcf4317d6bdadcc7463c6680ee33d183",
+      "tests": 2, "failures": 2, "errors": 0, "skipped": 0,
+      "junit_seconds": 6.279,
+      "source_boundary": "New uncommitted tests against pre-fix production source from main base; this is not a clean recorded model experiment"
+    },
+    "final_pure_service_focused": {
+      "local_report": "tmp/demo-baseline-target-20261005-b.xml",
+      "report_sha256": "a605e29bd42d0c3a126d845008a8141050ca75c66465eb4db423b4a0c54fb453",
+      "tests": 140, "failures": 0, "errors": 0, "skipped": 0,
+      "junit_seconds": 176.852
+    },
+    "service_ci_list": {
+      "local_report": "tmp/demo-baseline-service-20261005-a.xml",
+      "report_sha256": "cd4affa14ea3d308a592b60d1ae2632ddbfdbec4ef610d2a9780b8473241a182",
+      "workflow_files": 28,
+      "tests": 685, "failures": 0, "errors": 0, "skipped": 0,
+      "junit_seconds": 631.164,
+      "numpy_installed": false
+    },
+    "optional_ci_list": {
+      "local_report": "tmp/demo-baseline-optional-20261005-b.xml",
+      "report_sha256": "0ae8fbbf6b1cdc14e0a960d23882f8077ecc6762c459649c97f93eabebbeaf21",
+      "workflow_files": 4,
+      "tests": 151, "failures": 0, "errors": 0, "skipped": 0,
+      "junit_seconds": 35.609
+    },
+    "page_scripts": {"tests": 34, "failures": 0, "cancelled": 0, "skipped": 0, "duration_ms": 201.1891},
+    "new_backend_and_optional_cases": 17,
+    "new_page_cases": 3,
+    "injected_wrong_runtime_popular_output_rejected_by_independent_file_oracle": true,
+    "database_suites_serialized": true,
+    "overlapping_suites_not_added": true,
+    "full_research_suite_this_slice": "Not run; no research training code changed. Service CI list, focused runtime and optional numerical environments verified instead",
+    "setup_corrections": "One optional invocation used a nonexistent filename and ran no tests; corrected to the actual four-file CI union before reporting green results"
+  },
+  "checks": {
+    "pip_check": {"service": "passed", "research": "passed", "accelerated": "passed"},
+    "exported_api_contracts": {"files": 4, "reexport_matches_git_text": true},
+    "remaining_test_schema_count": 0,
+    "repository_hygiene": {
+      "status": "passed", "scope": "Git index only", "local_report": "tmp/demo-baseline-hygiene-20261005-c.json",
+      "tracked_files": 382, "local_links_checked": 497, "python_files_parsed": 161,
+      "no_tracked_local_materials_or_raw_artifacts": true,
+      "credential_scan": "Common token and private-key signatures only; not an exhaustive secret audit"
+    },
+    "remote_ci": "Not asserted by this local pre-push evidence; inspect current PR head checks"
+  },
+  "review": {
+    "mode": "Main-thread quality, performance and reuse review; required agent_type unavailable",
+    "claims_independent_agent_review": false,
+    "quality": "Literal raw-score goldens, no zero-prior filler, legacy replay and explicit strategy/source semantics",
+    "performance": "Bounded immutable raw-count retention; scan pre-sorted positive indices rather than sorting each request. Full-corpus service timeout remains unresolved",
+    "reuse": "Shared bounded eligibility guards, existing availability/full-seen rules, CPU queue, recorder and page rendering",
+    "preliminary_suites_not_final_source_proof": true
+  },
+  "boundaries": [
+    "Baseline scores are raw frozen training decay counts, not probabilities, live feedback or pure-frequency Popularity",
+    "Model artifact identity is unchanged but corrected new popular requests can differ across software versions; completed records retain old outputs",
+    "Node VM page tests are not real browser tests; full-corpus component tests are not whole-service tests",
+    "Synthetic PostgreSQL/ASGI regression tests do not establish the full 137249-item request deadline",
+    "Three full service failures remain failures even though local regression and CI may be green",
+    "No port-8000 restart, current business-schema migration or active-model switch",
+    "No real network, browser, load/SLA or new research quality acceptance in this slice",
+    "Original full PRD and complete internship Demo are not marked done; independent demo configuration and delivery remain pending",
+    "All temporary owned database schemas were removed; ignored raw observations and draft HTTP utility are preserved locally"
+  ]
+}
