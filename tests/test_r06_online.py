@@ -19,6 +19,7 @@ from evorec.domain.errors import IdempotencyReplay, ManagementError, SnapshotMis
 from evorec.domain.models import FeedbackCommand, FeedbackKind, RecommendationCommand, Strategy
 from evorec.infrastructure.comparison_store import decode_result, encode_result
 from evorec.infrastructure.postgres import PostgresDemoBackend
+from evorec.infrastructure import r06_admission
 from evorec.infrastructure.r06_admission import ManagedR06Runtime, restore_request
 from evorec.infrastructure.r06_serving import R06SnapshotRanker
 from evorec.infrastructure.r06_async import R06CPUQueue
@@ -64,6 +65,60 @@ def test_popular_uses_training_heat_not_item_id_or_zero_prior(online):
         assert all(i.source == "r06-training-recent-popular-v1" for i in result.items)
         assert result.actual_strategy == Strategy.POPULAR and result.fallback_reason is None
         assert result.model_version == app.backend.runtime.bundle.model_version
+    asyncio.run(run())
+
+
+def test_full_catalog_capture_restore_reuse_seal_only_after_actual_guards(online, monkeypatch):
+    app, _, _ = online
+    monkeypatch.setattr(r06_admission, "_seal", lambda *args: pytest.fail("full catalog rehashed"))
+    async def run():
+        command = await _command(app)
+        context = await app.backend.snapshot_for_comparison(command)
+        assert context.model.catalog_sha256 == app.backend.runtime.bundle.full_catalog_seal
+        assert restore_request(app.backend.runtime.bundle, context).context is context
+        # Same cardinality is insufficient: a forged new ID must fail first.
+        eligible = (context.catalog.eligible_items - {"a"}) | {"new"}
+        hostile = replace(context, catalog=replace(context.catalog, eligible_items=eligible))
+        with pytest.raises(ManagementError) as error:
+            restore_request(app.backend.runtime.bundle, hostile)
+        assert error.value.code == "r06_snapshot_changed"
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("active", [frozenset(), frozenset({"b", "c"})])
+def test_subset_capture_restore_compute_exact_seal_and_reject_full_seal(online, active):
+    import hashlib
+    app, _, _ = online
+    bundle = app.backend.runtime.bundle
+    with app.backend._connect() as c:
+        c.execute("UPDATE items SET is_active=(item_id=ANY(%s))", (list(active),))
+    async def run():
+        command = await _command(app)
+        context = await app.backend.snapshot_for_comparison(command)
+        expected = hashlib.sha256(json.dumps(["r06-frozen-bundle-v1", bundle.manifest_sha256,
+            sorted((item, bundle.catalog_item_sha256[item]) for item in active)],
+            ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+        assert context.catalog.eligible_items == active
+        assert context.model.catalog_sha256 == expected != bundle.full_catalog_seal
+        assert restore_request(bundle, context).context is context
+        forged = replace(context, model=replace(context.model, catalog_sha256=bundle.full_catalog_seal))
+        with pytest.raises(ManagementError) as error:
+            restore_request(bundle, forged)
+        assert error.value.code == "r06_snapshot_changed"
+    asyncio.run(run())
+
+
+def test_full_catalog_cache_does_not_approve_deleted_ordered_member(online):
+    app, identity, _ = online
+    with app.backend._connect() as c:
+        c.execute("DELETE FROM bundle_items WHERE bundle_id=%s AND item_id='a'", (identity,))
+    async def run():
+        command = await _command(app)
+        with pytest.raises(ManagementError) as error:
+            await app.recommend.execute(command)
+        assert error.value.code == "bundle_members_changed"
+        with app.backend._connect() as c:
+            assert c.execute("SELECT count(*) AS n FROM recommendation_requests").fetchone()["n"] == 0
     asyncio.run(run())
 
 

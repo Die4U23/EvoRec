@@ -105,6 +105,31 @@ def test_self_contained_copy_identity_and_real_scoring(package, tmp_path):
         bundle.manifest_sha256 = "a"*64
 
 
+def test_full_catalog_seal_preserves_old_canonical_bytes_and_owns_mapping(package):
+    bundle = _load(package)
+    identities = dict(bundle.catalog_item_sha256)
+    independent = hashlib.sha256(json.dumps(
+        [module.KIND, bundle.manifest_sha256, sorted(identities.items())],
+        ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+    assert bundle.full_catalog_seal == independent
+    copied = replace(bundle, catalog_item_sha256=identities)
+    identities["a"] = "0"*64
+    assert copied.full_catalog_seal == independent
+    assert copied.catalog_item_sha256["a"] == bundle.catalog_item_sha256["a"]
+    assert replace(bundle, manifest_sha256="b"*64).full_catalog_seal != independent
+    with pytest.raises(FrozenInstanceError):
+        bundle.full_catalog_seal = "0"*64
+
+
+@pytest.mark.parametrize("identities", [[], [("中文", "a"*64), ("alpha", "b"*64)],
+                                       [("a", "1"*64), ("a", "1"*64)]])
+def test_catalog_seal_canonical_encoding_matches_independent_legacy_formula(identities):
+    # Duplicate identities must not silently become a full-set cached seal.
+    independent = hashlib.sha256(json.dumps([module.KIND, "c"*64, sorted(identities)],
+        ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+    assert module.catalog_seal("c"*64, identities[::-1]) == independent
+
+
 @pytest.mark.parametrize("change", [
     lambda rows: rows[:-1], lambda rows: rows + rows[:1],
     lambda rows: (replace(rows[0], text="changed"), *rows[1:]),

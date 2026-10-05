@@ -178,7 +178,8 @@ def test_legacy_unmarked_execution_is_not_declared_dead_and_can_complete(recover
     result = RecommendationResult(context.binding, command.strategy, batch.actual_strategy,
                                   select_results(batch.candidates, context, command.k), batch.fallback_reason)
     asyncio.run(application.backend.save(result))  # Old executor compatibility.
-    assert asyncio.run(post(application, command)).status_code == 200
+    replay = asyncio.run(post(application, command))
+    assert replay.status_code == 200, replay.json()
     assert_unlocked(application.backend, command)
 
 

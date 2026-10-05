@@ -6,14 +6,12 @@ Database ownership is the trust boundary, not a cryptographic signature.
 """
 
 from dataclasses import dataclass
-import hashlib
-import json
 from types import MappingProxyType
 from typing import Mapping
 
 from evorec.domain.errors import ManagementError
 from evorec.domain.models import ModelSnapshot
-from evorec.infrastructure.r06_bundle import KIND, FrozenCatalogItem, FrozenR06Bundle, _item_digest
+from evorec.infrastructure.r06_bundle import KIND, FrozenCatalogItem, FrozenR06Bundle, _item_digest, catalog_seal
 from evorec.infrastructure.r06_serving import FrozenR06Request
 from evorec.infrastructure.residual_ranker import ControlledLoadError
 
@@ -61,9 +59,7 @@ def decode_model(data):
 
 
 def _seal(bundle, identities):
-    raw = json.dumps([KIND, bundle.manifest_sha256, sorted(identities)],
-                     ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(raw).hexdigest()
+    return catalog_seal(bundle.manifest_sha256, identities)
 
 
 def restore_request(bundle, context):
@@ -72,9 +68,14 @@ def restore_request(bundle, context):
     if (model is None or context.catalog.bundle_id != bundle.bundle_id
             or model.manifest_sha256 != bundle.manifest_sha256
             or model.model_version != bundle.model_version
-            or not context.catalog.eligible_items <= bundle.catalog_item_sha256.keys()
-            or model.catalog_sha256 != _seal(bundle, [(item, bundle.catalog_item_sha256[item])
-                                                    for item in context.catalog.eligible_items])):
+            or not context.catalog.eligible_items <= bundle.catalog_item_sha256.keys()):
+        raise ManagementError("r06_snapshot_changed", "frozen model input identity differs", 503)
+    # Subset + equal cardinality proves exact full coverage. A same-size set
+    # containing a new ID was already rejected, never approved by size alone.
+    eligible = context.catalog.eligible_items
+    seal = (bundle.full_catalog_seal if len(eligible) == len(bundle.catalog_item_sha256)
+            else _seal(bundle, [(item, bundle.catalog_item_sha256[item]) for item in eligible]))
+    if model.catalog_sha256 != seal:
         raise ManagementError("r06_snapshot_changed", "frozen model input identity differs", 503)
     return validate_captured_context(bundle, context)
 
@@ -133,7 +134,11 @@ def capture_model(connection, runtime, session, catalog, rows):
     timestamp = connection.execute(
         "SELECT floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint AS timestamp_ms",
     ).fetchone()["timestamp_ms"]
+    # Actual ordered membership, text/time and eligible coverage were checked
+    # above. Only their immutable canonical full-set digest is reused.
+    seal = (bundle.full_catalog_seal if len(identities) == len(bundle.catalog_item_sha256)
+            else _seal(bundle, identities))
     try:
-        return ModelSnapshot(bundle.manifest_sha256, bundle.model_version, timestamp, seen, _seal(bundle, identities))
+        return ModelSnapshot(bundle.manifest_sha256, bundle.model_version, timestamp, seen, seal)
     except ValueError as error:
         raise ManagementError("r06_input_limit", "full seen input exceeds the serving limits", 422) from error

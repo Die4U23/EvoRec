@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "date_local": "2026-10-05",
+  "scope": "Bounded full-catalog seal reuse; full-corpus ASGI acceptance, not a complete Demo release",
+  "main_base": "734e1201d82cbf4cab4d38e7cc9a997692800dc9",
+  "diagnostic_checkpoint": "cba1a03c25da9047794f31014654e07bb4d8e4b3",
+  "implementation_checkpoint": "d97994b4994e61c337bf7d310ca6872ee04cd608",
+  "replay_assertion_diagnostic_checkpoint": "d8bc15500bafab0eca52170a00f5e22eefb91d96",
+  "post_acceptance_changed_source_files": ["tests/test_recommendation_recovery.py"],
+  "post_acceptance_changes_production_or_verifier_sources": false,
+  "approved_artifact": {
+    "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+    "item_count": 137249,
+    "weights_identity_and_retrieval_policy_unchanged": true,
+    "retrained_or_test_targets_evaluated": false
+  },
+  "implementation": {
+    "canonical_persisted_seal_encoding_unchanged": true,
+    "bundle_owns_immutable_identity_mapping": true,
+    "full_seal_computed_once_per_loaded_bundle": true,
+    "capture_reuse_requires_actual_ordered_members_text_time_and_exact_eligibility_checks": true,
+    "restore_reuse_requires_subset_and_equal_cardinality_then_stored_seal_match": true,
+    "subset_and_empty_catalog_seals_still_computed": true,
+    "sql_content_checks_execution_lease_cancellation_and_old_replay_unchanged": true,
+    "api_deadline_seconds": 2.0,
+    "deadline_increased": false
+  },
+  "instrumented_diagnostics": {
+    "before": {
+      "report": "artifacts/profiles/r06-deadline-pre-numpy-20261005-a/profile.json",
+      "sha256": "b3c9877139db98feb43e97bb9f1ba0e869283c8343f0f8075320cb85c1b31877",
+      "service_status": "failed",
+      "service_error_code": "recommendation_timeout",
+      "first_dense_http_status": 504,
+      "first_dense_seconds": 2.2777899999928195,
+      "execution_lease_and_admission_seconds": 1.4049961999990046,
+      "persisted_snapshot_verification_seconds": 0.30153389999759383,
+      "retrieval_and_ranking_seconds": 0.18905320001067594,
+      "two_catalog_seal_seconds": [0.08008529999642633, 0.18701549999241251],
+      "result_write_start_seconds": 1.9898465999867767,
+      "archived_sources_exact_to_diagnostic_git": 52,
+      "service_verification_json_generated": false
+    },
+    "after": {
+      "report": "artifacts/profiles/r06-deadline-post-numpy-20261005-a/profile.json",
+      "sha256": "57a4d4da2c6de468ece4022b6c609900dc7486969cf96a7b95527febfea2655a",
+      "service_status": "passed",
+      "first_dense_http_status": 200,
+      "first_dense_seconds": 1.5711496000003535,
+      "execution_lease_and_admission_seconds": 1.1513047000044025,
+      "actual_catalog_read_and_capture_seconds": 0.9885382000065874,
+      "persisted_snapshot_verification_seconds": 0.04891250000218861,
+      "retrieval_and_ranking_seconds": 0.19709860000875778,
+      "catalog_seal_calls_during_observed_full_requests": 0,
+      "archived_sources_exact_to_implementation_git": 52
+    },
+    "temporary_schema_sets_restored_both": true,
+    "timings_overlap_do_not_sum": true,
+    "instrumentation_overhead_not_subtracted": true,
+    "uninstrumented_acceptance_or_statistical_speedup_claimed": false,
+    "request_arguments_bodies_tokens_and_error_messages_logged": false
+  },
+  "uninstrumented_service_acceptance": [
+    {
+      "report": "artifacts/replays/r06-deadline-post-numpy-20261005-a/verification.json",
+      "sha256": "86d0be0ab6def313158004e6ed27abc145097ad4047f93b088b1ca8448f774e3",
+      "backend": "numpy",
+      "history_count": 1,
+      "single_asgi_request_seconds": 1.1875510000099894,
+      "status": "passed",
+      "returned_items": 10,
+      "archived_implementation_git_sources_exact": 50,
+      "working_sources_exact_when_audited_before_diagnostic_followup": 50
+    },
+    {
+      "report": "artifacts/replays/r06-deadline-post-stdlib-20261005-a/verification.json",
+      "sha256": "780c69ff04d89dbed6eb4fc7d4649358b864c40e310c5fb1555c2a4be1fa3f81",
+      "backend": "stdlib",
+      "history_count": 0,
+      "single_asgi_request_seconds": 1.0193723999982467,
+      "status": "passed",
+      "returned_items": 10,
+      "archived_implementation_git_sources_exact": 50,
+      "working_sources_exact_when_audited_before_diagnostic_followup": 50
+    }
+  ],
+  "service_acceptance_common": {
+    "actual_asgi_api_not_mocked": true,
+    "dense_identity_legal_unique_items_training_popular_independent_oracle": true,
+    "dense_and_popular_idempotency_application_restart_and_frozen_comparison_replay": true,
+    "actual_cpu_work_drained_and_owned_schemas_removed": true,
+    "different_backend_inputs_speedup_not_computed": true,
+    "stdlib_nonempty_history_two_second_acceptance": false,
+    "full_corpus_deactivated_subset_two_second_acceptance": false,
+    "browser_network_load_or_sla_proven": false,
+    "historical_failed_attempts_preserved": "docs/validation/demo-baseline-20261005.json"
+  },
+  "regression": {
+    "first_service_ci_29_files": {"passed": 704, "failures": 1, "errors": 0, "skips": 0, "report": "tmp/r06-deadline-service-20261005-a.xml", "sha256": "23bf93798a1f6e75632133830bd979da51cd5a9d577b9d4fe69ef466f257ebce"},
+    "first_service_failure": {"test": "test_legacy_unmarked_execution_is_not_declared_dead_and_can_complete", "expected_http_status": 200, "actual_http_status": 503, "error_code": "Not captured by original assertion", "cause": "Not established; entire recovery suite did not reproduce it", "status_timeout_skip_or_retry_relaxation": false},
+    "recovery_diagnostic_suite": {"passed": 18, "failures": 0, "errors": 0, "skips": 0, "report": "tmp/r06-deadline-recovery-diagnostic-20261005-a.xml", "sha256": "1d4321c08a0bbea3de95ef809bed1eadba270c53bc3f838425ae8554f952d230"},
+    "final_service_ci_29_files": {"status": "passed", "passed": 705, "failures": 0, "errors": 0, "skips": 0, "report": "tmp/r06-deadline-service-20261005-b.xml", "sha256": "9416320ae2a93df79a409b095a3f3dd446596224220f887b1585120a2ae5e8eb"},
+    "targeted_three_files": {"passed": 130, "report": "tmp/r06-deadline-targeted-20261005-a.xml", "sha256": "cd8dceb341e4eabdb05bba6e76e5a1d5fb52a08f9b0d156adadac4c31b60ba18"},
+    "optional_ci_four_file_union": {"passed": 151, "report": "tmp/r06-deadline-optional-20261005-a.xml", "sha256": "0416e5f2ac2f9f16cb41acb063a5d6cdea741b838b88ba17e1940844161b10bd"},
+    "diagnostic_only": {"passed": 12, "report": "tmp/r06-deadline-profiler-20261005-b.xml", "sha256": "ebc2e3032431b8ea1c1b350a6e8ce68766a8b527fb7b97e43c5accb377859921"},
+    "node_page_scripts": {"passed": 34, "failures": 0, "skips": 0},
+    "overlapping_suites_not_added": true,
+    "new_cases": "12 diagnostic behavior/control-flow tests and 8 canonical seal, immutability, full/subset/empty/hostile real database cases",
+    "diagnostic_control_flow_mocks_are_not_model_acceptance": true,
+    "full_research_suite_rerun": false,
+    "quality_performance_reuse_review": "Main-thread review; not independent Agent review"
+  },
+  "delivery_checks": {
+    "three_environment_pip_checks_passed": true,
+    "pure_service_numpy_absent": true,
+    "four_contract_exports_normalized_git_content_unchanged": true,
+    "repository_hygiene": {"status": "passed", "tracked_files": 385, "local_links_checked": 500, "python_files_parsed": 163, "scope": "Git index only; common-signature secret scan is not exhaustive"},
+    "test_schema_residue_after_all_database_runs": 0,
+    "business_schema_active_model_and_port8000_changed": false,
+    "r06_default_enabled": false
+  },
+  "remaining": "Independent repeatable HTTP/browser Demo configuration, simple real-results display and three-minute handoff; no 300ms/20QPS SLA or complete PRD claim"
+}
