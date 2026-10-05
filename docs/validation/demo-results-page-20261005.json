@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-05",
+  "scope": "原 R06 公开档案的只读演示页，不重新训练、评价或审计原轨迹",
+  "implementation_commit": "cd7890fe34f3ee8fdfec1f0b7d90fb3e94cd20bd",
+  "entry": "/app/results",
+  "archive": {
+    "protocol_id": "e11840f33a2fec8d",
+    "results_sha256": "a56097096c38317b7b5bdf9bff96a0cccaa386b6114b1e53211d2ed886f04774",
+    "uncertainty_sha256": "76d2340648829e788145f7ac67a3259bb111ef0d09314c13a8fa29a116eeefb8",
+    "selected_method": "A-frozen-s17",
+    "working_tree_dirty": true,
+    "experiment_paths_clean": true,
+    "unrelated_worktree_changes": ["?? LICENSE"],
+    "hash_check_is_not_signature_or_new_source_audit": true
+  },
+  "node": {
+    "passed": 64, "failed": 0, "skipped": 0,
+    "existing_page_cases": 47, "new_results_cases": 17,
+    "covers": ["原字节 SHA-256、四组实际表格、独立三种子均值/样本标准差核对", "HTTP、网络、档案篡改、缺失 WebCrypto 拒绝且无默认数值", "协议/分析/选型/时间/指标/区间/样本绑定不符拒绝", "微小正上界保留、候选覆盖与排名命中区分", "失败重读清空旧表、并发重读合并且设置期限"],
+    "fixture_correction": "最初缺少 crypto 用例实际模拟摘要不符；改为真正缺少 crypto，最终计数来自修正后运行",
+    "boundary": "DOM 脚本夹具，不是实际浏览器断网或移动端验收"
+  },
+  "python": {
+    "scope": "experiment_page、API、contracts、repository_hygiene、v01_experience 五文件",
+    "old_implementation_new_page_tests": {"passed": 7, "failed": 11, "evidence": "终端记录，无 XML；已有 404 测试通过不代表页面存在"},
+    "initial": {"passed": 64, "errors": 4, "failed": 0, "skipped": 0, "cause": "漏载 EVOREC_DATABASE_URL，实库夹具 setup 明确失败", "private_xml_sha256": "d74513d8016a6547999b066e2d201eb69c56612f9a617444a4baffabbf2ac6c9"},
+    "final": {"passed": 68, "errors": 0, "failed": 0, "skipped": 0, "private_xml_sha256": "3f2779e57bb7bb5a1bcb04c3b09d4caef89646c196b859820e6bbc6f48bc72af"},
+    "new_page_cases": 18,
+    "overlapping_runs_not_added": true
+  },
+  "real_tcp": {"isolated_in_memory": true, "page_and_nine_public_assets_byte_equal": true, "forbidden_asset_requests_404": 4, "database_created": false},
+  "manual_browser": {
+    "four_table_row_counts": [4, 4, 4, 5],
+    "native_sha256_load_and_reload_succeeded": true,
+    "family_details_expanded": true,
+    "provenance_visible": true,
+    "original_report_three_images_loaded": true,
+    "console_errors": [],
+    "private_observations_sha256": "cfa4025447b492c3442a92c2c52f3382986ffae5b98749455b837101053b3d63",
+    "private_header_screenshot_sha256": "95245a7ead13b74bbfad2dcef6ec36c3a13e9bb231d4b6476c422d32cc05a0ff",
+    "private_tables_screenshot_sha256": "f45901ba3c015253c0712a978a18dd286150d2bf050973b233ac411093f10dd7",
+    "own_tab_closed_and_port_50639_no_longer_listening": true
+  },
+  "review": "主线程质量、性能、复用复查；角色参数不兼容，未启动独立子 Agent",
+  "contracts": "四份重导与 Git 无内容差异；不增加公开 OpenAPI 路由",
+  "not_claimed": ["本轮完整服务本地回归：完整选定套件由最新 head CI 检查", "新模型实验或效果提升、重新审计原研究来源", "浏览器故障注入、移动端或全新电脑复建", "持续负载、线上效果、生产 SLA", "浏览器重置通过或完整作品集 Demo 已交付", "既有 8000 后端自动加载新路由：本轮未重启它"]
+}
