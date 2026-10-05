@@ -8,6 +8,7 @@ import secrets
 from dataclasses import replace
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
+from threading import Lock
 from uuid import UUID, uuid4
 
 import psycopg
@@ -50,6 +51,7 @@ from evorec.infrastructure.r06_admission import (
     validate_captured_context,
 )
 from evorec.infrastructure.r06_async import R06CPUQueue, R06RankingPort, _drain
+from evorec.infrastructure.recommendation_execution import RecommendationExecution
 
 if TYPE_CHECKING:
     from evorec.infrastructure.management import CatalogManager
@@ -65,6 +67,8 @@ class PostgresDemoBackend:
         self.runtime: RuntimeBundle | None = None
         self.runtimes: dict[str, RuntimeBundle] = {}
         self.manager: CatalogManager | None = None
+        self._execution_lock = Lock()
+        self._executions: dict[UUID, RecommendationExecution] = {}
         if r06_enabled is not None and type(r06_enabled) is not bool:
             raise ValueError("R06 serving flag must be a boolean")
         enabled = (os.getenv("EVOREC_R06_SERVING_ENABLED", "0") if r06_enabled is None
@@ -259,21 +263,38 @@ class PostgresDemoBackend:
     async def acquire(self, command: RecommendationCommand):
         if self.manager is not None:
             await asyncio.to_thread(self.manager.ensure_ready)
-        admission = asyncio.create_task(asyncio.to_thread(self._admit, command))
+        execution = RecommendationExecution(self, command)
+        admission = asyncio.create_task(asyncio.to_thread(execution.admit))
         try:
-            context = await asyncio.shield(admission)
-        except asyncio.CancelledError:
-            # A cancelled waiter cannot undo a committed thread transaction.
-            await _drain(admission)
-            if not admission.cancelled() and admission.exception() is None:
-                failure = asyncio.create_task(asyncio.to_thread(self._mark_failed, command.request_id))
-                await _drain(failure)
-            raise
-        try:
-            yield context
-        except BaseException:
-            await asyncio.to_thread(self._mark_failed, command.request_id)
-            raise
+            try:
+                context = await asyncio.shield(admission)
+                yield context
+            except BaseException:
+                # Retain the execution lock until all owned writes have drained.
+                await _drain(admission)
+                if execution.admitted:
+                    failure = asyncio.create_task(asyncio.to_thread(self._mark_failed, command.request_id))
+                    await _drain(failure)
+                raise
+        finally:
+            closing = asyncio.create_task(asyncio.to_thread(execution.close))
+            try:
+                await asyncio.shield(closing)
+            except asyncio.CancelledError:
+                await _drain(closing)
+                raise
+
+    @staticmethod
+    def _matching_request(previous, command):
+        if (previous["session_id"] != command.session_id
+                or previous["history_version"] != command.expected_history_version
+                or previous["requested_strategy"] != command.strategy
+                or previous["requested_k"] != command.k):
+            raise IdempotencyConflict("recommendation key was used for different input")
+
+    def _execution(self, request_id):
+        with self._execution_lock:
+            return self._executions.get(request_id)
 
     def _admit(self, command: RecommendationCommand) -> RequestContext:
         with self._connect() as connection:
@@ -294,20 +315,32 @@ class PostgresDemoBackend:
                 """
                 SELECT session_id, session_epoch, history_version, bundle_id,
                        exclusion_version, requested_strategy, requested_k,
-                       actual_strategy, fallback_reason, status, model_snapshot
+                       actual_strategy, fallback_reason, status, model_snapshot, execution_owner, failure_code
                 FROM recommendation_requests WHERE request_id = %s FOR UPDATE
                 """,
                 (command.request_id,),
             ).fetchone()
             if previous is not None:
-                if (previous["session_id"] != command.session_id
-                        or previous["history_version"] != command.expected_history_version
-                        or previous["requested_strategy"] != command.strategy
-                        or previous["requested_k"] != command.k):
-                    raise IdempotencyConflict("recommendation key was used for different input")
+                self._matching_request(previous, command)
                 if previous["status"] == "accepted":
+                    execution = self._execution(command.request_id)
+                    if (previous["execution_owner"] is not None and execution is not None
+                            and previous["execution_owner"] != execution.owner):
+                        execution.assert_held()
+                        connection.execute(
+                            "UPDATE recommendation_requests SET status = 'failed', "
+                            "failure_code = 'execution_interrupted', updated_at = clock_timestamp() "
+                            "WHERE request_id = %s", (command.request_id,),
+                        )
+                        # Preserve the terminal outcome despite returning an error.
+                        connection.commit()
+                        raise ManagementError("recommendation_interrupted",
+                                              "old execution lease was lost; explicitly submit a new key", 409)
                     raise IdempotencyInProgress("recommendation is still in progress")
                 if previous["status"] != "completed":
+                    if previous["failure_code"] == "execution_interrupted":
+                        raise ManagementError("recommendation_interrupted",
+                                              "old execution was interrupted; explicitly submit a new key", 409)
                     raise IdempotencyConflict("recommendation key belongs to a failed request")
                 items = connection.execute(
                     """
@@ -345,13 +378,17 @@ class PostgresDemoBackend:
                 raise RuntimeError("catalog admission is not ready")
             context = self._capture_context(connection, command.request_id, session, control)
             catalog = context.catalog
+            execution = self._execution(command.request_id)
+            if execution is None:
+                raise ManagementError("recommendation_execution_lost", "fresh admission requires an execution lease", 503)
+            execution.assert_held()
             connection.execute(
                 """
                 INSERT INTO recommendation_requests (
                     request_id, session_id, session_epoch, history_version,
                     history_snapshot, hidden_snapshot, bundle_id, exclusion_version,
-                    requested_strategy, requested_k, model_snapshot, status
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'accepted')
+                    requested_strategy, requested_k, model_snapshot, execution_owner, status
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'accepted')
                 """,
                 (
                     command.request_id, command.session_id, session.epoch,
@@ -359,6 +396,7 @@ class PostgresDemoBackend:
                     Jsonb(sorted(session.hidden_items)),
                     catalog.bundle_id, catalog.exclusion_version, command.strategy, command.k,
                     Jsonb(encode_model(context.model)) if context.model else None,
+                    execution.owner,
                 ),
             )
         return context
@@ -673,7 +711,12 @@ class PostgresDemoBackend:
         return RankedBatch(context.binding, actual, candidates, fallback)
 
     async def save(self, result: RecommendationResult) -> None:
-        await asyncio.to_thread(self._save, result)
+        work = asyncio.create_task(asyncio.to_thread(self._save, result))
+        try:
+            await asyncio.shield(work)
+        except asyncio.CancelledError:
+            await _drain(work)
+            raise
 
     def _save(self, result: RecommendationResult) -> None:
         binding = result.binding
@@ -682,7 +725,7 @@ class PostgresDemoBackend:
                 """
                 SELECT session_id, session_epoch, history_version, bundle_id,
                        exclusion_version, requested_strategy, actual_strategy,
-                       fallback_reason, status, model_snapshot
+                       fallback_reason, status, model_snapshot, execution_owner
                 FROM recommendation_requests WHERE request_id = %s FOR UPDATE
                 """,
                 (binding.request_id,),
@@ -725,6 +768,11 @@ class PostgresDemoBackend:
                 return
             if row["status"] != "accepted":
                 raise SnapshotMismatch("request is not in an accepted state")
+            if row["execution_owner"] is not None:
+                execution = self._execution(binding.request_id)
+                if execution is None or execution.owner != row["execution_owner"]:
+                    raise SnapshotMismatch("result has no matching execution owner")
+                execution.assert_held()
             if result.items:
                 cursor = connection.cursor()
                 cursor.executemany(

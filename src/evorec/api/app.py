@@ -556,7 +556,7 @@ def create_app(
         responses={
             404: {"model": ErrorEnvelope, "description": "Session not found"},
             401: {"model": ErrorEnvelope, "description": "Missing or invalid session token"},
-            409: {"model": ErrorEnvelope, "description": "History version conflict"},
+            409: {"model": ErrorEnvelope, "description": "History, idempotency or execution recovery conflict"},
             429: {"model": ErrorEnvelope, "description": "R06 CPU capacity exhausted"},
             503: {"model": ErrorEnvelope, "description": "Catalog, runtime or snapshot unavailable"},
             504: {"model": ErrorEnvelope, "description": "Recommendation deadline exceeded"},
