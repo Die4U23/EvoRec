@@ -4,7 +4,7 @@ Content identity is the original research text, not a merchant title or a claim
 from a client. A future trusted admission layer must supply the actual snapshot.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 import hashlib
 import json
 from pathlib import Path
@@ -113,6 +113,13 @@ def _item_digest(item):
     return hashlib.sha256(raw).hexdigest()
 
 
+def catalog_seal(manifest_sha256, identities):
+    """The existing canonical persisted identity, independent of row order."""
+    raw = json.dumps([KIND, manifest_sha256, sorted(identities)],
+                     ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
 @dataclass(frozen=True)
 class FrozenR06Bundle:
     bundle_id: UUID
@@ -120,6 +127,14 @@ class FrozenR06Bundle:
     adapter: R06SnapshotRanker
     encoder: ContentEncoder
     catalog_item_sha256: Mapping[str, str]  # Text is not kept after load.
+    full_catalog_seal: str = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self):
+        # Own the mapping before caching: even a caller's mutable dict cannot
+        # change the identities after construction. No request/eligibility cache.
+        identities = dict(self.catalog_item_sha256)
+        object.__setattr__(self, "catalog_item_sha256", MappingProxyType(identities))
+        object.__setattr__(self, "full_catalog_seal", catalog_seal(self.manifest_sha256, identities.items()))
 
     @property
     def model_version(self):
