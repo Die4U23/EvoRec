@@ -428,11 +428,15 @@
     }
     async function recommend() {
       if (!session) throw new Error('请先开始体验');
-      if (!pendingRecommendation) pendingRecommendation = {
-        key: crypto.randomUUID(), payload: {session_id: session.session_id,
-          expected_history_version: session.history_version, strategy: el('strategy').value,
-          k: Number(el('count').value)}
-      };
+      if (!pendingRecommendation) {
+        const k = Number(el('count').value);
+        if (!Number.isInteger(k) || k < 1 || k > 50)
+          throw Object.assign(new Error('推荐数量必须是 1 到 50 的整数，请修正后再发起请求'), {retryable: false});
+        pendingRecommendation = {
+          key: crypto.randomUUID(), payload: {session_id: session.session_id,
+            expected_history_version: session.history_version, strategy: el('strategy').value, k}
+        };
+      }
       const pending = pendingRecommendation, currentSession = session.session_id;
       rememberComparison();
       const list = el('recommendations'); list.replaceChildren();

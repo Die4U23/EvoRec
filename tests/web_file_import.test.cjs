@@ -68,6 +68,24 @@ const recommendationSession = {session_id: 'session-1', access_token: 'token-1',
 const recommendationOk = {ok: true, json: async () => ({request_id: 'request-1', actual_strategy: 'popular',
   fallback_reason: null, items: []})};
 
+test('invalid fresh recommendation count sends no request and cannot freeze a bad retry key', async () => {
+  const posts = [];
+  const p = page([], null, [], null, null, new Map(), (url, options) => {
+    posts.push(options); return recommendationOk;
+  });
+  await p.ready; p.setSession(recommendationSession); p.element('strategy').value = 'popular';
+  for (const count of ['0', '1.5', '51', 'bad']) {
+    p.element('count').value = count;
+    await p.element('recommend').onclick();
+    assert.equal(posts.length, 0);
+    assert.match(p.element('message').textContent, /1 到 50 的整数/);
+  }
+  p.element('count').value = '3';
+  await p.element('recommend').onclick();
+  assert.equal(posts.length, 1);
+  assert.equal(JSON.parse(posts[0].body).k, 3);
+});
+
 test('unconfirmed recommendation survives refresh with its original key and input', async () => {
   const storage = new Map(), posts = [];
   const sessionFetch = () => ({ok: true, json: async () => recommendationSession});
