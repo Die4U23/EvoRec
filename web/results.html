@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EvoRec · 真实实验结果</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #182631; background: #f3f6f4; }
+    body { max-width: 1060px; margin: auto; padding: 28px 20px 60px; line-height: 1.65; }
+    a { color: #145b48; } h1 { margin-bottom: 8px; } h2 { font-size: 1.3rem; }
+    section { background: white; border: 1px solid #dce5df; border-radius: 12px; padding: 20px; margin: 18px 0; }
+    .notice { background: #edf3ee; padding: 14px; border-radius: 8px; }
+    .tables { overflow-x: auto; } table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: 10px; border-bottom: 1px solid #dce5df; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    caption { text-align: left; margin: 8px 0; color: #53646c; }
+    code, #identity { overflow-wrap: anywhere; } button { font: inherit; padding: 8px 14px; cursor: pointer; }
+    button:disabled { cursor: wait; } [hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <nav><a href="/app">返回推荐 Demo</a></nav>
+  <h1>真实实验结果</h1>
+  <p>R06：同预算多兴趣召回与排序适配。读取已归档的公开结果，不是新的实验，也不是当前服务的效果测量。</p>
+  <p id="status" role="status" aria-live="polite">正在校验实验档案…</p>
+  <button id="reload">重新读取档案</button>
+  <main id="evidence" hidden>
+    <section>
+      <h2>先看结论</h2>
+      <p id="conclusion" class="notice"></p>
+      <p id="identity"></p>
+      <p>验证选型不是测试集冠军；当前活动模型身份请在推荐页查看实际响应，不从本页推断。热门 Demo 的训练期衰减热度不冒称本轮已复现纯频次 Popularity。</p>
+    </section>
+    <section>
+      <h2>同协议基线与保留模型</h2>
+      <p>NDCG@10 衡量前十排名质量；Recall@20 是目标进入前二十的比例。冷目标指训练期未出现且请求时可用的商品，不是“无历史用户”。</p>
+      <div class="tables"><table><caption id="counts"></caption><thead><tr><th scope="col">方法（单次）</th><th scope="col">整体 NDCG@10</th><th scope="col">冷 Recall@20</th></tr></thead><tbody id="methods"></tbody></table></div>
+      <details><summary>均值/多兴趣与冻结/重训练的匹配对照</summary>
+        <p>A/D 为均值召回，B/C 为均值＋近期多兴趣；A/B 固定 R05 排序器，C/D 在 R06 验证集选轮。各路 CF 200、内容 200、并集最多 400；同候选数量不等于同计算量。</p>
+        <div class="tables"><table><caption>三种子 17/29/43 的均值 ± 样本标准差，不是置信区间，也不是集成模型</caption><thead><tr><th scope="col">方法族</th><th scope="col">整体 NDCG@10</th><th scope="col">冷 Recall@20</th></tr></thead><tbody id="families"></tbody></table></div>
+      </details>
+    </section>
+    <section>
+      <h2>候选遗漏：排序器不能挽救未入池的目标</h2>
+      <div class="tables"><table><caption>A 为均值路径，B 增加多兴趣；展示目标入池数 / 分组请求数，不是 Top20 命中数</caption><thead><tr><th scope="col">分组</th><th scope="col">A：入池 / 请求</th><th scope="col">B：入池 / 请求</th></tr></thead><tbody id="coverage"></tbody></table></div>
+      <p>冷目标覆盖的小幅变化是描述性结果，不等于排名收益；无历史冷目标没有受益。候选数量固定，多兴趣仍增加计算。</p>
+    </section>
+    <section>
+      <h2>差值与不确定性</h2>
+      <div class="tables"><table><caption>预登记比较中的五项；原 50 项见完整区间档案。差值为左侧方法减基线</caption><thead><tr><th scope="col">比较</th><th scope="col">指标</th><th scope="col">配对差值</th><th scope="col">95% 边际区间</th><th scope="col">请求 / 用户</th></tr></thead><tbody id="intervals"></tbody></table></div>
+      <p>区间按用户聚类、条件于固定检查点，不包含训练随机性，未做多重比较校正。区间跨零不证明相等；微小正上界不能四舍五入成“确定下降”。B-RRF 的整体边际区间为正，也不能推出冻结排序器上的多兴趣收益。</p>
+    </section>
+    <section>
+      <h2>来源与局限</h2>
+      <p id="provenance"></p>
+      <p>用户桶排除了 R01–R05 用户，但日历和商品仍重合；不把各轮指标拼成连续提升。静态 2023 元数据没有历史版本，商品首次交互仅作可用时间代理。单次离线批处理耗时不代表在线延迟、QPS 或 SLA。本页摘要校验用于发现档案漂移，不是数字签名，也不是重新审计原轨迹。</p>
+      <p><a href="/app/evidence/r06/report.html">原完整报告与图表</a> · <a href="/app/evidence/r06/protocol.md">冻结协议</a> · <a href="/app/evidence/r06/results.json">原结果 JSON</a> · <a href="/app/evidence/r06/uncertainty.json">原区间 JSON</a></p>
+    </section>
+  </main>
+  <script>
+    const el = id => document.getElementById(id);
+    const pins = [
+      ['results.json', 'a56097096c38317b7b5bdf9bff96a0cccaa386b6114b1e53211d2ed886f04774'],
+      ['uncertainty.json', '76d2340648829e788145f7ac67a3259bb111ef0d09314c13a8fa29a116eeefb8'],
+    ];
+    const groups = [['all_positive_events', '全部正向事件'], ['model_cold_available', '冷目标（商品）'],
+      ['history_cold_available', '有历史＋冷目标'], ['no_history_cold_available', '无历史＋冷目标']];
+    function requireEvidence(condition) { if (!condition) throw new Error('实验档案结构或绑定不一致'); }
+    function metric(value) { requireEvidence(typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1); return value.toFixed(6); }
+    function count(value) { requireEvidence(Number.isSafeInteger(value) && value > 0); return value; }
+    function signed(value) { requireEvidence(typeof value === 'number' && Number.isFinite(value)); return `${value >= 0 ? '+' : ''}${Math.abs(value) > 0 && Math.abs(value) < 1e-9 ? value.toExponential(3) : value.toFixed(9)}`; }
+    function evidenceView(result, uncertainty) {
+      const s = result.series, a = result.analysis;
+      requireEvidence(s.status === 'completed' && a.status === 'passed' && uncertainty.status === 'passed');
+      requireEvidence(s.protocol_id === 'e11840f33a2fec8d' && a.protocol_id === s.protocol_id && uncertainty.protocol_id === s.protocol_id);
+      requireEvidence(JSON.stringify(a) === JSON.stringify(uncertainty));
+      requireEvidence(s.selected_method === 'A-frozen-s17' && new Date(s.selection_finished_at) <= new Date(s.test_opened_at) && new Date(s.checkpoints_frozen_at) <= new Date(s.test_opened_at));
+      const trials = new Map(s.test_results.map(row => [row.name, row]));
+      requireEvidence(trials.size === s.test_results.length);
+      const methods = ['CF-blend', 'A-RRF', 'B-RRF', s.selected_method].map(name => {
+        const c = trials.get(name).metrics.cohorts;
+        return [name, metric(c.all_positive_events['ndcg@10']), metric(c.model_cold_available['recall@20'])];
+      });
+      const families = ['A-frozen', 'B-frozen', 'C-adapted', 'D-adapted'].map(name => {
+        const values = [['all_positive_events', 'ndcg@10'], ['model_cold_available', 'recall@20']].map(([group, key]) => {
+          const value = a.seed_summary[group][name][key];
+          requireEvidence(JSON.stringify(value.seeds) === '[17,29,43]');
+          return `${metric(value.mean)} ± ${metric(value.sample_std)}`;
+        });
+        return [name, ...values];
+      });
+      const diagnostics = s.test_candidates.diagnostics;
+      const coverage = groups.map(([group, label]) => {
+        const left = diagnostics.A[group], right = diagnostics.B[group];
+        requireEvidence(count(left.n) === count(right.n));
+        const cell = row => { requireEvidence(Number.isSafeInteger(row.target_in_pool) && row.target_in_pool >= 0 && row.target_in_pool <= row.n); return `${row.target_in_pool} / ${row.n}`; };
+        return [label, cell(left), cell(right)];
+      });
+      const selectedIntervals = [];
+      for (const [group, key, label] of [['all_positive_events', 'ndcg@10', '整体 NDCG@10'], ['model_cold_available', 'recall@20', '冷 Recall@20']]) {
+        for (const [method, baseline] of [['B-frozen', 'A-frozen'], ['C-adapted', 'D-adapted'], ...(group === 'all_positive_events' ? [['B-RRF', 'A-RRF']] : [])]) {
+          const found = a.intervals.filter(row => row.cohort === group && row.metric === key && row.method === method && row.baseline === baseline);
+          requireEvidence(found.length === 1);
+          const row = found[0];
+          requireEvidence(row.status === 'estimated' && row.confidence === 0.95 && row.unit === 'user' && row.simultaneous === false && row.low <= row.high);
+          requireEvidence(count(row.requests) === diagnostics.A[group].n && count(row.users) <= row.requests);
+          if (method !== 'B-RRF') requireEvidence(row.low <= 0 && row.high >= 0);
+          selectedIntervals.push([`${method} − ${baseline}`, label, signed(row.estimate), `[${signed(row.low)}, ${signed(row.high)}]`, `${count(row.requests)} / ${count(row.users)}`]);
+        }
+      }
+      requireEvidence(a.intervals.length === 50);
+      const c = trials.get(s.selected_method).metrics.cohorts;
+      requireEvidence(count(c.all_positive_events.n) === diagnostics.A.all_positive_events.n && count(c.model_cold_available.n) === diagnostics.A.model_cold_available.n);
+      return {methods, families, coverage, intervals: selectedIntervals,
+        counts: `整体 ${c.all_positive_events.n} 条请求；冷目标 ${c.model_cold_available.n} 条请求。不是不同轮次的横向提升曲线。`,
+        identity: `验证规则保留 ${s.selected_method} · 协议 ${s.protocol_id} · 归档完成 ${s.finished_at} · 训练基础提交 ${s.code.git_base_commit}`,
+        provenance: `工作区 dirty：${s.code.working_tree_dirty}；实验源码路径 clean：${s.code.experiment_paths_clean}；记录变化：${s.code.unrelated_worktree_changes.join('、')}。研究档案记载候选/排名重放审计通过，本页未重新运行审计。`};
+    }
+    function table(id, rows) {
+      el(id).replaceChildren();
+      for (const values of rows) {
+        const row = document.createElement('tr');
+        for (const value of values) { const cell = document.createElement('td'); cell.textContent = value; row.append(cell); }
+        el(id).append(row);
+      }
+    }
+    async function readPinned([name, digest]) {
+      const response = await fetch(`/app/evidence/r06/${name}`, {cache: 'no-store', signal: AbortSignal.timeout(10000)});
+      if (!response.ok) throw new Error(`公开档案读取失败（HTTP ${response.status}）`);
+      const bytes = await response.arrayBuffer();
+      const actual = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(v => v.toString(16).padStart(2, '0')).join('');
+      if (actual !== digest) throw new Error('公开档案摘要不匹配，需核对来源后更新绑定');
+      return JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(bytes));
+    }
+    let loading = false;
+    async function loadEvidence() {
+      if (loading) return;
+      loading = true; el('reload').disabled = true; el('evidence').hidden = true;
+      for (const id of ['methods', 'families', 'coverage', 'intervals']) el(id).replaceChildren();
+      el('status').textContent = '正在校验实验档案…';
+      try {
+        const view = evidenceView(...await Promise.all(pins.map(readPinned)));
+        for (const id of ['methods', 'families', 'coverage', 'intervals']) table(id, view[id]);
+        for (const id of ['counts', 'identity', 'provenance']) el(id).textContent = view[id];
+        el('conclusion').textContent = '本轮不支持用多兴趣替换保留路径。主要 B−A、C−D 的整体 NDCG 与冷 Recall 区间均跨零；不根据测试结果重新选型。';
+        el('evidence').hidden = false; el('status').textContent = '两份公开档案 SHA-256 与协议绑定已核对；展示归档结果，未重新训练或评价。';
+      } catch (error) {
+        el('status').textContent = `实验档案不可用：${error.message}。未显示数值；请通过本地 HTTP 或 HTTPS 访问并核对档案，再重试。`;
+      } finally { loading = false; el('reload').disabled = false; }
+    }
+    el('reload').onclick = loadEvidence;
+    const startup = loadEvidence();
+  </script>
+</body>
+</html>

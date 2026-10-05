@@ -10,6 +10,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+from evorec.api.web_assets import PUBLIC_WEB_FILES
+
 
 class Links(HTMLParser):
     def __init__(self):
@@ -91,7 +93,7 @@ def check(files):
             target = unquote(target.split("#",1)[0].split("?",1)[0])
             if not target:
                 continue
-            resolved = posixpath.normpath(posixpath.join(posixpath.dirname(name), target))
+            resolved = PUBLIC_WEB_FILES.get(target) or posixpath.normpath(posixpath.join(posixpath.dirname(name), target))
             if resolved not in files and not any(path.startswith(resolved.rstrip("/")+"/") for path in files):
                 errors.append("link missing from Git index: "+name+" -> "+target)
             link_count += 1

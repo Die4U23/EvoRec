@@ -43,6 +43,18 @@ def test_html_assets_must_be_in_index():
         check({"report.html": b'<img src="missing.png" alt="plot">'})
 
 
+def test_known_app_route_requires_its_actual_file_in_index():
+    with pytest.raises(ValueError, match="link missing"):
+        check({"web/index.html": b'<a href="/app/results">results</a>'})
+    assert check({"web/index.html": b'<a href="/app/results">results</a>',
+                  "web/results.html": b"<h1>results</h1>"})["local_links_checked"] == 1
+
+
+def test_unknown_app_route_is_not_exempt_from_link_checks():
+    with pytest.raises(ValueError, match="link missing"):
+        check({"web/index.html": b'<a href="/app/missing">missing</a>'})
+
+
 def test_service_ci_runs_durable_file_job_regressions():
     workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows"
                 / "service-integration.yml").read_text(encoding="utf-8")
@@ -51,6 +63,8 @@ def test_service_ci_runs_durable_file_job_regressions():
     )[0]
     assert "tests/test_catalog_file_jobs.py" in service_step
     assert "tests/test_backup_restore.py" in service_step
+    assert service_step.count("tests/test_experiment_page.py") == 1
+    assert "node --test tests/web_file_import.test.cjs tests/web_results.test.cjs" in workflow
     assert service_step.count("tests/test_strategy_comparison.py") == 1
     assert service_step.count('tests/test_comparison_jobs.py') == 1
     assert service_step.count('tests/test_r06_features_runtime.py') == 1
