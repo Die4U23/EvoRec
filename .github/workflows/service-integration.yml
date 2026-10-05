@@ -48,7 +48,7 @@ jobs:
       - name: Run service tests against PostgreSQL
         run: |
           python -m pytest -q -ra --junitxml=service-tests.xml \
-            tests/test_api.py tests/test_architecture.py \
+            tests/test_api.py tests/test_experiment_page.py tests/test_architecture.py \
             tests/test_bundle_validation.py tests/test_contracts.py \
             tests/test_catalog_file.py tests/test_catalog_file_jobs.py \
             tests/test_backup_restore.py \
@@ -72,7 +72,7 @@ jobs:
             tests/test_repository_hygiene.py tests/test_v01_experience.py
           python -c 'import xml.etree.ElementTree as ET; suite = ET.parse("service-tests.xml").getroot().find("testsuite"); assert int(suite.attrib["skipped"]) == 0, "service tests must not skip"'
       - name: Run local page interaction tests
-        run: node --test tests/web_file_import.test.cjs
+        run: node --test tests/web_file_import.test.cjs tests/web_results.test.cjs
       - name: Check exported API contracts
         env:
           EVOREC_DATABASE_URL: ""

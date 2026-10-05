@@ -11,6 +11,7 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 web/index.html text eol=lf
+web/results.html text eol=lf
 *.ps1 text eol=crlf
 *.pdf binary
 

@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 
 from fastapi import FastAPI, Header, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
+from evorec.api.web_assets import R06_ASSETS, WEB_PAGES
 from pydantic import BaseModel, ConfigDict, Field
 import psycopg
 
@@ -496,7 +497,23 @@ def create_app(
 
     @app.get("/app", tags=["web"], include_in_schema=False)
     def web_page() -> FileResponse:
-        return FileResponse(Path(__file__).resolve().parents[3] / "web" / "index.html")
+        return FileResponse(Path(__file__).resolve().parents[3] / WEB_PAGES["/app"])
+
+    project = Path(__file__).resolve().parents[3]
+
+    @app.get("/app/results", tags=["web"], include_in_schema=False)
+    def experiment_page():
+        return FileResponse(project / WEB_PAGES["/app/results"], headers={"Cache-Control": "no-cache"})
+
+    @app.get("/app/evidence/r06/{asset:path}", tags=["web"], include_in_schema=False)
+    def experiment_evidence(asset: str):
+        # Fixed public allowlist, not a filesystem mount or arbitrary path join.
+        relative = R06_ASSETS.get(asset)
+        if relative is None or not (project / relative).is_file():
+            return _error(404, "experiment_evidence_not_found", "public experiment evidence is unavailable")
+        path = project / relative
+        return FileResponse(path, media_type="text/plain" if path.suffix == ".md" else None,
+                            headers={"Cache-Control": "no-cache"})
 
     @app.post(
         "/api/v1/sessions", response_model=SessionCreatedResponse, status_code=201, tags=["demo"],
