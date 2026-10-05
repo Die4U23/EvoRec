@@ -141,6 +141,43 @@ def test_independent_full_orders_and_pool(tmp_path):
     assert result.collaborative_personalized == 2 and result.content_personalized == 4
 
 
+def test_popular_independent_raw_training_counts_and_filters(tmp_path):
+    root, _, features = _fixture(tmp_path)
+    r = load_r06_retrieval(root, features)
+    assert r.popular([], 11) == (("a", 4.), ("zero", 3.), ("b", 2.), ("c", 1.), ("d", 1.))
+    assert r.popular({"a", "zero", "ghost"}, 11, eligible_items={"a", "b", "c", "e"}, k=1) == (("b", 2.),)
+    assert r.popular([], 11, eligible_items={"e"}) == ()  # No invented zero-prior hot items.
+    assert r.popular([], 1) == ()  # Strict first_seen < request time.
+    assert r.popular([], 11, eligible_items=set()) == ()
+    assert r._counts == tuple(COUNTS)
+    with pytest.raises(TypeError): r._counts[0] = 999
+
+
+def test_popular_keeps_raw_score_difference_and_item_id_ties(tmp_path):
+    root, _, features = _fixture(tmp_path)
+    r = load_r06_retrieval(root, features)
+    # In-memory arithmetic guard: log-normalization may collapse adjacent floats.
+    # This is not a recorded real package or a new training run.
+    higher = math.nextafter(1., math.inf)
+    r = replace(r, _counts=(1., higher, 1., 1., 0., 1.), _ordered=(1, 0, 2, 3, 5))
+    assert r.popular([], 11) == (("b", higher), ("a", 1.), ("c", 1.), ("d", 1.), ("zero", 1.))
+
+
+@pytest.mark.parametrize("k", [True, 0, 51, 1.5])
+def test_popular_rejects_invalid_k(tmp_path, k):
+    root, _, features = _fixture(tmp_path)
+    with pytest.raises(ControlledLoadError): load_r06_retrieval(root, features).popular([], 11, k=k)
+
+
+@pytest.mark.parametrize("kwargs", [dict(eligible_items={"new"}), dict(eligible_items=["a", "a"]),
+                                    dict(timestamp_ms=True), dict(seen=["a"]*10_001)])
+def test_popular_reuses_legal_input_guards(tmp_path, kwargs):
+    root, _, features = _fixture(tmp_path)
+    args = dict(seen=[], timestamp_ms=11)
+    args.update(kwargs)
+    with pytest.raises(ControlledLoadError): load_r06_retrieval(root, features).popular(**args)
+
+
 def test_full_seen_and_strict_availability_and_unknown_distance(tmp_path):
     root, _, f = _fixture(tmp_path)
     r = load_r06_retrieval(root, f)

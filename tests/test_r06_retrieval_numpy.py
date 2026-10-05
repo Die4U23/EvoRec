@@ -17,6 +17,15 @@ from evorec.infrastructure.residual_ranker import ControlledLoadError
 from test_r06_retrieval_runtime import _fixture, _change, _samples
 
 
+def test_popular_raw_training_heat_is_backend_independent(tmp_path):
+    root, _, features = _fixture(tmp_path)
+    standard = load_r06_retrieval(root, features)
+    accelerated = load_r06_retrieval(root, features, content_backend="numpy")
+    expected = (("a", 4.), ("zero", 3.), ("b", 2.), ("c", 1.), ("d", 1.))
+    assert standard.popular([], 11) == accelerated.popular([], 11) == expected
+    assert accelerated.popular({"zero"}, 11, eligible_items={"b", "d", "zero"}) == (("b", 2.), ("d", 1.))
+
+
 @pytest.mark.parametrize("dimension", [1, 2, 3, 128])
 def test_randomized_scores_are_bitwise_scalar_equivalent(dimension):
     random = np.random.default_rng(1706 + dimension)

@@ -9,7 +9,7 @@ const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(script, 'inline application script exists');
 
 function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFetch = null,
-  comparisonFetch = null, tabStorage = new Map(), recommendationFetch = null) {
+  comparisonFetch = null, tabStorage = new Map(), recommendationFetch = null, r06Serving = false) {
   const elements = new Map();
   const requests = [];
   let interval = null;
@@ -32,7 +32,7 @@ function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFet
     fetch: async (url, options) => {
       requests.push({url, options});
       if (url === '/api/v1/system') return {ok: true, json: async () => ({
-        version: 'test', capabilities: {persistence: true, catalog_publication: true},
+        version: 'test', capabilities: {persistence: true, catalog_publication: true, r06_serving: r06Serving},
       })};
       if (url.startsWith('/api/v1/items?')) {
         const query = new URL(url, 'http://test').searchParams;
@@ -67,6 +67,42 @@ const recommendationSession = {session_id: 'session-1', access_token: 'token-1',
   history_version: 2, history: [], hidden_items: [], favorite_items: [], profile_id: 'new'};
 const recommendationOk = {ok: true, json: async () => ({request_id: 'request-1', actual_strategy: 'popular',
   fallback_reason: null, items: []})};
+
+test('strategy selector and enabled switch never claim a learned router or active R06 publication', async () => {
+  assert.match(html, /value="adaptive">兼容入口（非学习路由）/);
+  const p = page([], null, [], null, null, new Map(), null, true);
+  await p.ready;
+  assert.match(p.element('system').textContent, /已启用（不代表已发布 R06）/);
+});
+
+test('adaptive recommendation explains fixed dense alias using the original request', async () => {
+  const p = page([], null, [], null, null, new Map(), () => ({ok: true, json: async () => ({
+    actual_strategy: 'dense', fallback_reason: null, items: [],
+  })}));
+  await p.ready; p.setSession(recommendationSession);
+  p.element('strategy').value = 'adaptive'; p.element('count').value = '3';
+  await p.element('recommend').onclick();
+  assert.match(p.element('recommendations').children[0].textContent, /adaptive 固定执行 dense，不是学习型预算路由/);
+});
+
+test('comparison differentiates training heat, legacy lexical records and adaptive alias', async () => {
+  const p = page([], null, [], null, () => ({ok: true, json: async () => ({
+    session_id: 'session-1', history_version: 2, bundle_id: 'bundle-1', common_item_ids: [],
+    strategies: [
+      {requested_strategy: 'popular', actual_strategy: 'popular', elapsed_ms: 1,
+        items: [{item_id: 'a', source: 'r06-training-recent-popular-v1'}], unique_item_ids: []},
+      {requested_strategy: 'popular', actual_strategy: 'popular', elapsed_ms: 1,
+        items: [{item_id: 'b', source: 'r06-frozen-popular-baseline'}], unique_item_ids: []},
+      {requested_strategy: 'adaptive', actual_strategy: 'dense', elapsed_ms: 1, items: [], unique_item_ids: []},
+    ],
+  })}));
+  await p.ready; p.setSession(recommendationSession);
+  await p.element('compare-strategies').onclick();
+  const details = p.element('comparison').children.slice(1).map(row => row.children[1].textContent);
+  assert.match(details[0], /365 天半衰期.*非实时热度、纯次数或点击概率/);
+  assert.match(details[1], /历史热门演示结果按商品 ID 选取.*保留原记录/);
+  assert.match(details[2], /adaptive 固定执行 dense.*不是学习型预算路由/);
+});
 
 test('invalid fresh recommendation count sends no request and cannot freeze a bad retry key', async () => {
   const posts = [];
