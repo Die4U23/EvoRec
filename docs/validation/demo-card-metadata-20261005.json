@@ -1,0 +1,75 @@
+{
+  "date": "2026-10-05",
+  "scope": "推荐卡片的实际商品元数据读取和展示；不是新的模型实验",
+  "implementation_commit": "36bfa832d1c203a22f72dc8f4901cf6d16d5b639",
+  "frontend_commit": "951b0edd0f2f55fe256575e1acfc61cb5245f16c",
+  "frontend_sha256": "264a4cb51462ad411cccaa6945b69a0077905fa0208fef529fee169e9349fa3d9",
+  "backend_unchanged_from": "ec6988a9f66d90eb32a46f09ff21152d4d8becfa",
+  "node_script_tests": {
+    "passed": 47,
+    "failures": 0,
+    "skipped": 0,
+    "new_cases": 11,
+    "initial_old_page": {"passed": 36, "new_failed": 8},
+    "covers": [
+      "首屏外实际标题、分类、原图片 URL；正文用 textContent 不解释 HTML",
+      "目录缓存复用、同批 ID 去重、每批最多四路读取、顺序保持",
+      "404、网络错误、ID 不匹配、空字段及非 HTTP 图片 URL",
+      "读取元数据不重算推荐、不自动发送浏览反馈",
+      "会话、epoch、clearResults、新推荐及排队中断后迟到响应不得污染当前展示或缓存",
+      "隐藏及补齐前后撤销不复活隐藏卡片、不丢失元数据"
+    ]
+  },
+  "local_python_tests": {
+    "scope": "六文件：API、contracts、PostgreSQL API、R06 demo、v0.1 experience、repository hygiene",
+    "initial": {
+      "passed": 68, "failures": 1, "errors": 0, "skipped": 0,
+      "private_xml_sha256": "6446d39d4bc46fbe33deaf3754959ea05c6d6c5dbb7fc41ef269c9d8b0e0c91f",
+      "cause": "测试误以为 tmp_path 必在 artifacts 外；本轮 project-local basetemp 下该路径实际合法，不是生产守卫失效"
+    },
+    "final": {
+      "passed": 70, "failures": 0, "errors": 0, "skipped": 0,
+      "private_xml_sha256": "0be0675a03fb85289ad709dfda2a493ec496d0de9e1934a7f1d820138db19d84"
+    },
+    "default_temp_attempt": {
+      "passed": 0, "errors": 2,
+      "private_xml_sha256": "a664407dd7cf402d384093d69c48b2ee79bf97a4fb95d6b3d46966418e3e0055",
+      "cause": "Windows 默认 pytest 临时目录已有 ACL 拒绝访问，setup 阶段未执行用例；未更改 ACL"
+    },
+    "explicit_outside_artifacts_temp": {
+      "passed": 2, "errors": 0, "failures": 0, "skipped": 0,
+      "private_xml_sha256": "52e80fbc63db158fd872320ce719e18415f76a88039daf934f9250fda579115f"
+    },
+    "counts_overlap_do_not_add": true
+  },
+  "manual_browser": {
+    "isolated": true,
+    "admin_enabled": false,
+    "item_count": 137249,
+    "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+    "card_observations": 20,
+    "unique_items": 12,
+    "outside_first_page_observations": 20,
+    "raw_approved_text_and_actual_http_titles_equal": true,
+    "independent_display_rule": "metadata[id].strip()[:300] or id；不调用生产 display_title",
+    "images_absent_and_not_fabricated": true,
+    "session_version_after_metadata": 0,
+    "session_versions_after_manual_favorite_hide_undo": [1, 2, 3],
+    "cards_before_hide_after_hide_after_undo": [10, 9, 10],
+    "console_errors": [],
+    "private_observations_sha256": "061d2037abf6f25567264c02a2a3fd0ae4b867da9a84b3ca87a62feb9d7488d4",
+    "private_screenshot_sha256": "3a52c00e782bcf15fb4794ce0bf20d1e4a35e9877f59c8395a71cf90fe374a09",
+    "reset": "未执行，等待动作时确认，不计通过"
+  },
+  "review": "主线程质量、性能与复用复查；技能角色参数不可用，非独立 Agent 审查",
+  "not_claimed": [
+    "新增离线评价或效果收益、实际图片下载成功率",
+    "元数据等于已保存推荐的冻结历史展示快照（它来自当前商品目录）",
+    "全局并发上限：最多四路指每批，已发出的旧 GET 可完成但不能更新缓存/页面",
+    "浏览器故障注入、持续负载、生产 SLA、新电脑复建",
+    "本轮重新执行全部服务用例：本地为上述定向检查，完整回归由最新 head CI 执行",
+    "完整作品集 Demo 已交付"
+  ]
+}
