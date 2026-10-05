@@ -117,8 +117,22 @@ def test_output_exclusive_and_marker_complete(tmp_path):
     with pytest.raises(FileExistsError):
         marker(tmp_path, "ready", {"value": 2})
     assert json.loads((tmp_path / "ready.json").read_bytes()) == {"value": 1}
-    with pytest.raises(ValueError):
-        validate(tmp_path / "other", "host=localhost", tmp_path, uuid4(), "a"*64, "stdlib", 0)
+    # pytest --basetemp may itself be under project/artifacts. Derive an
+    # explicitly forbidden path instead of assuming tmp_path is outside it.
+    forbidden = Path(__file__).resolve().parents[1] / "tmp" / uuid4().hex
+    with pytest.raises(ValueError, match="fresh artifacts subdirectory"):
+        validate(forbidden, "host=localhost", tmp_path, uuid4(), "a"*64, "stdlib", 0)
+    assert not forbidden.exists()
+
+
+def test_output_validation_accepts_fresh_artifacts_and_rejects_existing(tmp_path):
+    output = _output()
+    validated, _, _ = validate(output, "host=localhost", tmp_path, uuid4(), "a"*64, "stdlib", 0)
+    assert validated == output and not output.exists()
+    output.mkdir(parents=True)
+    with pytest.raises(FileExistsError, match="already exists"):
+        validate(output, "host=localhost", tmp_path, uuid4(), "a"*64, "stdlib", 0)
+    assert not (output / "ready.json").exists()
 
 
 def test_independent_sample_oracle_skips_zero_vectors_and_nontraining_items(tmp_path):

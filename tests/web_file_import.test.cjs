@@ -15,21 +15,31 @@ test('sample profile is fixed demo history, not a real user or a fabricated R06 
 });
 
 function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFetch = null,
-  comparisonFetch = null, tabStorage = new Map(), recommendationFetch = null, r06Serving = false) {
+  comparisonFetch = null, tabStorage = new Map(), recommendationFetch = null, r06Serving = false,
+  itemFetch = null, feedbackFetch = null) {
   const elements = new Map();
   const requests = [];
   let interval = null;
   const element = id => {
     if (!elements.has(id)) elements.set(id, {
       textContent: '', value: '', files: [], children: [],
-      replaceChildren(...children) { this.children = children; },
-      append(...children) { this.children.push(...children); },
+      replaceChildren(...children) {
+        for (const child of this.children) child.parent = null;
+        this.children = []; this.append(...children);
+      },
+      append(...children) {
+        for (const child of children) { child.parent = this; this.children.push(child); }
+      },
+      remove() {
+        if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this);
+        this.parent = null;
+      },
     });
     return elements.get(id);
   };
   let nextId = 1;
   const context = {
-    document: {getElementById: element, createElement: () => element(Symbol())},
+    document: {getElementById: element, createElement: tag => Object.assign(element(Symbol()), {tagName: tag.toUpperCase()})},
     crypto: {randomUUID: () => `batch-${nextId++}`},
     sessionStorage: {getItem: key => tabStorage.get(key) || null,
       setItem: (key, value) => tabStorage.set(key, value)},
@@ -45,6 +55,14 @@ function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFet
         const offset = Number(query.get('offset'));
         const limit = Number(query.get('limit'));
         return {ok: true, json: async () => catalogItems.slice(offset, offset + limit)};
+      }
+      if (url.startsWith('/api/v1/items/')) {
+        assert.ok(itemFetch, 'item detail needs an explicit fixture');
+        return itemFetch(url, options);
+      }
+      if (url === '/api/v1/feedback') {
+        assert.ok(feedbackFetch, 'feedback needs an explicit fixture');
+        return feedbackFetch(url, options);
       }
       if (url.startsWith('/api/v1/admin/catalog/file-import-jobs/') && !options?.method)
         return fileStatusFetch ? fileStatusFetch(url) :
@@ -73,6 +91,140 @@ const recommendationSession = {session_id: 'session-1', access_token: 'token-1',
   history_version: 2, history: [], hidden_items: [], favorite_items: [], profile_id: 'new'};
 const recommendationOk = {ok: true, json: async () => ({request_id: 'request-1', actual_strategy: 'popular',
   fallback_reason: null, items: []})};
+
+const ok = value => ({ok: true, json: async () => value});
+const recItems = ids => ({request_id: 'metadata-request', actual_strategy: 'dense',
+  bundle_id: 'bundle-real', model_version: 'model-real',
+  items: ids.map(item_id => ({item_id, score: 0.125, source: 'controlled-dense'}))});
+const metadataPage = (ids, itemFetch, catalogItems = [], sessionFetch = null, recFetch = null, feedbackFetch = null) =>
+  page([], null, catalogItems, null, sessionFetch, new Map(),
+    recFetch || (() => ok(recItems(ids))), true, itemFetch, feedbackFetch);
+async function startMetadata(p) {
+  await p.ready; p.setSession(recommendationSession);
+  p.element('strategy').value = 'dense'; p.element('count').value = '10';
+  return p.element('recommend').onclick();
+}
+const cards = p => p.element('recommendations').children.filter(row => row.tagName === 'ARTICLE');
+const settle = () => new Promise(resolve => setImmediate(resolve));
+
+test('cards outside directory page hydrate real metadata without feedback or recomputation', async () => {
+  const p = metadataPage(['outside/first-page'], url => {
+    assert.equal(url, '/api/v1/items/outside%2Ffirst-page');
+    return ok({item_id: 'outside/first-page', title: '<Actual title>', category: 'Real category',
+      image_url: 'https://example.invalid/original.jpg'});
+  });
+  await startMetadata(p);
+  const row = cards(p)[0];
+  assert.equal(row.children[1].textContent, '<Actual title>');
+  assert.equal(row.children[2].textContent, 'Real category · outside/first-page');
+  assert.equal(row.children[0].children[0].src, 'https://example.invalid/original.jpg');
+  assert.equal(row.children[0].children[0].alt, '<Actual title>');
+  assert.equal(p.requests.filter(r => r.url === '/api/v1/recommendations').length, 1);
+  assert.equal(p.requests.filter(r => r.url === '/api/v1/feedback').length, 0);
+  assert.match(p.element('recommendations').children[0].textContent, /bundle-real；模型 model-real/);
+});
+
+test('cached directory and duplicate IDs do not duplicate hydration GETs', async () => {
+  const p = metadataPage(['cached', 'new', 'new'], () => ok({item_id: 'new', title: 'New original'}),
+    [{item_id: 'cached', title: 'Cached original', category: 'test', is_active: true}]);
+  await p.ready; await p.element('refresh-items').onclick();
+  await startMetadata(p);
+  assert.deepEqual(cards(p).map(row => row.children[1].textContent), ['Cached original', 'New original', 'New original']);
+  assert.equal(p.requests.filter(r => r.url.startsWith('/api/v1/items/')).length, 1);
+  await p.element('recommend').onclick();
+  assert.equal(p.requests.filter(r => r.url.startsWith('/api/v1/items/')).length, 1);
+});
+
+test('missing, failed, mismatched and empty metadata retain honest fallbacks', async () => {
+  const p = metadataPage(['missing', 'broken', 'wrong', 'empty'], url => {
+    const id = url.split('/').at(-1);
+    if (id === 'missing') return {ok: false, status: 404, json: async () => ({error: {code: 'item_not_found'}})};
+    if (id === 'broken') throw new Error('network unavailable');
+    if (id === 'wrong') return ok({item_id: 'another', title: 'Wrong title'});
+    return ok({item_id: id, title: '', category: '', image_url: 'javascript:alert(1)'});
+  });
+  await startMetadata(p);
+  assert.deepEqual(cards(p).map(row => row.children[1].textContent), ['missing', 'broken', 'wrong', 'empty']);
+  for (const row of cards(p)) assert.equal(row.children[0].children[0].textContent, '暂无图片');
+  assert.match(p.element('recommendations').children.at(-1).textContent, /3 件商品信息未能读取/);
+  assert.equal(p.element('message').textContent, '');
+  assert.equal(p.requests.filter(r => r.url === '/api/v1/recommendations').length, 1);
+});
+
+test('hydration uses at most four concurrent lookups and keeps recommendation order', async () => {
+  const ids = Array.from({length: 9}, (_, i) => `item-${i}`), pending = [];
+  let active = 0, peak = 0;
+  const p = metadataPage(ids, url => new Promise(resolve => {
+    active++; peak = Math.max(peak, active);
+    pending.push(() => { active--; const id = url.split('/').at(-1); resolve(ok({item_id: id, title: `Original ${id}`})); });
+  }));
+  const run = startMetadata(p); await settle();
+  assert.equal(pending.length, 4);
+  while (pending.length) { pending.shift()(); await settle(); }
+  await run;
+  assert.equal(peak, 4);
+  assert.deepEqual(cards(p).map(row => row.children[1].textContent), ids.map(id => `Original ${id}`));
+});
+
+test('superseded batch stops queued lookups and late failures cannot change the new status', async () => {
+  const waiting = [];
+  let calls = 0;
+  const p = metadataPage(Array.from({length: 8}, (_, i) => `old-${i}`), () =>
+    new Promise(resolve => { waiting.push(resolve); }), [], null,
+    () => ok(recItems(++calls === 1 ? Array.from({length: 8}, (_, i) => `old-${i}`) : [])));
+  const old = startMetadata(p); await settle();
+  assert.equal(waiting.length, 4);
+  await p.element('recommend').onclick();
+  const before = p.element('recommendations').children.map(row => row.textContent);
+  for (const resolve of waiting) resolve({ok: false, status: 503, json: async () => ({error: {code: 'unavailable'}})});
+  await old;
+  assert.equal(p.requests.filter(r => r.url.startsWith('/api/v1/items/')).length, 4);
+  assert.deepEqual(p.element('recommendations').children.map(row => row.textContent), before);
+  assert.equal(p.element('message').textContent, '');
+});
+
+for (const change of ['session', 'epoch', 'clear', 'recommendation']) {
+  test(`late metadata after ${change} cannot replace current cards or cache old data`, async () => {
+    let complete, calls = 0;
+    const p = metadataPage(['old'], () => new Promise(resolve => { complete = resolve; }), [], null,
+      () => ok(recItems(++calls === 1 ? ['old'] : [])));
+    const oldRun = startMetadata(p); await settle();
+    assert.equal(typeof complete, 'function');
+    if (change === 'session') p.setSession({...recommendationSession, session_id: 'other'});
+    if (change === 'epoch') p.setSession({...recommendationSession, epoch: 1});
+    if (change === 'clear') p.clearResults();
+    if (change === 'recommendation') await p.element('recommend').onclick();
+    complete(ok({item_id: 'old', title: 'Late old title'})); await oldRun;
+    assert.ok(cards(p).every(row => row.children[1].textContent !== 'Late old title'));
+    assert.ok(!JSON.stringify(p.element('recommendations').children, (key, value) => key === 'parent' ? undefined : value).includes('Late old title'));
+    // Same ID must be fetched afresh: stale results cannot poison the shared directory cache.
+    calls = 0; const next = p.element('recommend').onclick(); await settle();
+    assert.equal(p.requests.filter(r => r.url === '/api/v1/items/old').length, 2);
+    complete(ok({item_id: 'old', title: 'Current title'})); await next;
+    assert.equal(cards(p)[0].children[1].textContent, 'Current title');
+  });
+}
+
+for (const undoEarly of [false, true]) {
+  test(`metadata arriving after hide does not resurrect rows; early undo=${undoEarly}`, async () => {
+    let complete;
+    const p = metadataPage(['hidden'], () => new Promise(resolve => { complete = resolve; }), [],
+      () => ok(recommendationSession), null, () => ok({history_version: 2}));
+    const run = startMetadata(p); await settle();
+    await cards(p)[0].children[5].onclick();
+    assert.equal(cards(p).length, 0);
+    if (undoEarly) await p.element('undo').children[0].onclick();
+    complete(ok({item_id: 'hidden', title: 'Original hidden title'})); await run;
+    assert.equal(cards(p).length, undoEarly ? 1 : 0);
+    if (!undoEarly) {
+      assert.match(p.element('undo').children[0].textContent, /Original hidden title/);
+      await p.element('undo').children[0].onclick();
+    }
+    assert.equal(cards(p)[0].children[1].textContent, 'Original hidden title');
+    assert.equal(p.requests.filter(r => r.url.startsWith('/api/v1/items/')).length, 1);
+    assert.deepEqual(p.requests.filter(r => r.url === '/api/v1/feedback').map(r => JSON.parse(r.options.body).desired_state), [true, false]);
+  });
+}
 
 test('recommendation displays response bundle and model identity, never inferring it from strategy', async () => {
   const p = page([], null, [], null, null, new Map(), () => ({ok: true, json: async () => ({
