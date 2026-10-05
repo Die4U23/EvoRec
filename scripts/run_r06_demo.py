@@ -26,24 +26,32 @@ from evorec.infrastructure.residual_ranker import ControlledLoadError, _digest
 from scripts.migrate_database import migrate
 
 
-def validate(output, database_url, managed_root, bundle_id, digest, backend, port):
+def validate_isolation(output, database_url, port):
+    """Shared local demo boundary, checked before output/schema mutation."""
     project = Path(__file__).resolve().parents[1]
     output = Path(output).resolve()
-    root = Path(managed_root).resolve(strict=True)
     if not output.is_relative_to(project / "artifacts") or output == project / "artifacts":
         raise ValueError("demo output must be a fresh artifacts subdirectory")
     if output.exists():
         raise FileExistsError("demo output already exists")
-    if not root.is_dir() or type(bundle_id) is not UUID:
-        raise ValueError("managed root and bundle UUID are required")
-    _digest(digest)
-    if backend not in {"numpy", "stdlib"} or type(port) is not int or not 0 <= port < 65536 or port == 8000:
-        raise ValueError("unsupported backend or protected/invalid port")
+    if type(port) is not int or not 0 <= port < 65536 or port == 8000:
+        raise ValueError("protected/invalid port")
     parameters = conninfo_to_dict(database_url)
     if parameters.get("host", "") not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("isolated demo requires an explicit local PostgreSQL host")
     if parameters.get("hostaddr", "") not in {"", "127.0.0.1", "::1"}:
         raise ValueError("database host address must also be loopback")
+    return output, parameters
+
+
+def validate(output, database_url, managed_root, bundle_id, digest, backend, port):
+    output, parameters = validate_isolation(output, database_url, port)
+    root = Path(managed_root).resolve(strict=True)
+    if not root.is_dir() or type(bundle_id) is not UUID:
+        raise ValueError("managed root and bundle UUID are required")
+    _digest(digest)
+    if backend not in {"numpy", "stdlib"}:
+        raise ValueError("unsupported backend")
     return output, root, parameters
 
 
