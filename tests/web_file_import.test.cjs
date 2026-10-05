@@ -9,7 +9,7 @@ const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(script, 'inline application script exists');
 
 function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFetch = null,
-  comparisonFetch = null, tabStorage = new Map()) {
+  comparisonFetch = null, tabStorage = new Map(), recommendationFetch = null) {
   const elements = new Map();
   const requests = [];
   let interval = null;
@@ -46,6 +46,7 @@ function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFet
       if (comparisonFetch && (url.startsWith('/api/v1/strategy-comparison') ||
         url.startsWith('/api/v1/sessions/')))
         return comparisonFetch(url, options);
+      if (recommendationFetch && url === '/api/v1/recommendations') return recommendationFetch(url, options);
       if (catalogFetch && url.startsWith('/api/v1/admin/catalog/') &&
           url !== '/api/v1/admin/catalog/file-import-jobs') return catalogFetch(url, options);
       if (catalogFetch && url === '/api/v1/admin/publication') return catalogFetch(url, options);
@@ -58,8 +59,133 @@ function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFet
   vm.runInNewContext(script, context, {filename: 'web/index.html'});
   return {element, requests, tick: async () => { if (interval) await interval(); },
     ready: vm.runInNewContext('startup', context),
-    setSession: value => { context.__sessionForTest = value; vm.runInNewContext('session = __sessionForTest', context); }};
+    setSession: value => { context.__sessionForTest = value; vm.runInNewContext('session = __sessionForTest', context); },
+    clearResults: () => vm.runInNewContext('clearResults()', context)};
 }
+
+const recommendationSession = {session_id: 'session-1', access_token: 'token-1', epoch: 0,
+  history_version: 2, history: [], hidden_items: [], favorite_items: [], profile_id: 'new'};
+const recommendationOk = {ok: true, json: async () => ({request_id: 'request-1', actual_strategy: 'popular',
+  fallback_reason: null, items: []})};
+
+test('invalid fresh recommendation count sends no request and cannot freeze a bad retry key', async () => {
+  const posts = [];
+  const p = page([], null, [], null, null, new Map(), (url, options) => {
+    posts.push(options); return recommendationOk;
+  });
+  await p.ready; p.setSession(recommendationSession); p.element('strategy').value = 'popular';
+  for (const count of ['0', '1.5', '51', 'bad']) {
+    p.element('count').value = count;
+    await p.element('recommend').onclick();
+    assert.equal(posts.length, 0);
+    assert.match(p.element('message').textContent, /1 到 50 的整数/);
+  }
+  p.element('count').value = '3';
+  await p.element('recommend').onclick();
+  assert.equal(posts.length, 1);
+  assert.equal(JSON.parse(posts[0].body).k, 3);
+});
+
+test('unconfirmed recommendation survives refresh with its original key and input', async () => {
+  const storage = new Map(), posts = [];
+  const sessionFetch = () => ({ok: true, json: async () => recommendationSession});
+  const fetchRecommendation = (url, options) => {
+    posts.push(options);
+    if (posts.length === 1) throw new Error('recommendation response lost');
+    return recommendationOk;
+  };
+  const first = page([], null, [], null, sessionFetch, storage, fetchRecommendation);
+  await first.ready; first.setSession(recommendationSession);
+  first.element('strategy').value = 'popular'; first.element('count').value = '4';
+  await first.element('recommend').onclick();
+  assert.match(first.element('message').textContent, /response lost/);
+  const refreshed = page([], null, [], null, sessionFetch, storage, fetchRecommendation);
+  await refreshed.ready;
+  assert.match(refreshed.element('message').textContent, /原编号/);
+  refreshed.element('count').value = '10'; refreshed.element('strategy').value = 'adaptive';
+  await refreshed.element('recommend').onclick();
+  assert.equal(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
+  assert.equal(posts[0].body, posts[1].body);
+  assert.match(refreshed.element('recommendations').children[0].textContent, /返回 0\/4/);
+  assert.equal(JSON.parse(storage.get('evorec.comparison')).pendingRecommendation, null);
+});
+
+for (const code of ['recommendation_interrupted', 'recommendation_idempotency_conflict']) {
+  test(`terminal ${code} requires another click before issuing a fresh key`, async () => {
+    const storage = new Map(), posts = [];
+    const p = page([], null, [], null, null, storage, (url, options) => {
+      posts.push(options);
+      return posts.length === 1 ? {ok: false, status: 409, json: async () => ({
+        error: {code, message: 'terminal', retryable: false}})} : recommendationOk;
+    });
+    await p.ready; p.setSession(recommendationSession);
+    p.element('strategy').value = 'popular'; p.element('count').value = '4';
+    await p.element('recommend').onclick();
+    assert.equal(posts.length, 1);
+    assert.match(p.element('message').textContent, /再次点击.*新编号/);
+    assert.equal(JSON.parse(storage.get('evorec.comparison')).pendingRecommendation, null);
+    await p.element('recommend').onclick();
+    assert.notEqual(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
+  });
+}
+
+test('legacy unknown liveness preserves the key and does not silently resubmit', async () => {
+  const posts = [];
+  const p = page([], null, [], null, null, new Map(), (url, options) => {
+    posts.push(options);
+    return {ok: false, status: 409, json: async () => ({error: {code: 'recommendation_recovery_unavailable',
+      message: 'unknown', retryable: false}})};
+  });
+  await p.ready; p.setSession(recommendationSession);
+  p.element('strategy').value = 'popular'; p.element('count').value = '4';
+  await p.element('recommend').onclick();
+  assert.equal(posts.length, 1);
+  assert.match(p.element('message').textContent, /请联系管理员.*不自动换编号/);
+  await p.element('recommend').onclick();
+  assert.equal(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
+});
+
+for (const lateOk of [true, false]) {
+  test(`old-session late recommendation ${lateOk ? 'success' : 'error'} cannot replace new results`, async () => {
+    let resolveOld;
+    const posts = [];
+    const p = page([], null, [], null, null, new Map(), (url, options) => {
+      posts.push(options);
+      return posts.length === 1 ? new Promise(resolve => { resolveOld = resolve; }) : recommendationOk;
+    });
+    await p.ready; p.setSession(recommendationSession);
+    p.element('strategy').value = 'popular'; p.element('count').value = '4';
+    const old = p.element('recommend').onclick();
+    p.setSession({...recommendationSession, session_id: 'session-2'}); p.clearResults();
+    p.element('count').value = '6';
+    await p.element('recommend').onclick();
+    assert.match(p.element('recommendations').children[0].textContent, /返回 0\/6/);
+    resolveOld(lateOk ? recommendationOk : {ok: false, status: 409,
+      json: async () => ({error: {code: 'recommendation_interrupted', message: 'late', retryable: false}})});
+    await old;
+    assert.match(p.element('recommendations').children[0].textContent, /返回 0\/6/);
+    assert.equal(p.element('message').textContent, '');
+  });
+}
+
+test('same-key late in-progress error cannot erase a completed replay', async () => {
+  let resolveOld;
+  const posts = [];
+  const p = page([], null, [], null, null, new Map(), (url, options) => {
+    posts.push(options);
+    return posts.length === 1 ? new Promise(resolve => { resolveOld = resolve; }) : recommendationOk;
+  });
+  await p.ready; p.setSession(recommendationSession);
+  p.element('strategy').value = 'popular'; p.element('count').value = '4';
+  const old = p.element('recommend').onclick();
+  await p.element('recommend').onclick();
+  assert.equal(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
+  resolveOld({ok: false, status: 409, json: async () => ({error: {
+    code: 'recommendation_in_progress', message: 'late processing', retryable: true}})});
+  await old;
+  assert.match(p.element('recommendations').children[0].textContent, /返回 0\/4/);
+  assert.equal(p.element('message').textContent, '');
+});
 
 test('strategy comparison preview uses one session snapshot and labels fallback honestly', async () => {
   const reply = {comparison_id: 'comparison-1', history_version: 2, bundle_id: 'bundle-1',

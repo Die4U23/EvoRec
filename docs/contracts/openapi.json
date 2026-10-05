@@ -3715,7 +3715,7 @@
                 }
               }
             },
-            "description": "History version conflict"
+            "description": "History, idempotency or execution recovery conflict"
           },
           "422": {
             "content": {

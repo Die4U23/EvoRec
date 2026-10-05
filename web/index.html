@@ -145,13 +145,16 @@
     function rememberComparison() {
       try { sessionStorage.setItem('evorec.comparison', JSON.stringify({
         session, pending: pendingComparison, id: el('comparison-id').value,
-        pendingJob: pendingComparisonJob, jobId: el('comparison-job-id').value,
+        pendingJob: pendingComparisonJob, jobId: el('comparison-job-id').value, pendingRecommendation,
       })); } catch (_) { /* Comparison IDs remain available when browser storage is disabled. */ }
     }
     try {
       const saved = JSON.parse(sessionStorage.getItem('evorec.comparison'));
       if (saved?.session?.session_id && saved.session.access_token) {
         session = saved.session; pendingComparison = saved.pending || null;
+        if (typeof saved.pendingRecommendation?.key === 'string' &&
+            saved.pendingRecommendation.payload?.session_id === session.session_id)
+          pendingRecommendation = saved.pendingRecommendation;
         el('comparison-id').value = saved.id || '';
         pendingComparisonJob = saved.pendingJob || null;
         el('comparison-job-id').value = saved.jobId || '';
@@ -162,11 +165,12 @@
       const data = await response.json();
       if (!response.ok) {
         const stale = ['publication_version_conflict', 'build_base_conflict'].includes(data.error?.code);
-        throw new Error(stale ? '活动商品库已经变化，请按最新商品库重新构建' : data.error?.message || `HTTP ${response.status}`);
+        throw Object.assign(new Error(stale ? '活动商品库已经变化，请按最新商品库重新构建' : data.error?.message || `HTTP ${response.status}`),
+          {code: data.error?.code, retryable: data.error?.retryable});
       }
       return data;
     }
-    async function run(action) { try { message(''); await action(); } catch (error) { message(`操作失败：${error.message}。可重试。`); } }
+    async function run(action) { try { message(''); await action(); } catch (error) { message(`操作失败：${error.message}。${error.retryable === false ? '请按提示处理。' : '可重试。'}`); } }
     const auth = () => ({'X-Session-Token': session.access_token});
     const admin = () => ({'X-Admin-Token': el('admin-token').value});
     function showSession() {
@@ -424,25 +428,44 @@
     }
     async function recommend() {
       if (!session) throw new Error('请先开始体验');
-      if (!pendingRecommendation) pendingRecommendation = {
-        key: crypto.randomUUID(), payload: {session_id: session.session_id,
-          expected_history_version: session.history_version, strategy: el('strategy').value,
-          k: Number(el('count').value)}
-      };
+      if (!pendingRecommendation) {
+        const k = Number(el('count').value);
+        if (!Number.isInteger(k) || k < 1 || k > 50)
+          throw Object.assign(new Error('推荐数量必须是 1 到 50 的整数，请修正后再发起请求'), {retryable: false});
+        pendingRecommendation = {
+          key: crypto.randomUUID(), payload: {session_id: session.session_id,
+            expected_history_version: session.history_version, strategy: el('strategy').value, k}
+        };
+      }
+      const pending = pendingRecommendation, currentSession = session.session_id;
+      rememberComparison();
       const list = el('recommendations'); list.replaceChildren();
       for (let i = 0; i < 3; i++) { const skeleton = document.createElement('div'); skeleton.className = 'item skeleton'; list.append(skeleton); }
       try {
-        latest = await api('/api/v1/recommendations', {method: 'POST',
-          headers: {...auth(), 'Idempotency-Key': pendingRecommendation.key},
-          body: JSON.stringify(pendingRecommendation.payload)});
+        const result = await api('/api/v1/recommendations', {method: 'POST',
+          headers: {...auth(), 'Idempotency-Key': pending.key},
+          body: JSON.stringify(pending.payload)});
+        if (session?.session_id !== currentSession || pendingRecommendation !== pending) return;
+        latest = result;
         pendingRecommendation = null; hiddenUndo.clear(); renderUndo();
+        rememberComparison();
         list.replaceChildren();
         const note = document.createElement('p'); note.className = 'status';
-        note.textContent = `实际策略：${latest.actual_strategy}${latest.fallback_reason ? '（回退原因：' + latest.fallback_reason + '）' : ''}。返回 ${latest.items.length}/${Number(el('count').value)} 项。${latest.items.length < Number(el('count').value) ? '商品不足，不补造重复结果。' : ''}`;
+        note.textContent = `实际策略：${latest.actual_strategy}${latest.fallback_reason ? '（回退原因：' + latest.fallback_reason + '）' : ''}。返回 ${latest.items.length}/${pending.payload.k} 项。${latest.items.length < pending.payload.k ? '商品不足，不补造重复结果。' : ''}`;
         list.append(note);
         for (const item of latest.items) list.append(card(item));
         if (!latest.items.length) { const empty = document.createElement('p'); empty.textContent = '暂无可推荐商品。可重置会话或检查商品目录。'; list.append(empty); }
-      } catch (error) { list.replaceChildren(); throw new Error(`暂时无法生成推荐，请稍后重试：${error.message}`); }
+      } catch (error) {
+        if (session?.session_id !== currentSession || pendingRecommendation !== pending) return;
+        list.replaceChildren();
+        if (['recommendation_interrupted', 'recommendation_idempotency_conflict'].includes(error.code)) {
+          pendingRecommendation = null; rememberComparison();
+          throw Object.assign(new Error('上次请求已终止或编号冲突；再次点击将用新编号发起新请求，不是旧结果重放'), {retryable: false});
+        }
+        if (error.code === 'recommendation_recovery_unavailable')
+          throw Object.assign(new Error('旧请求缺少执行租约，无法确定是否仍在运行；请联系管理员核对，不自动换编号重算'), {retryable: false});
+        throw Object.assign(new Error(`暂时无法生成推荐，请稍后重试：${error.message}`), {retryable: error.retryable});
+      }
     }
     async function compareStrategies() {
       if (!session) throw new Error('请先开始体验');
@@ -747,6 +770,7 @@
         await syncSession();
         if (el('comparison-id').value) await loadComparison();
         if (el('comparison-job-id').value) await loadComparisonJob();
+        if (pendingRecommendation) message('发现上次未确认的推荐；再次点击将按原编号及原输入核对，不自动创建新请求');
       }
     });
   </script>

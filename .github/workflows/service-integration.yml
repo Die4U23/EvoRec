@@ -63,6 +63,7 @@ jobs:
             tests/test_r06_catalog_preparation.py \
             tests/test_r06_async.py \
             tests/test_r06_online.py \
+            tests/test_recommendation_recovery.py \
             tests/test_postgres_api.py tests/test_recommendation.py \
             tests/test_strategy_comparison.py \
             tests/test_comparison_jobs.py \

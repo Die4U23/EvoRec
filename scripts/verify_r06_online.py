@@ -39,6 +39,8 @@ SOURCE_FILES = tuple(dict.fromkeys((*CATALOG_SOURCES,
     "src/evorec/domain/errors.py", "db/migrations/0010_r06_request_snapshot.sql",
     "scripts/comparison_worker.py", "scripts/verify_r06_online.py", "tests/test_r06_online.py")))
 SOURCE_FILES = (*SOURCE_FILES, "src/evorec/infrastructure/_ranker_numpy.py", "tests/test_residual_ranker_numpy.py")
+SOURCE_FILES = (*SOURCE_FILES, "src/evorec/infrastructure/recommendation_execution.py",
+                "db/migrations/0011_recommendation_execution_lease.sql", "tests/test_recommendation_recovery.py")
 
 
 def verify(output, database_url, managed_root, bundle_id, digest, *, content_backend="stdlib"):
