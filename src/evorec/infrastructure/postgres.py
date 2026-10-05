@@ -47,6 +47,7 @@ from evorec.domain.models import (
 from evorec.domain.session_profiles import initial_history
 from evorec.infrastructure.r06_admission import (
     ManagedR06Runtime, capture_model, decode_model, encode_model,
+    validate_captured_context,
 )
 from evorec.infrastructure.r06_async import R06CPUQueue, R06RankingPort, _drain
 
@@ -112,7 +113,9 @@ class PostgresDemoBackend:
         context = RequestContext(request_id, session, catalog, model)
         if model is not None:
             # Validate full history/state limits before any accepted request is written.
-            R06RankingPort.from_snapshot(self.r06_queue, runtime.bundle, context)
+            # Actual rows just produced the seal; avoid hashing it again here.
+            # Ranking/restoration still verify the persisted identity in full.
+            validate_captured_context(runtime.bundle, context)
         return context
 
     def activate_runtime(self, runtime: "RuntimeBundle") -> None:

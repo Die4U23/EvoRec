@@ -189,7 +189,7 @@ def load_residual_ranker(component_dir: Path, *, expected_manifest_sha256: str |
     pin expected_manifest_sha256 when selecting a previously approved component.
     No registration, database access or active-model mutation takes place.
     """
-    if cpu_backend not in {"stdlib", "numpy"}:
+    if type(cpu_backend) is not str or cpu_backend not in {"stdlib", "numpy"}:
         _fail("unsupported_backend", "ranker backend must be explicitly stdlib or numpy")
     supplied = Path(component_dir)
     if supplied.is_symlink():

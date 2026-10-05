@@ -76,6 +76,19 @@ def restore_request(bundle, context):
             or model.catalog_sha256 != _seal(bundle, [(item, bundle.catalog_item_sha256[item])
                                                     for item in context.catalog.eligible_items])):
         raise ManagementError("r06_snapshot_changed", "frozen model input identity differs", 503)
+    return validate_captured_context(bundle, context)
+
+
+def validate_captured_context(bundle, context):
+    """Shape/time guard only; does not authenticate a caller-provided content seal.
+
+    Used after capture_model has verified actual rows, or after restore_request
+    has checked the persisted seal. Never sufficient for restoring by itself.
+    """
+    model = context.model
+    if (model is None or context.catalog.bundle_id != bundle.bundle_id
+            or model.manifest_sha256 != bundle.manifest_sha256 or model.model_version != bundle.model_version):
+        raise ManagementError("r06_snapshot_changed", "captured model identity differs", 503)
     try:
         request = FrozenR06Request(context, model.timestamp_ms, model.full_seen,
                                    bundle.adapter.features.manifest_sha256,
