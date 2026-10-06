@@ -1,11 +1,14 @@
 """Trusted PostgreSQL capture and pinned restoration, never HTTP input hashes.
 
-The content seal proves actual text/time matched the approved immutable package
-at capture. Restoration uses that stored seal, not mutable current item rows.
+The content seal binds actual UTF-8 text hashes and literal time to the approved
+immutable package at capture, assuming SHA-256 collision resistance. SQL hashes
+actual current text, never a mutable stored digest. Restoration uses the stored
+seal, not mutable current item rows.
 Database ownership is the trust boundary, not a cryptographic signature.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import hashlib
 from types import MappingProxyType
 from typing import Mapping
 
@@ -20,10 +23,11 @@ from evorec.infrastructure.residual_ranker import ControlledLoadError
 class ManagedR06Runtime:
     bundle: FrozenR06Bundle
     catalog_items: Mapping[str, FrozenCatalogItem]
+    catalog_text_sha256: Mapping[str, bytes] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
-        # Pay canonical text hashing once at load. Requests still compare actual
-        # DB text/time, not a cached client claim, before using these identities.
+        # Pay approved-source hashing once at load. Requests hash actual current
+        # DB UTF-8 text, not a stored digest column or a cached client claim.
         records = dict(self.catalog_items)
         if (type(self.bundle) is not FrozenR06Bundle
                 or set(records) != set(self.bundle.adapter.features.item_ids)
@@ -32,6 +36,9 @@ class ManagedR06Runtime:
                        for key, item in records.items())):
             raise ManagementError("r06_catalog_changed", "approved runtime source table differs", 422)
         object.__setattr__(self, "catalog_items", MappingProxyType(records))
+        object.__setattr__(self, "catalog_text_sha256", MappingProxyType({
+            key: hashlib.sha256(item.text.encode("utf-8")).digest() for key, item in records.items()
+        }))
 
     @property
     def bundle_id(self):
@@ -121,7 +128,8 @@ def capture_model(connection, runtime, session, catalog, rows):
             continue
         item_id = row.item_id
         approved = runtime.catalog_items[item_id]
-        if row.r06_model_text != approved.text or row.r06_first_seen_ms != approved.first_seen_ms:
+        if (row.r06_text_sha256 != runtime.catalog_text_sha256[item_id]
+                or row.r06_first_seen_ms != approved.first_seen_ms):
             raise ManagementError("r06_catalog_changed", "actual model text/time changed", 409)
         if item_id not in catalog.eligible_items:
             raise ManagementError("r06_catalog_changed", "eligible catalog changed during admission", 409)

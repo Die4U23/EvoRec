@@ -99,9 +99,13 @@ class PostgresDemoBackend:
                 raise ManagementError("r06_runtime_unavailable", "approved R06 runtime is unavailable", 503)
             # One actual-row read supplies eligibility and content, not two READ COMMITTED views.
             # Compact rows are local to this large read; other queries retain dict_row.
-            with connection.cursor(row_factory=namedtuple_row) as cursor:
+            # Compute the digest from actual text in this same SQL view. No
+            # mutable stored hash is trusted; raw time and all members remain.
+            with connection.cursor(row_factory=namedtuple_row, binary=True) as cursor:
                 rows = cursor.execute(
-                    "SELECT bi.item_id, bi.internal_item_id, i.is_active, i.r06_model_text, i.r06_first_seen_ms "
+                    "SELECT bi.item_id, bi.internal_item_id, i.is_active, "
+                    "pg_catalog.sha256(pg_catalog.convert_to(i.r06_model_text, 'UTF8')) AS r06_text_sha256, "
+                    "i.r06_first_seen_ms "
                     "FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id "
                     "WHERE bi.bundle_id=%s ORDER BY bi.internal_item_id", (bundle_id,),
                 ).fetchall()

@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timezone
 import json
+import hashlib
 import struct
 from threading import Event
 from uuid import UUID, uuid4
@@ -96,13 +97,14 @@ def test_capture_uses_compact_actual_rows_without_dropping_inactive_members(onli
     observed = []
 
     def capture(connection, runtime, session, catalog, rows):
-        fields = ("item_id", "internal_item_id", "is_active", "r06_model_text", "r06_first_seen_ms")
+        fields = ("item_id", "internal_item_id", "is_active", "r06_text_sha256", "r06_first_seen_ms")
         # Container budget only, not a process RSS or wall-time assertion. A
         # future equivalent compact representation can satisfy the same test.
         assert len(rows) == 6
         assert all(sys.getsizeof(row) < sys.getsizeof(dict.fromkeys(fields)) for row in rows)
         first = next(row for row in rows if row.item_id == "a")
-        assert first.r06_model_text == "中文 alpha" and first.r06_first_seen_ms == 1
+        assert first.r06_text_sha256 == hashlib.sha256("中文 alpha".encode("utf-8")).digest()
+        assert first.r06_first_seen_ms == 1
         assert first.is_active is (not inactive)
         observed.append(True)
         return original(connection, runtime, session, catalog, rows)
@@ -300,12 +302,18 @@ def test_full_seen_includes_exposure_removed_state_old_history_and_resets_by_epo
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("column,value", [("r06_model_text", "tampered"), ("r06_first_seen_ms", 99)])
+@pytest.mark.parametrize("column,value", [("r06_model_text", "tampered"), ("r06_model_text", "中文 alphb"),
+                                        ("r06_model_text", None), ("r06_first_seen_ms", 99)])
 def test_actual_sql_content_drift_refuses_admission_without_request_row(online, column, value):
     from psycopg import sql
     app, _, _ = online
     with app.backend._connect() as c:
-        c.execute(sql.SQL("UPDATE items SET {}=%s WHERE item_id='a'").format(sql.Identifier(column)), (value,))
+        if value is None:
+            # SQL's source-pair constraint requires both fields to be NULL;
+            # admission must still fail closed, not treat NULL as empty text.
+            c.execute("UPDATE items SET r06_model_text=NULL, r06_first_seen_ms=NULL WHERE item_id='a'")
+        else:
+            c.execute(sql.SQL("UPDATE items SET {}=%s WHERE item_id='a'").format(sql.Identifier(column)), (value,))
     async def run():
         command = await _command(app)
         with pytest.raises(ManagementError) as error: await app.recommend.execute(command)
@@ -705,11 +713,33 @@ def test_cached_original_sources_are_immutable_owned_and_hash_bound(online):
     copied = ManagedR06Runtime(runtime.bundle, records)
     records.clear()
     assert len(copied.catalog_items) == 6
+    assert copied.catalog_text_sha256 == {
+        key: hashlib.sha256(item.text.encode("utf-8")).digest()
+        for key, item in runtime.catalog_items.items()
+    }
+    with pytest.raises(TypeError): copied.catalog_text_sha256["a"] = b"forged"
+    with pytest.raises(FrozenInstanceError): copied.catalog_text_sha256 = {}
     with pytest.raises(TypeError): copied.catalog_items["a"] = None
     with pytest.raises(FrozenInstanceError): copied.catalog_items["a"].text = "tampered"
     changed = dict(runtime.catalog_items)
     changed["a"] = replace(changed["a"], text="tampered")
     with pytest.raises(ManagementError): ManagedR06Runtime(runtime.bundle, changed)
+
+
+def test_actual_sql_digest_matches_raw_utf8_without_trimming_or_normalizing(online):
+    app, _, _ = online
+    texts = ("", "中文 alpha", "中文 alphb", " e\u0301 \n", " é \n", "🎮\\\"\t尾 ")
+    with app.backend._connect() as connection:
+        for text in texts:
+            connection.execute("UPDATE items SET r06_model_text=%s WHERE item_id='a'", (text,))
+            with connection.cursor(binary=True) as cursor:
+                row = cursor.execute(
+                    "SELECT r06_model_text, pg_catalog.sha256(pg_catalog.convert_to(r06_model_text,'UTF8')) AS digest "
+                    "FROM items WHERE item_id='a'"
+                ).fetchone()
+            assert row["r06_model_text"] == text
+            assert row["digest"] == hashlib.sha256(text.encode("utf-8")).digest()
+        assert hashlib.sha256(texts[3].encode()).digest() != hashlib.sha256(texts[4].encode()).digest()
 
 
 def test_api_capacity_error_is_explicit_and_never_returns_popular(online):
