@@ -148,6 +148,7 @@
     let comparisonHistoryOffset = 0;
     const comparisonHistoryPageSize = 10;
     let currentBuild = null, buildPreviewOffset = 0, pendingBuildPublication = null, processingCatalog = false, buildPollTimer = null, importPollTimer = null;
+    let buildPreviewGeneration = 0;
     const pendingFeedback = new Map();
     const hiddenUndo = new Map();
     const message = value => { el('message').textContent = value; };
@@ -247,6 +248,7 @@
     } catch (_) { /* Malformed tab state never triggers an automatic switch. */ }
     async function switchBundle(action) {
       if (switchingVersion || publishingCatalog) return;
+      let attempted = false;
       switchingVersion = true;
       el('publish-bundle').disabled = el('rollback-bundle').disabled = true;
       try {
@@ -265,6 +267,7 @@
         }
         const op = pendingVersionOperation;
         showVersionOperation('执行中；不更换编号或版本守卫'); rememberVersionOperation();
+        attempted = true; invalidateBuildPreview();
         const result = await api(`/api/v1/admin/bundles/${op.target}/${op.action}`, {
           method: 'POST', headers: admin(), body: JSON.stringify({operation_id: op.operationId, expected_active_bundle_id: op.expected}),
         });
@@ -288,6 +291,7 @@
         }
         throw error;
       } finally {
+        if (attempted) invalidateBuildPreview();
         switchingVersion = false;
         el('publish-bundle').disabled = el('rollback-bundle').disabled = false;
       }
@@ -298,7 +302,7 @@
       el('catalog-batch').value = batchId;
       el('catalog-build').value = '';
       currentBuild = null; pendingBuildPublication = null; buildPreviewOffset = 0;
-      el('build-preview').replaceChildren(); el('publish-catalog').disabled = true;
+      invalidateBuildPreview();
       el('build-status').textContent = '批次已导入，可以开始处理。';
     }
     function stopImportPolling() {
@@ -363,11 +367,19 @@
         if (['queued', 'processing'].includes(record.latest_build.status)) startBuildPolling(record.latest_build.build_id);
       }
     }
+    function invalidateBuildPreview() {
+      buildPreviewGeneration++;
+      currentBuild = null;
+      el('build-preview').replaceChildren();
+      el('publish-catalog').disabled = el('preview-previous').disabled = el('preview-next').disabled = true;
+      if (el('catalog-build').value.trim()) el('build-status').textContent = '构建与商品资格需重新查询；旧预览不代表当前状态。';
+    }
     async function refreshBuildStatus() {
       const id = el('catalog-build').value.trim();
       if (!id) throw new Error('请先开始处理或填入构建 ID');
+      const generation = buildPreviewGeneration;
       const state = await api(`/api/v1/admin/catalog/builds/${encodeURIComponent(id)}`, {headers: admin()});
-      if (id !== el('catalog-build').value.trim()) return state;
+      if (id !== el('catalog-build').value.trim() || generation !== buildPreviewGeneration) return state;
       currentBuild = state;
       el('catalog-batch').value = state.batch_id;
       const phase = {queued: '排队中（请启动后台 worker）', processing: '处理中', ready: '待确认发布', failed: '处理失败'}[state.status];
@@ -393,25 +405,37 @@
       }, 1000);
     }
     async function previewBuild() {
-      const state = await refreshBuildStatus();
-      const preview = await api(`/api/v1/admin/catalog/builds/${encodeURIComponent(state.build_id)}/items?offset=${buildPreviewOffset}&limit=20`, {headers: admin()});
-      el('build-preview').replaceChildren();
-      const summary = document.createElement('p');
-      const versionPhase = state.publication_status === 'active' ? '当前活动版本。'
-        : state.publication_status === 'retired' ? '此版本已被替代。'
-        : '发布后将使用此完整版本。';
-      summary.textContent = `完整版本共 ${preview.total_count} 件；本页 ${preview.items.length ? preview.offset + 1 : 0}–${preview.offset + preview.items.length} 件。${versionPhase}`;
-      el('build-preview').append(summary);
-      for (const item of preview.items) {
-        const row = document.createElement('div'); row.className = 'item';
-        const title = document.createElement('strong'); title.textContent = item.title;
-        const status = document.createElement('small');
-        status.textContent = `${item.item_id} · ${item.category} · ${!item.is_active ? '已下架，发布后仍不推荐' : item.currently_recommendable ? '当前可推荐' : '发布后可参与推荐'}`;
-        row.append(title, status); el('build-preview').append(row);
+      if (switchingVersion)
+        throw new Error('版本操作仍在执行，请等待完成再查询预览');
+      invalidateBuildPreview();
+      const generation = buildPreviewGeneration, id = el('catalog-build').value.trim(), offset = buildPreviewOffset;
+      try {
+        const state = await refreshBuildStatus();
+        if (generation !== buildPreviewGeneration || id !== el('catalog-build').value.trim()) return;
+        const preview = await api(`/api/v1/admin/catalog/builds/${encodeURIComponent(state.build_id)}/items?offset=${offset}&limit=20`, {headers: admin()});
+        if (generation !== buildPreviewGeneration || id !== el('catalog-build').value.trim()) return;
+        el('build-preview').replaceChildren();
+        const summary = document.createElement('p');
+        const versionPhase = state.publication_status === 'active' ? '当前活动版本。'
+          : state.publication_status === 'retired' ? '此版本已被替代。'
+          : '发布后将使用此完整版本。';
+        summary.textContent = `完整版本共 ${preview.total_count} 件；本页 ${preview.items.length ? preview.offset + 1 : 0}–${preview.offset + preview.items.length} 件。${versionPhase}`;
+        el('build-preview').append(summary);
+        for (const item of preview.items) {
+          const row = document.createElement('div'); row.className = 'item';
+          const title = document.createElement('strong'); title.textContent = item.title;
+          const status = document.createElement('small');
+          status.textContent = `${item.item_id} · ${item.category} · ${!item.is_active ? '已下架，发布后仍不推荐' : item.currently_recommendable ? '当前可推荐' : '发布后可参与推荐'}`;
+          row.append(title, status); el('build-preview').append(row);
+        }
+        el('preview-previous').disabled = offset === 0;
+        el('preview-next').disabled = preview.offset + preview.items.length >= preview.total_count;
+        el('publish-catalog').disabled = state.status !== 'ready' || state.publication_status !== 'ready';
+      } catch (error) {
+        if (generation !== buildPreviewGeneration || id !== el('catalog-build').value.trim()) return;
+        invalidateBuildPreview();
+        throw error;
       }
-      el('preview-previous').disabled = buildPreviewOffset === 0;
-      el('preview-next').disabled = preview.offset + preview.items.length >= preview.total_count;
-      el('publish-catalog').disabled = state.status !== 'ready' || state.publication_status !== 'ready';
     }
     async function processCatalog() {
       if (processingCatalog) return;
@@ -860,12 +884,13 @@
       if (processingCatalog) return;
       stopBuildPolling();
       el('catalog-build').value = ''; currentBuild = null; pendingBuildPublication = null;
+      invalidateBuildPreview();
       await processCatalog();
     });
     el('catalog-build').oninput = () => {
       stopBuildPolling();
       currentBuild = null; pendingBuildPublication = null; buildPreviewOffset = 0;
-      el('publish-catalog').disabled = true; el('build-preview').replaceChildren();
+      invalidateBuildPreview();
     };
     el('preview-previous').onclick = () => run(async () => { buildPreviewOffset = Math.max(0, buildPreviewOffset - 20); await previewBuild(); });
     el('preview-next').onclick = () => run(async () => { buildPreviewOffset += 20; await previewBuild(); });
@@ -899,7 +924,10 @@
       }
     });
     el('deactivate').onclick = () => run(async () => {
-      await api(`/api/v1/admin/items/${encodeURIComponent(el('item-id').value)}/deactivate`, {method: 'POST', headers: admin()});
+      invalidateBuildPreview();
+      try {
+        await api(`/api/v1/admin/items/${encodeURIComponent(el('item-id').value)}/deactivate`, {method: 'POST', headers: admin()});
+      } finally { invalidateBuildPreview(); }
       await refreshItems(); message('商品已下架');
     });
     el('register-bundle').onclick = () => run(async () => {
@@ -910,7 +938,10 @@
     el('rollback-bundle').onclick = () => run(() => switchBundle('rollback'));
     el('recover').onclick = () => run(async () => {
       if (switchingVersion || publishingCatalog) throw Object.assign(new Error('版本操作仍在执行，请等待完成再恢复'), {retryable: false});
-      await api('/api/v1/admin/publication/recover', {method: 'POST', headers: admin()}); await publication();
+      invalidateBuildPreview();
+      try {
+        await api('/api/v1/admin/publication/recover', {method: 'POST', headers: admin()}); await publication();
+      } finally { invalidateBuildPreview(); }
     });
     const startup = run(async () => {
       const system = await api('/api/v1/system'); el('system').textContent = `服务版本 ${system.version} · 持久化 ${system.capabilities.persistence ? '已配置' : '未配置'} · 发布 ${system.capabilities.catalog_publication ? '可用' : '未配置'} · R06 开关 ${system.capabilities.r06_serving ? '已启用（不代表已发布 R06）' : '关闭'}`;
