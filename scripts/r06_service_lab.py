@@ -10,6 +10,7 @@ import socket
 import subprocess
 import sys
 from time import monotonic, sleep
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import psycopg
@@ -78,9 +79,15 @@ class R06ServiceLab:
                 raise TimeoutError("owned API startup deadline exceeded")
             sleep(.05)
         self.ready = json.loads((self.child_output / "ready.json").read_bytes())
+        address = urlsplit(self.ready['url'])
         if (self.ready["run_id"] != self.run_id or self.ready["schema"] != self.schema
                 or self.ready["bundle_id"] != str(self.bundle_id)
-                or self.ready["manifest_sha256"] != self.digest or self.ready["admin_enabled"] is not False):
+                or self.ready["manifest_sha256"] != self.digest or self.ready["admin_enabled"] is not False
+                or type(self.ready['pid']) is not int or self.ready['pid'] <= 0
+                or self.ready['backend'] != self.backend or self.ready['api_deadline_seconds'] != 2.0
+                or address.scheme != 'http' or address.hostname != '127.0.0.1'
+                or address.port in (None,0,8000) or address.username is not None
+                or address.path or address.query or address.fragment):
             raise ValueError("owned API identity changed")
 
     def stop(self, *, crash=False):
@@ -146,6 +153,7 @@ def child(output, run_id):
                 url=f"http://127.0.0.1:{listener.getsockname()[1]}", bundle_id=str(runtime.bundle.bundle_id),
                 manifest_sha256=runtime.manifest_sha256, model_version=runtime.bundle.model_version,
                 item_count=len(runtime.item_ids),
+                backend=application.backend.r06_content_backend,
                 admin_enabled=False, ephemeral=True, api_deadline_seconds=2.0)
             asyncio.run(serve(application, listener, output, metadata))
             marker(output, "stopped", dict(run_id=run_id,
