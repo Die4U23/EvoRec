@@ -140,5 +140,10 @@ class R06CatalogPreparation:
                 cursor.executemany("INSERT INTO bundle_items(bundle_id, item_id, internal_item_id) VALUES (%s, %s, %s)",
                                    [(bundle_id, item.item_id, index) for index, item in enumerate(records)])
             verify_database_sources(connection, runtime)
+            # A fresh bulk load can otherwise be served before autovacuum has
+            # collected statistics, badly underestimating the full corpus.
+            # Scope maintenance to these tables, once after actual verification;
+            # it is neither a cached content proof nor a request-time operation.
+            connection.execute("ANALYZE items, bundle_items")
         return dict(bundle_id=bundle_id, manifest_sha256=expected_manifest_sha256,
                     item_count=len(records), replayed=False)
