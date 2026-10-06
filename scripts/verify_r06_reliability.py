@@ -171,6 +171,8 @@ def exercise(lab, samples, concurrency):
     new, _ = post(lab.ready["url"], session, str(uuid4()))
     require(new.status_code == 200 and legal(new.json(), lab.ready, session), "new post-crash dense failed")
     return dict(restart_exact_replay=True, first_dense_ms=latency, restart_replay_ms=replay_latency,
+        item_count=lab.ready['item_count'], model_version=lab.ready['model_version'],
+        profile='fixed_approved_training_seed_not_real_user',
         duplicate_key_single_result=True, disconnect_observed=disconnected,
         disconnect_terminal_status=recovered.status_code, hard_crash_admission_observed=admitted,
         crash_outcome="interrupted_without_partial_result" if interrupted else "completed_before_kill",

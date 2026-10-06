@@ -145,6 +145,7 @@ def child(output, run_id):
             metadata = dict(pid=os.getpid(), run_id=run_id, schema=owned["schema"],
                 url=f"http://127.0.0.1:{listener.getsockname()[1]}", bundle_id=str(runtime.bundle.bundle_id),
                 manifest_sha256=runtime.manifest_sha256, model_version=runtime.bundle.model_version,
+                item_count=len(runtime.item_ids),
                 admin_enabled=False, ephemeral=True, api_deadline_seconds=2.0)
             asyncio.run(serve(application, listener, output, metadata))
             marker(output, "stopped", dict(run_id=run_id,

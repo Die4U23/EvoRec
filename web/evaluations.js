@@ -24,6 +24,12 @@ function evaluationRows(report) {
   }
   return rows;
 }
+function comparisonView(saved) {
+  return {comparison_id:saved.comparison_id,snapshot_at:saved.snapshot_at,bundle_id:saved.bundle_id,
+    model_version:saved.model_version,history_version:saved.history_version,requested_k:saved.requested_k,
+    eligible_item_count:saved.input_snapshot.eligible_items.length,
+    history:saved.input_snapshot.history,strategies:saved.strategies};
+}
 function pendingOperation(prior, kind, body, uuid) {
   if (prior) return prior; // Uncertain responses never change the key, payload or action.
   return {kind, key:uuid(), body};
@@ -35,7 +41,7 @@ function validPending(value, session) {
       && Array.isArray(value.body.cases) && value.body.cases.length>=1 && value.body.cases.length<=100);
 }
 
-if (typeof module !== 'undefined') module.exports = {evaluationPayload, metricText, evaluationRows, pendingOperation, validPending};
+if (typeof module !== 'undefined') module.exports = {evaluationPayload, metricText, evaluationRows, pendingOperation, validPending, comparisonView};
 if (typeof document !== 'undefined') {
   const el = id => document.getElementById(id);
   let session = null, pending = null, selected = null, offset = 0, hasMore = false, timer = null, busy = false;
@@ -145,7 +151,7 @@ if (typeof document !== 'undefined') {
       }
       const saved=await api('/api/v1/strategy-comparisons',{method:'POST',headers:{'Idempotency-Key':pendingCapture.key},body:JSON.stringify(pendingCapture.body)});
       if (saved.comparison_id!==pendingCapture.key) throw new Error('比较身份不一致，保留原键');
-      pendingCapture=null; remember(); el('comparison-list').textContent=JSON.stringify(saved,null,2);
+      pendingCapture=null; remember(); el('comparison-list').textContent=JSON.stringify(comparisonView(saved),null,2);
       say('比较快照已保存。目标必须从独立标注获得；不要用这里的结果生成真实测试答案。');
     },
     comparisons: async () => { if(!session) throw new Error('请先连接会话'); el('comparison-list').textContent=JSON.stringify(await api(`/api/v1/strategy-comparisons?session_id=${session.session_id}&limit=50`),null,2); },

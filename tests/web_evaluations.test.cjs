@@ -1,6 +1,6 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const {evaluationPayload,metricText,evaluationRows,pendingOperation,validPending} = require('../web/evaluations.js');
+const {evaluationPayload,metricText,evaluationRows,pendingOperation,validPending,comparisonView} = require('../web/evaluations.js');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const script=fs.readFileSync(path.join(__dirname,'../web/evaluations.js'),'utf8');
 const session={session_id:'11111111-1111-4111-8111-111111111111',access_token:'fixture-token',history_version:0};
@@ -138,4 +138,10 @@ test('malformed stored operations never restore replay paths or foreign inputs',
   assert(!validPending({kind:'replay',key:uuid,body:{original:'../../admin/recover'}},session));
   assert(!validPending({kind:'submit',key:uuid,body:{session_id:'other',cases:[{}]}},session));
   assert(!validPending({kind:'submit',key:uuid,body:{session_id:uuid,cases:[]}},session));
+});
+test('comparison display keeps identity and ranking without dumping the full catalog', () => {
+  const value=comparisonView({comparison_id:original,bundle_id:'bundle',requested_k:10,
+    input_snapshot:{eligible_items:['catalog-1','catalog-2'],history:['seed']},strategies:[]});
+  assert.equal(value.eligible_item_count,2);assert.equal(value.comparison_id,original);
+  assert(!JSON.stringify(value).includes('catalog-1'));
 });
