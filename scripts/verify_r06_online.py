@@ -6,6 +6,7 @@ are not historical quality evaluation or the original research target scores.
 
 import argparse
 import asyncio
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -54,7 +55,65 @@ def _expected_popular(directory, full_seen, timestamp_ms, k):
     return [dict(item_id=item, score=count, source="r06-training-recent-popular-v1") for item, count in ranked]
 
 
-def verify(output, database_url, managed_root, bundle_id, digest, *, content_backend="stdlib", sample_profile=False):
+async def _sample_reset(client, session, body, initial):
+    """Same feedback/reset/new-computation sequence as the Demo TCP gate.
+
+    ASGI diagnostic only; never retries a failed request or changes its deadline.
+    """
+    def ok(response):
+        if response.status_code != 200:
+            raise ManagementError(response.json()["error"]["code"], "actual sample reset flow failed",
+                                  response.status_code)
+        return response.json()
+
+    auth = {"X-Session-Token": session.access_token}
+    path = "/api/v1/sessions/" + str(session.snapshot.session_id)
+    item, other = (row["item_id"] for row in initial["items"][:2])
+    for kind, target, desired in (("detail_view", item, None), ("favorite_set", item, True),
+                                  ("favorite_set", item, False), ("hide_set", other, True),
+                                  ("hide_set", other, False)):
+        payload = dict(event_id=str(uuid4()), session_id=body["session_id"],
+                       request_id=initial["request_id"], item_id=target, kind=kind,
+                       observed_at=datetime.now(timezone.utc).isoformat())
+        if desired is not None:
+            payload["desired_state"] = desired
+        ok(await client.post("/api/v1/feedback", json=payload, headers=auth))
+        replay = ok(await client.post("/api/v1/feedback", json=payload, headers=auth))
+        if not replay["replayed"]:
+            raise ValueError("sample feedback replay differs")
+    state = ok(await client.get(path, headers=auth))
+    after = ok(await client.post("/api/v1/recommendations",
+                     json={**body, "expected_history_version": state["history_version"]},
+                     headers={**auth, "Idempotency-Key": str(uuid4())}))
+    if (after["bundle_id"] != initial["bundle_id"] or after["model_version"] != initial["model_version"]
+            or after["actual_strategy"] != "dense" or after["fallback_reason"] is not None
+            or any(row["item_id"] in {item, other, *session.snapshot.history} for row in after["items"])):
+        raise ValueError("sample feedback full seen differs")
+    reset = ok(await client.post(path + "/reset", headers=auth))
+    if (reset["epoch"] != 1 or reset["history"] != list(session.snapshot.history)
+            or reset["favorite_items"] or reset["hidden_items"]):
+        raise ValueError("sample reset state differs")
+    reset_body = {**body, "expected_history_version": reset["history_version"]}
+    for _ in range(3):
+        reset_headers = {**auth, "Idempotency-Key": str(uuid4())}
+        result = ok(await client.post("/api/v1/recommendations", json=reset_body, headers=reset_headers))
+        if (result["request_id"] != reset_headers["Idempotency-Key"]
+                or result["session_id"] != body["session_id"] or result["session_epoch"] != reset["epoch"]
+                or result["history_version"] != reset["history_version"]
+                or result["bundle_id"] != initial["bundle_id"] or result["model_version"] != initial["model_version"]
+                or result["actual_strategy"] != "dense" or result["fallback_reason"] is not None
+                or any(row["source"] != "r06-a-frozen-s17" for row in result["items"])
+                or [row["item_id"] for row in result["items"]] != [row["item_id"] for row in initial["items"]]):
+            raise ValueError("sample post-reset fresh result differs")
+        if ok(await client.post("/api/v1/recommendations", json=reset_body, headers=reset_headers)) != result:
+            raise ValueError("sample post-reset replay differs")
+    return reset["history_version"]
+
+
+def verify(output, database_url, managed_root, bundle_id, digest, *, content_backend="stdlib",
+           sample_profile=False, sample_reset=False):
+    if sample_reset and not sample_profile:
+        raise ValueError("sample reset requires the actual sample profile")
     project = Path(__file__).resolve().parents[1]
     output = Path(output).resolve()
     if not output.is_relative_to(project / "artifacts") or output == project / "artifacts":
@@ -109,6 +168,7 @@ def verify(output, database_url, managed_root, bundle_id, digest, *, content_bac
                                   (Jsonb(list(history)), session.snapshot.session_id))
                 body = dict(session_id=str(session.snapshot.session_id), expected_history_version=0, strategy="dense", k=10)
                 headers = {"X-Session-Token": session.access_token, "Idempotency-Key": str(uuid4())}
+                comparison_version = 0
                 async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(demo_application=app)),
                                              base_url="http://isolated") as client:
                     started = perf_counter()
@@ -138,7 +198,9 @@ def verify(output, database_url, managed_root, bundle_id, digest, *, content_bac
                         raise ValueError("popular output differs from approved raw training statistics")
                     if (await client.post("/api/v1/recommendations", json=popular_body, headers=popular_headers)).json() != popular:
                         raise ValueError("popular idempotency replay differs")
-                comparison = ComparisonCommand(uuid4(), session.snapshot.session_id, session.access_token, 0,
+                    if sample_reset:
+                        comparison_version = await _sample_reset(client, session, body, result)
+                comparison = ComparisonCommand(uuid4(), session.snapshot.session_id, session.access_token, comparison_version,
                                                (Strategy.POPULAR, Strategy.DENSE, Strategy.ADAPTIVE), 10, 60.)
                 await app.comparison_jobs.enqueue(comparison)
                 restarted = application()
@@ -160,7 +222,8 @@ def verify(output, database_url, managed_root, bundle_id, digest, *, content_bac
                 if app.backend.r06_queue.outstanding or restarted.backend.r06_queue.outstanding:
                     raise ValueError("CPU work did not drain")
                 return dict(item_count=prepared["item_count"], model_version=bundle.model_version,
-                            history_count=len(history), sample_profile=sample_profile, returned_items=len(result["items"]),
+                            history_count=len(history), sample_profile=sample_profile, sample_reset=sample_reset,
+                            returned_items=len(result["items"]),
                             single_asgi_request_seconds=elapsed,
                             actual_asgi_recommendation=True, adaptive_resolves_dense=True,
                             api_idempotency_exact=True, restart_recovery_exact=True,
@@ -203,6 +266,7 @@ def main(argv=None):
     parser.add_argument("--expected-manifest-sha256", required=True)
     parser.add_argument("--content-backend", choices=("stdlib", "numpy"), default="stdlib")
     parser.add_argument("--sample-profile", action="store_true", help="use the actual Demo fixed sample history")
+    parser.add_argument("--sample-reset", action="store_true", help="include actual sample feedback/reset and three fresh calculations")
     args = parser.parse_args(argv)
     url = os.getenv("EVOREC_DATABASE_URL")
     if not url:
@@ -210,7 +274,8 @@ def main(argv=None):
         return 1
     try:
         result = verify(args.output, url, args.managed_root, args.bundle_id, args.expected_manifest_sha256,
-                        content_backend=args.content_backend, sample_profile=args.sample_profile)
+                        content_backend=args.content_backend, sample_profile=args.sample_profile or args.sample_reset,
+                        sample_reset=args.sample_reset)
     except (ValueError, OSError, psycopg.Error, subprocess.SubprocessError, ManagementError, SnapshotMismatch) as error:
         print(json.dumps(dict(status="failed", code=getattr(error, "code", "verification_failed"),
                               error_type=type(error).__name__)))

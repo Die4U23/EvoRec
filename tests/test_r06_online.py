@@ -652,7 +652,8 @@ def test_loaded_runtime_does_not_treat_membership_drift_as_deactivation(online, 
     asyncio.run(run())
 
 
-def test_sample_profile_verifier_uses_actual_seed_not_validation_reference(online, tmp_path, monkeypatch):
+@pytest.mark.parametrize("sample_reset", [False, True])
+def test_sample_profile_verifier_uses_actual_seed_not_validation_reference(online, tmp_path, monkeypatch, sample_reset):
     from scripts import verify_r06_online as verifier
     app, identity, digest = online
     monkeypatch.setattr(verifier, "__file__", str(tmp_path / "scripts" / "verify_r06_online.py"))
@@ -660,9 +661,41 @@ def test_sample_profile_verifier_uses_actual_seed_not_validation_reference(onlin
     monkeypatch.setattr(verifier, "_source", lambda _: "a" * 40)
     monkeypatch.setattr(verifier, "_validation", lambda *args: pytest.fail("sample used validation history"))
     result = verifier.verify(tmp_path / "artifacts" / "sample", app.backend.database_url,
-                             app.manager.managed_root, identity, digest, sample_profile=True)
+                             app.manager.managed_root, identity, digest, sample_profile=True, sample_reset=sample_reset)
     assert result["sample_profile"] is True and result["history_count"] == 1
     assert result["status"] == "passed" and result["owned_temporary_schema_removed"]
+    assert result["sample_reset"] is sample_reset
+
+
+def test_sample_reset_verifier_stops_on_third_new_timeout_without_pass_report(online, tmp_path, monkeypatch):
+    from scripts import verify_r06_online as verifier
+    app, identity, digest = online
+    monkeypatch.setattr(verifier, "__file__", str(tmp_path / "scripts" / "verify_r06_online.py"))
+    monkeypatch.setattr(verifier, "SOURCE_FILES", ())
+    monkeypatch.setattr(verifier, "_source", lambda _: "a" * 40)
+    original = httpx.AsyncClient.post
+    after_reset, count = False, 0
+    async def post(client, path, **kwargs):
+        nonlocal after_reset, count
+        if after_reset and path == "/api/v1/recommendations":
+            # Only fresh keys; completed replays must not advance the count.
+            if kwargs["headers"]["Idempotency-Key"] not in keys:
+                keys.add(kwargs["headers"]["Idempotency-Key"])
+                count += 1
+                if count == 3:
+                    return httpx.Response(504, json={"error": {"code": "recommendation_timeout"}})
+        response = await original(client, path, **kwargs)
+        if path.endswith("/reset") and response.status_code == 200:
+            after_reset = True
+        return response
+    keys = set()
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    output = tmp_path / "artifacts" / "reset"
+    with pytest.raises(ManagementError) as error:
+        verifier.verify(output, app.backend.database_url, app.manager.managed_root, identity, digest,
+                        sample_profile=True, sample_reset=True)
+    assert error.value.code == "recommendation_timeout" and count == 3
+    assert not (output / "verification.json").exists()
 
 
 def test_cached_original_sources_are_immutable_owned_and_hash_bound(online):
