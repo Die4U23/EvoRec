@@ -48,6 +48,38 @@ def _require(condition, message):
         raise ValueError(message)
 
 
+class ObservedClient:
+    """Client-only timing/status records; never headers, IDs, bodies or errors."""
+
+    def __init__(self, client):
+        self.client, self.records, self._keys = client, [], set()
+        self._after_reset = False
+
+    def get(self, *args, **kwargs):
+        return self.client.get(*args, **kwargs)
+
+    def post(self, path, **kwargs):
+        if path != "/api/v1/recommendations":
+            response = self.client.post(path, **kwargs)
+            if path.endswith("/reset") and response.status_code == 200:
+                self._after_reset = True
+            return response
+        value = kwargs.get("json", {}).get("strategy")
+        key = kwargs.get("headers", {}).get("Idempotency-Key")
+        record = dict(after_reset=self._after_reset, repeated_key=key in self._keys,
+                      strategy=value if value in ("dense", "popular", "adaptive") else "other",
+                      status_code=None)
+        self._keys.add(key)
+        started = perf_counter()
+        try:
+            response = self.client.post(path, **kwargs)
+            record["status_code"] = response.status_code
+            return response
+        finally:
+            record["wall_seconds"] = perf_counter() - started
+            self.records.append(record)
+
+
 def exercise(client, ready, directory, *, k=10):
     """Observable HTTP contracts; no DB edits, injected transport or instrumentation."""
     def ok(response, status=200):
@@ -128,6 +160,27 @@ def exercise(client, ready, directory, *, k=10):
     reset = ok(client.post(path + "/reset", headers=auth))
     _require(reset["history"] == [seed] and reset["epoch"] == 1
              and reset["hidden_items"] == reset["favorite_items"] == [], "reset differs from approved sample")
+    # Replaying a completed pre-reset row never exercises fresh admission or
+    # ranking. Require new calculations immediately after reset, with no retry
+    # that could erase the first failure. Keep each original key for its replay.
+    reset_seconds = []
+    initial_ids = [item["item_id"] for item in dense["items"]]
+    reset_body = {**body, "expected_history_version": reset["history_version"]}
+    for _ in range(3):
+        reset_headers = {**auth, "Idempotency-Key": str(uuid4())}
+        started = perf_counter()
+        restored = ok(client.post("/api/v1/recommendations", json=reset_body, headers=reset_headers))
+        reset_seconds.append(perf_counter() - started)
+        legal(restored, {seed})
+        _require(restored["request_id"] == reset_headers["Idempotency-Key"]
+                 and restored["request_id"] != dense["request_id"]
+                 and restored["session_id"] == sample["session_id"]
+                 and restored["session_epoch"] == reset["epoch"]
+                 and restored["history_version"] == reset["history_version"]
+                 and [item["item_id"] for item in restored["items"]] == initial_ids,
+                 "fresh post-reset identity or restored Top-K differs")
+        _require(ok(client.post("/api/v1/recommendations", json=reset_body, headers=reset_headers)) == restored,
+                 "fresh post-reset completed replay differs")
     rejected = client.post("/api/v1/feedback", json={**stale_event, "event_id": str(uuid4())}, headers=auth)
     _require(rejected.status_code == 409 and rejected.json()["error"]["code"] == "session_epoch_conflict",
              "old epoch feedback accepted")
@@ -142,6 +195,8 @@ def exercise(client, ready, directory, *, k=10):
                 recommendation_replay_exact=True, changed_key_and_wrong_owner_rejected=True,
                 training_popular_matches_raw_statistics=True, feedback_and_replay=True,
                 detail_favorite_hide_undo_reset=True, full_seen_retains_undone_feedback=True,
+                post_reset_fresh_dense_trials=len(reset_seconds), post_reset_dense_seconds=reset_seconds,
+                post_reset_dense_matches_initial_ids=True, post_reset_dense_replay_exact=True,
                 old_epoch_feedback_rejected=True, stored_recommendation_replays_after_reset=True)
 
 
@@ -162,10 +217,24 @@ def verify(output, database_url, root, bundle_id, digest, *, backend="numpy"):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(raw)
         hashes[name] = hashlib.sha256(raw).hexdigest()
-    with DemoProcess(output / "server", database_url, root, bundle_id, digest, backend=backend) as process:
-        with httpx.Client(base_url=process.ready["url"], timeout=10, trust_env=False) as client:
-            result = exercise(client, process.ready, Path(root) / str(bundle_id))
-        identity = {k: process.ready[k] for k in ("item_count", "model_version", "bundle_id", "manifest_sha256")}
+    process = DemoProcess(output / "server", database_url, root, bundle_id, digest, backend=backend)
+    observed = None
+    try:
+        with process:
+            with httpx.Client(base_url=process.ready["url"], timeout=10, trust_env=False) as client:
+                observed = ObservedClient(client)
+                result = exercise(observed, process.ready, Path(root) / str(bundle_id))
+            identity = {k: process.ready[k] for k in ("item_count", "model_version", "bundle_id", "manifest_sha256")}
+    finally:
+        # Save partial observations even on a failed exercise or failed cleanup.
+        # This marker is never a passed verification, nor server-stage profiling.
+        if observed is not None:
+            marker(output, "request-observations", dict(
+                status="observations_only", source_commit=base, requests=observed.records,
+                service_instrumented=False, client_observation_overhead_not_subtracted=True,
+                stopped=process.stopped is not None,
+                cpu_jobs_drained=bool(process.stopped and process.stopped["cpu_jobs_drained"]),
+                owned_schema_removed=bool(process.stopped and process.stopped["owned_schema_removed"])))
     _require(_schemas(database_url) == before, "schema namespace did not return to original state")
     _require(_source(project) == base and all(hashlib.sha256((project/n).read_bytes()).hexdigest() == h
                                            for n,h in hashes.items()), "source changed during TCP acceptance")

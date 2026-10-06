@@ -54,7 +54,7 @@ def _expected_popular(directory, full_seen, timestamp_ms, k):
     return [dict(item_id=item, score=count, source="r06-training-recent-popular-v1") for item, count in ranked]
 
 
-def verify(output, database_url, managed_root, bundle_id, digest, *, content_backend="stdlib"):
+def verify(output, database_url, managed_root, bundle_id, digest, *, content_backend="stdlib", sample_profile=False):
     project = Path(__file__).resolve().parents[1]
     output = Path(output).resolve()
     if not output.is_relative_to(project / "artifacts") or output == project / "artifacts":
@@ -95,12 +95,18 @@ def verify(output, database_url, managed_root, bundle_id, digest, *, content_bac
                     raise ValueError("isolated published service is not ready")
                 bundle = app.backend.runtime.bundle
                 raw = json.loads((Path(managed_root) / str(bundle_id) / "manifest.json").read_bytes())
-                samples = _validation(Path(managed_root) / str(bundle_id) / "features", raw["components"]["features"])
-                history = tuple(samples[0]["history"]) if content_backend == "numpy" else ()
-                session = await app.backend.create_session()
-                with app.backend._connect() as c:
-                    c.execute("UPDATE sessions SET history=%s WHERE session_id=%s",
-                              (Jsonb(list(history)), session.snapshot.session_id))
+                if sample_profile:
+                    # The actual Demo's approved fixed training seed, not a
+                    # validation reference or a direct database history edit.
+                    session = await app.backend.create_session("sample")
+                    history = session.snapshot.history
+                else:
+                    samples = _validation(Path(managed_root) / str(bundle_id) / "features", raw["components"]["features"])
+                    history = tuple(samples[0]["history"]) if content_backend == "numpy" else ()
+                    session = await app.backend.create_session()
+                    with app.backend._connect() as c:
+                        c.execute("UPDATE sessions SET history=%s WHERE session_id=%s",
+                                  (Jsonb(list(history)), session.snapshot.session_id))
                 body = dict(session_id=str(session.snapshot.session_id), expected_history_version=0, strategy="dense", k=10)
                 headers = {"X-Session-Token": session.access_token, "Idempotency-Key": str(uuid4())}
                 async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(demo_application=app)),
@@ -154,7 +160,7 @@ def verify(output, database_url, managed_root, bundle_id, digest, *, content_bac
                 if app.backend.r06_queue.outstanding or restarted.backend.r06_queue.outstanding:
                     raise ValueError("CPU work did not drain")
                 return dict(item_count=prepared["item_count"], model_version=bundle.model_version,
-                            history_count=len(history), returned_items=len(result["items"]),
+                            history_count=len(history), sample_profile=sample_profile, returned_items=len(result["items"]),
                             single_asgi_request_seconds=elapsed,
                             actual_asgi_recommendation=True, adaptive_resolves_dense=True,
                             api_idempotency_exact=True, restart_recovery_exact=True,
@@ -196,6 +202,7 @@ def main(argv=None):
     parser.add_argument("bundle_id", type=UUID)
     parser.add_argument("--expected-manifest-sha256", required=True)
     parser.add_argument("--content-backend", choices=("stdlib", "numpy"), default="stdlib")
+    parser.add_argument("--sample-profile", action="store_true", help="use the actual Demo fixed sample history")
     args = parser.parse_args(argv)
     url = os.getenv("EVOREC_DATABASE_URL")
     if not url:
@@ -203,7 +210,7 @@ def main(argv=None):
         return 1
     try:
         result = verify(args.output, url, args.managed_root, args.bundle_id, args.expected_manifest_sha256,
-                        content_backend=args.content_backend)
+                        content_backend=args.content_backend, sample_profile=args.sample_profile)
     except (ValueError, OSError, psycopg.Error, subprocess.SubprocessError, ManagementError, SnapshotMismatch) as error:
         print(json.dumps(dict(status="failed", code=getattr(error, "code", "verification_failed"),
                               error_type=type(error).__name__)))

@@ -198,7 +198,171 @@ def test_actual_child_tcp_and_owned_cleanup(isolated_database, tmp_path, monkeyp
                 from scripts.verify_r06_http import exercise
                 accepted = exercise(client, owned.ready, target, k=3)
                 assert accepted["detail_favorite_hide_undo_reset"] and accepted["actual_tcp_http"]
+                assert accepted["post_reset_fresh_dense_trials"] == 3
+                assert accepted["post_reset_dense_matches_initial_ids"]
+                assert accepted["post_reset_dense_replay_exact"]
     stopped = json.loads((output / "stopped.json").read_bytes())
     assert stopped["owned_schema_removed"] and stopped["cpu_jobs_drained"]
     with psycopg.connect(isolated_database) as c:
         assert c.execute("SELECT 1 FROM pg_namespace WHERE nspname=%s", (stopped["schema"],)).fetchone() is None
+
+
+@pytest.mark.parametrize("fault,trial", [
+    ("timeout", 1), ("timeout", 3), ("identity", 1), ("binding", 1), ("items", 1), ("replay", 1),
+])
+def test_tcp_verifier_rejects_fresh_post_reset_failure(isolated_database, tmp_path, fault, trial):
+    from evorec.domain.errors import ManagementError
+    from scripts.verify_r06_http import exercise
+
+    root, target, digest = _build(tmp_path)
+    owned = DemoProcess(_output(), isolated_database, root, UUID(target.name), digest,
+                        backend="stdlib", startup_timeout=30)
+    with owned, httpx.Client(base_url=owned.ready["url"], timeout=10, trust_env=False) as client:
+        class FaultClient:
+            # All setup, feedback and reset use real TCP. Only the named response
+            # is altered: this tests verifier rejection, not model performance.
+            reset_version = None
+            fresh_keys = []
+            triggered = False
+
+            def get(self, *args, **kwargs):
+                return client.get(*args, **kwargs)
+
+            def post(self, path, **kwargs):
+                response = client.post(path, **kwargs)
+                if path.endswith("/reset"):
+                    self.reset_version = response.json()["history_version"]
+                body = kwargs.get("json", {})
+                if (path != "/api/v1/recommendations" or self.reset_version is None
+                        or body.get("strategy") != "dense"
+                        or body.get("expected_history_version") != self.reset_version):
+                    return response
+                key = kwargs["headers"]["Idempotency-Key"]
+                replay = key in self.fresh_keys
+                if not replay:
+                    self.fresh_keys.append(key)
+                if len(self.fresh_keys) != trial or replay != (fault == "replay"):
+                    return response
+                self.triggered = True
+                assert response.status_code == 200, response.text
+                value = response.json()
+                if fault == "timeout":
+                    return httpx.Response(504, json={"error": {"code": "recommendation_timeout"}})
+                if fault == "identity":
+                    value["model_version"] = "0" * 64
+                elif fault == "binding":
+                    value["session_id"] = str(uuid4())
+                elif fault == "items":
+                    # Still k unique catalog IDs, but one original item is
+                    # replaced. A count/seed-only check is insufficient.
+                    present = {item["item_id"] for item in value["items"]}
+                    value["items"][0]["item_id"] = next(
+                        item for item in ("b", "c", "d", "e", "zero") if item not in present)
+                else:
+                    value["items"][0]["score"] += 1
+                return httpx.Response(200, json=value)
+
+        altered = FaultClient()
+        with pytest.raises((ManagementError, ValueError)):
+            exercise(altered, owned.ready, target, k=3)
+        assert altered.triggered
+        assert len(altered.fresh_keys) == trial  # No automatic retry of a failure.
+    assert owned.stopped["cpu_jobs_drained"] and owned.stopped["owned_schema_removed"]
+
+
+def test_tcp_observer_preserves_response_and_omits_all_private_inputs():
+    from scripts.verify_r06_http import ObservedClient
+    response = httpx.Response(200, json={"private": "DO-NOT-LOG-RESPONSE"})
+
+    class Client:
+        def post(self, path, **kwargs):
+            return response
+        def get(self, path):
+            return response
+
+    observed = ObservedClient(Client())
+    assert observed.get("/api/v1/system") is response
+    for key in ("PRIVATE-KEY", "PRIVATE-KEY"):
+        assert observed.post("/api/v1/recommendations", json={"strategy": "dense", "session_id": "PRIVATE-ID"},
+                             headers={"Idempotency-Key": key, "X-Session-Token": "PRIVATE-TOKEN"}) is response
+    assert observed.post("/api/v1/sessions/PRIVATE-ID/reset") is response
+    observed.post("/api/v1/recommendations", json={"strategy": ["PRIVATE-BODY"]},
+                  headers={"Idempotency-Key": "PRIVATE-NEW-KEY"})
+    assert [r["repeated_key"] for r in observed.records] == [False, True, False]
+    assert [r["after_reset"] for r in observed.records] == [False, False, True]
+    assert observed.records[-1]["strategy"] == "other"
+    assert all(r["status_code"] == 200 and r["wall_seconds"] >= 0 for r in observed.records)
+    assert "PRIVATE" not in json.dumps(observed.records) and "DO-NOT" not in json.dumps(observed.records)
+
+
+def test_tcp_observer_keeps_timeout_exception_and_failed_reset_separate():
+    from scripts.verify_r06_http import ObservedClient
+    failure = httpx.ReadTimeout("PRIVATE-ERROR")
+
+    class Client:
+        def post(self, path, **kwargs):
+            if path.endswith("/reset"):
+                return httpx.Response(409)
+            raise failure
+
+    observed = ObservedClient(Client())
+    observed.post("/api/v1/sessions/PRIVATE-ID/reset")
+    with pytest.raises(httpx.ReadTimeout) as caught:
+        observed.post("/api/v1/recommendations", json={"strategy": "dense"},
+                      headers={"Idempotency-Key": "PRIVATE-KEY"})
+    assert caught.value is failure
+    record, = observed.records
+    assert record["status_code"] is None and record["after_reset"] is False
+    assert "PRIVATE" not in json.dumps(observed.records)
+
+
+@pytest.mark.parametrize("failure", ["exercise", "cleanup", None])
+def test_tcp_verifier_keeps_partial_observations_without_false_pass(tmp_path, monkeypatch, failure):
+    from scripts import verify_r06_http as verifier
+    from evorec.domain.errors import ManagementError
+
+    # Mocked verifier lifecycle, not a real model/network/cleanup acceptance.
+    monkeypatch.setattr(verifier, "__file__", str(tmp_path / "scripts" / "verify_r06_http.py"))
+    monkeypatch.setattr(verifier, "_source", lambda _: "a" * 40)
+    monkeypatch.setattr(verifier, "_schemas", lambda _: frozenset())
+    monkeypatch.setattr(verifier, "SOURCE_FILES", ())
+
+    class Process:
+        ready = {"url": "http://test", "item_count": 6, "bundle_id": str(uuid4()),
+                 "model_version": "b" * 64, "manifest_sha256": "c" * 64}
+        stopped = None
+        def __init__(self, *args, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args):
+            if failure == "cleanup": raise RuntimeError("PRIVATE-CLEANUP-ERROR")
+            self.stopped = {"cpu_jobs_drained": True, "owned_schema_removed": True}
+
+    class Client:
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def post(self, *args, **kwargs): return httpx.Response(504 if failure == "exercise" else 200)
+
+    def exercise(client, *args):
+        response = client.post("/api/v1/recommendations", json={"strategy": "dense"})
+        if response.status_code != 200:
+            raise ManagementError("recommendation_timeout", "PRIVATE-ERROR", 504)
+        return {}
+
+    monkeypatch.setattr(verifier, "DemoProcess", Process)
+    monkeypatch.setattr(verifier.httpx, "Client", Client)
+    monkeypatch.setattr(verifier, "exercise", exercise)
+    output = tmp_path / "artifacts" / "tcp"
+    if failure:
+        with pytest.raises((ManagementError, RuntimeError)):
+            verifier.verify(output, "PRIVATE-DB", tmp_path, uuid4(), "c" * 64)
+        assert not (output / "verification.json").exists()
+    else:
+        assert verifier.verify(output, "PRIVATE-DB", tmp_path, uuid4(), "c" * 64)["status"] == "passed"
+    saved = (output / "request-observations.json").read_bytes()
+    record = json.loads(saved)
+    assert record["status"] == "observations_only"
+    assert record["requests"][0]["status_code"] == (504 if failure == "exercise" else 200)
+    assert record["stopped"] is (failure != "cleanup")
+    assert record["cpu_jobs_drained"] is (failure != "cleanup")
+    assert b"PRIVATE" not in saved

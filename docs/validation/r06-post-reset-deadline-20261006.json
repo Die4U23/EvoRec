@@ -1,0 +1,122 @@
+{
+  "date": "2026-10-06",
+  "status": "partial_stronger_gate_and_lower_allocations_but_full_tcp_failed",
+  "scope": "Original approved full corpus; isolated local requests, no browser, training or quality evaluation",
+  "source_commits": {
+    "strict_post_reset_gate": "fc69de46964084604548ecaa9f5a7abee02bbd6c",
+    "failure_observations": "efc932aa95873363a6d94aa9015aa49a60749633",
+    "sample_profile_diagnostic": "3e36d6822f0ac2f281e5ce67af3b8f5ce6e211a9",
+    "compact_rows": "97e6cece86ce5e5491c987251d8fb12c379b1542",
+    "final_runtime": "1379611db96e76ab6e64a1dca17816b48694200f"
+  },
+  "bundle": {
+    "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+    "items": 137249,
+    "sample_history": ["0060501960"],
+    "backend": "numpy",
+    "api_deadline_seconds": 2.0,
+    "deadline_changed": false
+  },
+  "gate": {
+    "required_fresh_post_reset_trials": 3,
+    "first_success_required_each_trial": true,
+    "exact_original_top_k_and_identity_and_replay_required": true,
+    "automatic_retry": false,
+    "six_response_fault_injections_are_not_model_latency_proof": true,
+    "observations_only_report_never_means_passed": true
+  },
+  "reader_probe": {
+    "source_commit": "3e36d6822f0ac2f281e5ce67af3b8f5ce6e211a9",
+    "factories": ["dict", "namedtuple", "namedtuple", "dict"],
+    "row_counts": [137249, 137249, 137249, 137249],
+    "read_seconds": [0.4782607000088319, 0.4712639999925159, 0.4143513000162784, 0.8055080999911297],
+    "row_container_bytes": [25253816, 10979920, 10979920, 25253816],
+    "list_container_bytes_each": 1098048,
+    "all_ordered_five_field_values_equal_sha256": "9aee0c2a2f815bc91cc917da42a248d9c5450346e59ffc6b816a536e54c613a6",
+    "process_rss_measured": false,
+    "statistical_speedup_proven": false,
+    "api_recommendation_executed": false,
+    "probe_script_git_tracked": false,
+    "probe_script_archived_and_hash_checked": true,
+    "probe_script_sha256": "b07f50e82a9521e9cbb9ee5cf0dccc668148948a6048bb89cb2ddc723c97894d"
+  },
+  "retained_negative_runs": [
+    {"output": "artifacts/replays/r06-post-reset-tcp-20261006-a", "source": "fc69de4", "exit_code": 1, "code": "recommendation_timeout", "phase_unknown": true},
+    {"output": "artifacts/replays/r06-post-reset-tcp-20261006-b", "source": "efc932a", "exit_code": 1, "phase": "first_dense_before_reset", "status_code": 504, "seconds": 2.139008300000569},
+    {"output": "artifacts/diagnostics/r06-deadline-sample-20261006-a", "source": "3e36d68", "exit_code": 1, "instrumented_asgi": true, "first_dense_seconds": 2.1139120999723673, "catalog_read_and_capture_seconds": 1.254196099995, "result_write_start_seconds": 1.92184289999},
+    {"output": "artifacts/replays/r06-post-reset-tcp-20261006-c", "source": "97e6cec", "exit_code": 1, "phase": "popular_before_reset", "status_code": 504, "seconds": 2.1622529000160284}
+  ],
+  "intermediate_sample_asgi": {
+    "output": "artifacts/diagnostics/r06-deadline-sample-20261006-b",
+    "source": "97e6cec",
+    "exit_code": 0,
+    "service_status": "passed",
+    "first_dense_seconds": 1.8808541999896988,
+    "popular_seconds": 1.9006992999929935,
+    "instrumented": true,
+    "timings_overlap_do_not_sum": true,
+    "instrumentation_overhead_not_subtracted": true,
+    "not_final_source_or_tcp_browser_or_stability_proof": true
+  },
+  "final_full_tcp": {
+    "output": "artifacts/replays/r06-post-reset-tcp-20261006-d",
+    "source": "1379611db96e76ab6e64a1dca17816b48694200f",
+    "runtime_sources_archived_and_exact_git_blob_checked": 55,
+    "source_working_tree_dirty": false,
+    "service_instrumented": false,
+    "client_observation_overhead_not_subtracted": true,
+    "exit_code": 1,
+    "first_dense": {"status_code": 200, "seconds": 1.73869480000576},
+    "popular": {"status_code": 200, "seconds": 1.5996835000114515},
+    "after_feedback_dense": {"status_code": 200, "seconds": 1.8146215000015218},
+    "first_post_reset_fresh_dense": {"status_code": 504, "seconds": 2.1722502000047825},
+    "remaining_post_reset_trials_executed": 0,
+    "first_dense_original_key_replay_exact": true,
+    "changed_payload_rejected_409": true,
+    "wrong_owner_rejected_401": true,
+    "full_gate_passed": false,
+    "verification_json_written": false,
+    "retry_or_new_key_recovery_attempted": false,
+    "durable_failed_request_status_independently_queried": false,
+    "timeout_root_cause_fully_identified": false
+  },
+  "tests": {
+    "old_compact_row_assertions": {"tests": 2, "failures": 2, "errors": 0, "skipped": 0},
+    "missing_database_environment_run": {"tests": 109, "passed": 33, "errors": 76, "failures": 0, "skipped": 0, "not_a_pass": true},
+    "final_four_python_files": {"tests": 113, "failures": 0, "errors": 0, "skipped": 0},
+    "numpy_four_files": {"tests": 151, "failures": 0, "errors": 0, "skipped": 0},
+    "node_two_files": {"tests": 100, "failures": 0, "cancelled": 0, "skipped": 0},
+    "overlapping_intermediate_suites_not_added": true,
+    "two_environment_dependency_checks_passed": true,
+    "raw_junit_private_git_ignored": true
+  },
+  "local_evidence_sha256": {
+    "compact_before_xml": "afbf3b73243b9c13b93b9e9058e1b7f767b7a3863fb9743c38b1ad349ae15d4e",
+    "missing_database_environment_xml": "a031b0be358eb8a979e69c6594493aad0802c75c7801af50146df9f82cd9e0e1",
+    "final_python_xml": "7a3f525434853584b19c712c731cb40c243f2ce9566c6200785c837d4003a67d",
+    "numpy_xml": "f6ae51ce65d11767a07756a88804d90a03c4c255633c24d3233533edf0f60063",
+    "reader_probe_json": "f22923123968bfeedd812d106ff59ef4d70291786306a4c75abaa391a028123c",
+    "before_sample_profile_json": "d8314a95a491c11afbcb81748284dbcdfe69e20630b4309f411418034fadca49",
+    "intermediate_sample_profile_json": "4a663e2101908e4425dd4d367210a1950eb1f64f2f9256c807cb71da60147952",
+    "tcp_b_observations_json": "f8c62c9cbccc5d2bb2e4d9474bde88a9f82099788e11eeb9e4fb6d1ec444b1a3",
+    "tcp_c_observations_json": "3d99c49fe2f6d56271f2cc4a2f8099f8479508f27b51f705feb738dd8281f77f",
+    "final_tcp_observations_json": "1d552d2e81e1d672597fbf3326da7d481294cbc605e8bf3a45e431a0fb20344f",
+    "final_tcp_stopped_json": "6b51a834eee03549dac9522e657c4fd98b2b7a8e40fcb3208719f597f4fbcf1a"
+  },
+  "cleanup": {
+    "all_four_tcp_runs_stop_requested_and_cpu_drained": true,
+    "all_four_exact_owned_schema_counts_independently_checked": 0,
+    "all_four_owned_listener_counts_independently_checked": 0,
+    "final_remaining_test_namespace_count_read_only": 0,
+    "bulk_schema_deletion_performed": false,
+    "temporary_database_removed_not_recoverable": true,
+    "env_bytes_unchanged": true,
+    "business_schema_or_active_model_changed": false,
+    "port_8000_modified": false
+  },
+  "review": "Main-thread quality, performance and reuse lenses; no independent Agent review",
+  "not_accepted": ["R06 deadline stability", "new browser retest", "sustained load or SLA", "timed three-minute demo", "author explanation and personal code change"],
+  "next": "Diagnose stages of the first fresh post-reset request, preserve failures and fix within the original deadline; do not mark the Demo complete from CI alone"
+}
