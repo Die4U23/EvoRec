@@ -36,8 +36,10 @@ class ComparisonCommand:
             raise ValueError("comparison requires two or three distinct strategies")
         if not set(strategies) <= {Strategy.POPULAR, Strategy.DENSE, Strategy.ADAPTIVE}:
             raise ValueError("only currently exposed local strategies can be previewed")
-        if type(self.k) is not int or not 1 <= self.k <= 10:
-            raise ValueError("comparison k must be between 1 and 10")
+        # HTTP comparisons remain 1..10; offline evaluation can request up to 50
+        # from the same ranking port without pretending a Top-10 contains Recall@20.
+        if type(self.k) is not int or not 1 <= self.k <= 50:
+            raise ValueError("comparison k must be between 1 and 50")
         if type(self.expected_history_version) is not int or self.expected_history_version < 0:
             raise ValueError("history version must be non-negative")
         if not self.session_token or not self.session_token.strip():

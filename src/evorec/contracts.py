@@ -80,6 +80,30 @@ class ComparisonPreviewInput(Contract):
         return self
 
 
+class EvaluationCase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    comparison_id: UUID
+    target_item_id: ItemId
+    target_at: AwareDatetime
+    cohort: Annotated[str, StringConstraints(strict=True, min_length=1, max_length=64)] = "default"
+
+
+class EvaluationInput(Contract):
+    session_id: UUID
+    k: Annotated[StrictInt, Field(ge=1, le=50)] = 20
+    dataset_name: Annotated[str, StringConstraints(strict=True, min_length=1, max_length=100)]
+    label_origin: Literal["synthetic", "manual", "historical_export"]
+    source_description: Annotated[str, StringConstraints(strict=True, min_length=1, max_length=500)]
+    cases: Annotated[list[EvaluationCase], Field(min_length=1, max_length=100)]
+
+    @model_validator(mode="after")
+    def unique_cases(self) -> Self:
+        ids = [case.comparison_id for case in self.cases]
+        if len(ids) != len(set(ids)):
+            raise ValueError("each comparison may contribute only one held-out label")
+        return self
+
+
 class FeedbackInput(Contract):
     event_id: UUID
     session_id: UUID

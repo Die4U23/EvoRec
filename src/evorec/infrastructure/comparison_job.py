@@ -26,6 +26,7 @@ class ComparisonJobService:
     LEASE_SECONDS = 30
     HEARTBEAT_SECONDS = 5
     MAX_ATTEMPTS = 3
+    ERROR_PREFIX = 'comparison'
 
     def __init__(self, compare: CompareStrategies, records: PostgresComparisonStore):
         self.compare, self.records = compare, records
@@ -262,9 +263,9 @@ class ComparisonJobService:
                 if isinstance(exc, ManagementError):
                     code = exc.code
                 elif isinstance(exc, TimeoutError):
-                    code = 'comparison_timeout'
+                    code = self.ERROR_PREFIX + '_timeout'
                 else:
-                    code = 'comparison_failed'
+                    code = self.ERROR_PREFIX + '_failed'
                 await asyncio.to_thread(self._finish, claim, error_code=code)
             else:
                 await asyncio.to_thread(self._finish, claim, result)

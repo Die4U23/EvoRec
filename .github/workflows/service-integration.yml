@@ -65,6 +65,8 @@ jobs:
             tests/test_r06_online.py \
             tests/test_r06_profile.py \
             tests/test_r06_demo.py \
+            tests/test_r06_reliability.py \
+            tests/test_evaluation_jobs.py \
             tests/test_catalog_demo.py \
             tests/test_recommendation_recovery.py \
             tests/test_postgres_api.py tests/test_recommendation.py \
@@ -73,7 +75,9 @@ jobs:
             tests/test_repository_hygiene.py tests/test_v01_experience.py
           python -c 'import xml.etree.ElementTree as ET; suite = ET.parse("service-tests.xml").getroot().find("testsuite"); assert int(suite.attrib["skipped"]) == 0, "service tests must not skip"'
       - name: Run local page interaction tests
-        run: node --test tests/web_file_import.test.cjs tests/web_results.test.cjs
+        run: |
+          node --test tests/web_file_import.test.cjs tests/web_results.test.cjs
+          node --test tests/web_evaluations.test.cjs
       - name: Check exported API contracts
         env:
           EVOREC_DATABASE_URL: ""

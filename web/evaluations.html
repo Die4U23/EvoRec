@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>EvoRec 批量评估工作台</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui,sans-serif; color:#182332; background:#f3f5f8 }
+    body { max-width:1100px; margin:32px auto; padding:0 20px }
+    section { background:white; border:1px solid #d9e1ea; border-radius:12px; padding:20px; margin:18px 0 }
+    label { display:block; margin:12px 0 } input,select,textarea { font:inherit; padding:8px; max-width:100%; box-sizing:border-box }
+    textarea { width:100%; min-height:180px; font-family:monospace } button { padding:9px 14px; margin:5px; cursor:pointer }
+    button:disabled { cursor:wait } pre { white-space:pre-wrap; overflow-wrap:anywhere; background:#f5f7fa; padding:12px }
+    table { width:100%; border-collapse:collapse } th,td { padding:9px; text-align:left; border-bottom:1px solid #ddd; overflow-wrap:anywhere }
+    .notice { border-left:4px solid #ba7516; padding:10px; background:#fff5df } #message { min-height:1.5em }
+    .scroll { overflow-x:auto } code { overflow-wrap:anywhere }
+  </style>
+  <script src="/app/evaluations.js" defer></script>
+</head>
+<body>
+  <nav><a href="/app">推荐与商品管理</a> · <a href="/app/results">原 R06 实验结果</a></nav>
+  <h1>批量标注快照评估工作台</h1>
+  <p class="notice">每个样本是一份服务端保存的固定输入和一个独立目标标注。不要根据推荐结果挑选真实目标；合成/人工标注不等于原 R06 实验复现。失败指标保持未知，不补零。评估会按独立 K 重新排序，不将保存的 Top-10 冒充 Recall@20。</p>
+  <p id="message" role="status" aria-live="polite"></p>
+  <section>
+    <h2>1. 会话与比较快照</h2>
+    <p id="session">未连接会话</p>
+    <label>新会话类型 <select id="profile"><option value="sample">固定示例历史</option><option value="new">空历史新用户</option></select></label>
+    <button id="create-session">创建评估会话</button><button id="capture">保存当前输入的 popular / dense 比较</button>
+    <button id="comparisons">查询已保存比较</button>
+    <p>也可从推荐页进入，继承本标签页会话。冻结后不受后续反馈、下架或当前活动版本影响；运行时文件仍须通过批准身份校验。</p>
+    <pre id="comparison-list">尚未查询。批量历史可在推荐页保存更多比较快照。</pre>
+  </section>
+  <section>
+    <h2>2. 提交独立目标标注</h2>
+    <label>数据集名称 <input id="dataset-name" value="my-held-out-snapshots" maxlength="100"></label>
+    <label>评估返回数量 K <input id="evaluation-k" type="number" min="1" max="50" value="20"></label>
+    <label>标注来源 <select id="label-origin"><option value="synthetic">合成（仅验证机制）</option><option value="manual">人工标注（非独立实验）</option><option value="historical_export">历史数据导出（来源真实性待核验）</option></select></label>
+    <label>来源与时间划分说明 <input id="source-description" value="合成标注，仅验证评估工作流，不用于证明算法收益" maxlength="500" size="70"></label>
+    <label>样本 JSON 数组（1–100 份不同比较；target_at 必须晚于快照，目标不得在已见输入中）
+      <textarea id="cases" spellcheck="false" placeholder='[{"comparison_id":"比较 UUID","target_item_id":"独立目标 ID","target_at":"带时区的后续事件时间","cohort":"default"}]'></textarea>
+    </label>
+    <button id="submit">提交评估／重试原提交</button><button id="abandon">确认放弃本地未确认提交</button>
+    <p>网络失败时保存原键和原输入；再次点击只重试原操作。刷新不会自动提交。放弃本地记录不取消服务端任务。</p>
+  </section>
+  <section>
+    <h2>3. 持久任务与报告</h2>
+    <button id="jobs">刷新任务列表</button><button id="previous">上一页</button><button id="next">下一页</button>
+    <div id="job-list" class="scroll"></div>
+    <h3>所选任务</h3><pre id="job-status">尚未选择</pre>
+    <button id="poll">查询进度</button><button id="cancel">请求取消</button><button id="replay">重放冻结配置／重试原重放</button>
+    <button id="report">查看完整报告</button><button id="export">导出 JSON 报告</button>
+    <p>后台需运行 <code>python -m scripts.evaluation_worker</code>。取消在当前 CPU 排序结束后确认，取消/失败不导出半份报告。重放使用原冻结输入，新耗时不要求逐字一致；用语义结果摘要比较排名与指标。</p>
+    <div id="metrics" class="scroll"></div><pre id="report-view">暂无报告</pre>
+  </section>
+</body>
+</html>
