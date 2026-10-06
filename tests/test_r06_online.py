@@ -601,6 +601,19 @@ def test_loaded_runtime_does_not_treat_membership_drift_as_deactivation(online, 
     asyncio.run(run())
 
 
+def test_sample_profile_verifier_uses_actual_seed_not_validation_reference(online, tmp_path, monkeypatch):
+    from scripts import verify_r06_online as verifier
+    app, identity, digest = online
+    monkeypatch.setattr(verifier, "__file__", str(tmp_path / "scripts" / "verify_r06_online.py"))
+    monkeypatch.setattr(verifier, "SOURCE_FILES", ())
+    monkeypatch.setattr(verifier, "_source", lambda _: "a" * 40)
+    monkeypatch.setattr(verifier, "_validation", lambda *args: pytest.fail("sample used validation history"))
+    result = verifier.verify(tmp_path / "artifacts" / "sample", app.backend.database_url,
+                             app.manager.managed_root, identity, digest, sample_profile=True)
+    assert result["sample_profile"] is True and result["history_count"] == 1
+    assert result["status"] == "passed" and result["owned_temporary_schema_removed"]
+
+
 def test_cached_original_sources_are_immutable_owned_and_hash_bound(online):
     app, _, _ = online
     runtime = app.backend.runtime

@@ -137,7 +137,7 @@ def _schemas(database_url):
             "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'test_evorec_%'"))
 
 
-def profile(output, database_url, managed_root, bundle_id, digest, *, content_backend="stdlib"):
+def profile(output, database_url, managed_root, bundle_id, digest, *, content_backend="stdlib", sample_profile=False):
     project = Path(__file__).resolve().parents[1]
     output = Path(output).resolve()
     if not output.is_relative_to(project / "artifacts") or output == project / "artifacts":
@@ -153,7 +153,7 @@ def profile(output, database_url, managed_root, bundle_id, digest, *, content_ba
     with observe(timings), patch.object(verifier, "SOURCE_FILES", sources):
         try:
             verifier.verify(output / "service", database_url, managed_root, bundle_id, digest,
-                            content_backend=content_backend)
+                            content_backend=content_backend, sample_profile=sample_profile)
         except (ValueError, OSError, psycopg.Error, subprocess.SubprocessError, ManagementError, SnapshotMismatch) as failure:
             status = "failed"
             error = dict(code=getattr(failure, "code", "verification_failed"), type=type(failure).__name__)
@@ -162,7 +162,7 @@ def profile(output, database_url, managed_root, bundle_id, digest, *, content_ba
     restored = _schemas(database_url) == before
     result = dict(status="diagnostic_completed", service_status=status, service_error=error,
                   source_commit=base, source_working_tree_dirty=False, source_files_expected=len(sources),
-                  content_backend=content_backend, ranker_backend=content_backend,
+                  content_backend=content_backend, ranker_backend=content_backend, sample_profile=sample_profile,
                   api_deadline_seconds=2.0, deadline_increased=False,
                   temporary_schema_set_restored=restored,
                   requests=[{k: v for k, v in request.items() if k != "started"} for request in timings.requests],
@@ -187,6 +187,7 @@ def main(argv=None):
     parser.add_argument("bundle_id", type=UUID)
     parser.add_argument("--expected-manifest-sha256", required=True)
     parser.add_argument("--content-backend", choices=("stdlib", "numpy"), default="stdlib")
+    parser.add_argument("--sample-profile", action="store_true", help="diagnose the actual Demo fixed sample history")
     args = parser.parse_args(argv)
     url = os.getenv("EVOREC_DATABASE_URL")
     if not url:
@@ -194,7 +195,7 @@ def main(argv=None):
         return 1
     try:
         result = profile(args.output, url, args.managed_root, args.bundle_id, args.expected_manifest_sha256,
-                         content_backend=args.content_backend)
+                         content_backend=args.content_backend, sample_profile=args.sample_profile)
     except (ValueError, OSError, psycopg.Error, subprocess.SubprocessError) as error:
         print(json.dumps(dict(status="failed", code=getattr(error, "code", "diagnostic_failed"),
                               error_type=type(error).__name__)))

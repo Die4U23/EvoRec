@@ -129,3 +129,18 @@ def test_failed_service_diagnostic_cli_returns_failure(monkeypatch, tmp_path, ca
         status="diagnostic_completed", service_status="failed", temporary_schema_set_restored=True))
     assert profiler.main([str(tmp_path), str(tmp_path), str(uuid4()), "--expected-manifest-sha256", "b"*64]) == 1
     assert json.loads(capsys.readouterr().out)["service_status"] == "failed"
+
+
+def test_sample_profile_option_is_forwarded_and_recorded(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiler, "__file__", str(tmp_path / "scripts" / "profile_r06_online.py"))
+    monkeypatch.setattr(profiler, "_source", lambda _: "a" * 40)
+    monkeypatch.setattr(profiler, "_schemas", lambda _: frozenset())
+    calls = []
+    def verify(*args, **kwargs):
+        calls.append(kwargs)
+    monkeypatch.setattr(profiler.verifier, "verify", verify)
+    result = profiler.profile(tmp_path / "artifacts" / "sample", "PRIVATE-DB", tmp_path,
+                              uuid4(), "b" * 64, content_backend="numpy", sample_profile=True)
+    assert calls == [{"content_backend": "numpy", "sample_profile": True}]
+    assert result["sample_profile"] is True and result["api_deadline_seconds"] == 2.0
+    assert result["uninstrumented_acceptance"] is False
