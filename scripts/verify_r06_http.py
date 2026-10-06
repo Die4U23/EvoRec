@@ -48,6 +48,38 @@ def _require(condition, message):
         raise ValueError(message)
 
 
+class ObservedClient:
+    """Client-only timing/status records; never headers, IDs, bodies or errors."""
+
+    def __init__(self, client):
+        self.client, self.records, self._keys = client, [], set()
+        self._after_reset = False
+
+    def get(self, *args, **kwargs):
+        return self.client.get(*args, **kwargs)
+
+    def post(self, path, **kwargs):
+        if path != "/api/v1/recommendations":
+            response = self.client.post(path, **kwargs)
+            if path.endswith("/reset") and response.status_code == 200:
+                self._after_reset = True
+            return response
+        value = kwargs.get("json", {}).get("strategy")
+        key = kwargs.get("headers", {}).get("Idempotency-Key")
+        record = dict(after_reset=self._after_reset, repeated_key=key in self._keys,
+                      strategy=value if value in ("dense", "popular", "adaptive") else "other",
+                      status_code=None)
+        self._keys.add(key)
+        started = perf_counter()
+        try:
+            response = self.client.post(path, **kwargs)
+            record["status_code"] = response.status_code
+            return response
+        finally:
+            record["wall_seconds"] = perf_counter() - started
+            self.records.append(record)
+
+
 def exercise(client, ready, directory, *, k=10):
     """Observable HTTP contracts; no DB edits, injected transport or instrumentation."""
     def ok(response, status=200):
@@ -185,10 +217,24 @@ def verify(output, database_url, root, bundle_id, digest, *, backend="numpy"):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(raw)
         hashes[name] = hashlib.sha256(raw).hexdigest()
-    with DemoProcess(output / "server", database_url, root, bundle_id, digest, backend=backend) as process:
-        with httpx.Client(base_url=process.ready["url"], timeout=10, trust_env=False) as client:
-            result = exercise(client, process.ready, Path(root) / str(bundle_id))
-        identity = {k: process.ready[k] for k in ("item_count", "model_version", "bundle_id", "manifest_sha256")}
+    process = DemoProcess(output / "server", database_url, root, bundle_id, digest, backend=backend)
+    observed = None
+    try:
+        with process:
+            with httpx.Client(base_url=process.ready["url"], timeout=10, trust_env=False) as client:
+                observed = ObservedClient(client)
+                result = exercise(observed, process.ready, Path(root) / str(bundle_id))
+            identity = {k: process.ready[k] for k in ("item_count", "model_version", "bundle_id", "manifest_sha256")}
+    finally:
+        # Save partial observations even on a failed exercise or failed cleanup.
+        # This marker is never a passed verification, nor server-stage profiling.
+        if observed is not None:
+            marker(output, "request-observations", dict(
+                status="observations_only", source_commit=base, requests=observed.records,
+                service_instrumented=False, client_observation_overhead_not_subtracted=True,
+                stopped=process.stopped is not None,
+                cpu_jobs_drained=bool(process.stopped and process.stopped["cpu_jobs_drained"]),
+                owned_schema_removed=bool(process.stopped and process.stopped["owned_schema_removed"])))
     _require(_schemas(database_url) == before, "schema namespace did not return to original state")
     _require(_source(project) == base and all(hashlib.sha256((project/n).read_bytes()).hexdigest() == h
                                            for n,h in hashes.items()), "source changed during TCP acceptance")
