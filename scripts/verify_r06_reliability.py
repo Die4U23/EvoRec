@@ -59,9 +59,24 @@ def legal(body, ready, session):
                     for item in body["items"]))
 
 
+class VerificationFailure(ValueError):
+    """Only fixed local assertion labels may enter diagnostic reports."""
+
+
+def terminal_replay_matches(first, again):
+    if first.status_code != again.status_code:
+        return False
+    if first.status_code == 200:
+        return first.json() == again.json()
+    a, b = first.json()['error'], again.json()['error']
+    # Initial orphan reconciliation and later terminal replay use different explanatory text.
+    return all(key in a and key in b and a[key] == b[key]
+               for key in ('code', 'retryable', 'request_id'))
+
+
 def require(condition, message):
     if not condition:
-        raise ValueError(message)
+        raise VerificationFailure(message)
 
 
 def exercise(lab, samples, concurrency):
@@ -141,6 +156,8 @@ def exercise(lab, samples, concurrency):
                 and recovered.json()['captured_at_ms'] == disconnected_row[1]['timestamp_ms']
                 and [(item['item_id'],item['score'],item['source']) for item in recovered.json()['items']] == disconnected_items,
                 'disconnect response differs from the original completed ledger')
+    lab.observations.update(phase='disconnect_verified', disconnect_server_admission_observed=True,
+                            disconnect_terminal_status=recovered.status_code)
 
     # Kill the verified real API process while a real dense request is admitted.
     crash_key = str(uuid4())
@@ -166,11 +183,15 @@ def exercise(lab, samples, concurrency):
     lab.start()
     crash_replay, _ = post(lab.ready["url"], session, crash_key)
     interrupted = (crash_replay.status_code == 409
-                   and crash_replay.json()["error"]["code"] == "recommendation_interrupted")
+                   and crash_replay.json()["error"]["code"] == "recommendation_interrupted"
+                   and crash_replay.json()['error']['retryable'] is False
+                   and crash_replay.json()['error']['request_id'] == crash_key)
     require(interrupted or (crash_replay.status_code == 200
             and legal(crash_replay.json(), lab.ready, session)), "crash replay is not safe terminal state")
+    lab.observations.update(phase='crash_terminal_observed', crash_terminal_status=crash_replay.status_code,
+                           crash_outcome='interrupted_without_partial_result' if interrupted else 'completed_before_kill')
     again, _ = post(lab.ready["url"], session, crash_key)
-    require(again.json() == crash_replay.json(), "crash terminal replay differs")
+    require(terminal_replay_matches(crash_replay, again), "crash terminal replay differs")
     lab.observations.update(phase="crash_reconciled",
                            crash_outcome="interrupted_without_partial_result" if interrupted else "completed_before_kill")
     with psycopg.connect(lab.isolated_url) as connection:
@@ -198,15 +219,18 @@ def verify(output, database_url, root, identity, digest, *, samples=12, concurre
     commit = _source(project)
     files = subprocess_sources(project)
     lab = R06ServiceLab(output, database_url, root, identity, digest, backend)
-    result = None
+    result, failure_check = None, None
     try:
         with lab:
             result = exercise(lab, samples, concurrency)
+    except VerificationFailure as error:
+        failure_check = str(error)
+        raise
     finally:
         if lab.output.exists():
             marker(lab.output, "observations", dict(status="observations_only", result=result,
                    partial=getattr(lab, "observations", None),
-                   source_commit=commit, owned_schema_removed=not lab.created))
+                   source_commit=commit, failure_check=failure_check, owned_schema_removed=not lab.created))
     require(_source(project) == commit and subprocess_sources(project) == files, "source changed during acceptance")
     result.update(status="passed_recovery_load_measured_not_sla", source_commit=commit,
                   source_sha256=files, manifest_sha256=digest, bundle_id=str(identity),

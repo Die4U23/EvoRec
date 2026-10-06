@@ -8,7 +8,7 @@ import psycopg
 import pytest
 
 from scripts.r06_service_lab import R06ServiceLab
-from scripts.verify_r06_reliability import percentiles, summarize
+from scripts.verify_r06_reliability import percentiles, summarize, terminal_replay_matches
 from test_r06_bundle import _build
 
 
@@ -30,6 +30,19 @@ def test_nearest_rank_percentiles_not_interpolated_or_rounded_down():
     assert percentiles(list(range(1, 21))) == dict(p50_ms=10, p95_ms=19, p99_ms=20)
     with pytest.raises(ValueError): summarize([],0)
     with pytest.raises(ValueError): summarize([dict(status_code=200,elapsed_ms=float('nan'))],1)
+
+
+def test_terminal_replay_checks_identity_not_explanatory_message():
+    identity=dict(code='recommendation_interrupted',retryable=False,request_id=str(uuid4()))
+    first=httpx.Response(409,json={'error':{**identity,'message':'old lease was lost'}})
+    again=httpx.Response(409,json={'error':{**identity,'message':'old execution was interrupted'}})
+    assert terminal_replay_matches(first,again)
+    for change in ({'code':'recommendation_in_progress'},{'retryable':True},{'request_id':str(uuid4())}):
+        assert not terminal_replay_matches(first,httpx.Response(409,json={'error':{**identity,**change}}))
+    assert not terminal_replay_matches(first,httpx.Response(503,json={'error':identity}))
+    assert not terminal_replay_matches(first,httpx.Response(409,json={'error':{}}))
+    assert not terminal_replay_matches(httpx.Response(200,json={'items':['a']}),
+                                       httpx.Response(200,json={'items':['b']}))
 
 
 def test_real_process_restart_keeps_same_schema_session_and_exact_result(isolated_database, tmp_path):
