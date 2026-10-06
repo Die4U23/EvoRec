@@ -85,6 +85,37 @@ def test_full_catalog_capture_restore_reuse_seal_only_after_actual_guards(online
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("inactive", [False, True])
+def test_capture_uses_compact_actual_rows_without_dropping_inactive_members(online, monkeypatch, inactive):
+    import sys
+    from evorec.infrastructure import postgres
+    app, _, _ = online
+    if inactive:
+        app.manager.deactivate_item("a")
+    original = postgres.capture_model
+    observed = []
+
+    def capture(connection, runtime, session, catalog, rows):
+        fields = ("item_id", "internal_item_id", "is_active", "r06_model_text", "r06_first_seen_ms")
+        # Container budget only, not a process RSS or wall-time assertion. A
+        # future equivalent compact representation can satisfy the same test.
+        assert len(rows) == 6
+        assert all(sys.getsizeof(row) < sys.getsizeof(dict.fromkeys(fields)) for row in rows)
+        first = next(row for row in rows if row.item_id == "a")
+        assert first.r06_model_text == "中文 alpha" and first.r06_first_seen_ms == 1
+        assert first.is_active is (not inactive)
+        observed.append(True)
+        return original(connection, runtime, session, catalog, rows)
+
+    monkeypatch.setattr(postgres, "capture_model", capture)
+    async def run():
+        context = await app.backend.snapshot_for_comparison(await _command(app))
+        assert len(context.catalog.eligible_items) == (5 if inactive else 6)
+        assert restore_request(app.backend.runtime.bundle, context).context is context
+    asyncio.run(run())
+    assert observed == [True]
+
+
 @pytest.mark.parametrize("active", [frozenset(), frozenset({"b", "c"})])
 def test_subset_capture_restore_compute_exact_seal_and_reject_full_seal(online, active):
     import hashlib

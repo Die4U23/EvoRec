@@ -112,16 +112,16 @@ def capture_model(connection, runtime, session, catalog, rows):
     if (row is None or row["runtime_kind"] != KIND
             or (row["manifest_sha256"] or "").strip() != bundle.manifest_sha256):
         raise ManagementError("r06_snapshot_changed", "registered model identity differs", 503)
-    if (tuple(row["item_id"] for row in rows) != bundle.adapter.features.item_ids
-            or any(row["internal_item_id"] != index for index, row in enumerate(rows))):
+    if (tuple(row.item_id for row in rows) != bundle.adapter.features.item_ids
+            or any(row.internal_item_id != index for index, row in enumerate(rows))):
         raise ManagementError("bundle_members_changed", "approved ordered membership changed", 409)
     identities = []
     for row in rows:
-        if not row["is_active"]:
+        if not row.is_active:
             continue
-        item_id = row["item_id"]
+        item_id = row.item_id
         approved = runtime.catalog_items[item_id]
-        if row["r06_model_text"] != approved.text or row["r06_first_seen_ms"] != approved.first_seen_ms:
+        if row.r06_model_text != approved.text or row.r06_first_seen_ms != approved.first_seen_ms:
             raise ManagementError("r06_catalog_changed", "actual model text/time changed", 409)
         identities.append((item_id, bundle.catalog_item_sha256[item_id]))
     if frozenset(item for item, _ in identities) != catalog.eligible_items or len(identities) != len(catalog.eligible_items):

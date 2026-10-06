@@ -12,7 +12,7 @@ from threading import Lock
 from uuid import UUID, uuid4
 
 import psycopg
-from psycopg.rows import dict_row
+from psycopg.rows import dict_row, namedtuple_row
 from psycopg.types.json import Jsonb
 
 from evorec.domain.errors import (
@@ -98,12 +98,14 @@ class PostgresDemoBackend:
             if not self.r06_enabled or not isinstance(runtime, ManagedR06Runtime):
                 raise ManagementError("r06_runtime_unavailable", "approved R06 runtime is unavailable", 503)
             # One actual-row read supplies eligibility and content, not two READ COMMITTED views.
-            rows = connection.execute(
-                "SELECT bi.item_id, bi.internal_item_id, i.is_active, i.r06_model_text, i.r06_first_seen_ms "
-                "FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id "
-                "WHERE bi.bundle_id=%s ORDER BY bi.internal_item_id", (bundle_id,),
-            ).fetchall()
-            eligible = frozenset(row["item_id"] for row in rows if row["is_active"])
+            # Compact rows are local to this large read; other queries retain dict_row.
+            with connection.cursor(row_factory=namedtuple_row) as cursor:
+                rows = cursor.execute(
+                    "SELECT bi.item_id, bi.internal_item_id, i.is_active, i.r06_model_text, i.r06_first_seen_ms "
+                    "FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id "
+                    "WHERE bi.bundle_id=%s ORDER BY bi.internal_item_id", (bundle_id,),
+                ).fetchall()
+            eligible = frozenset(row.item_id for row in rows if row.is_active)
             catalog = CatalogSnapshot(bundle_id, control["exclusion_version"], eligible)
             model = capture_model(connection, runtime, session, catalog, rows)
         elif isinstance(runtime, ManagedR06Runtime):
