@@ -126,11 +126,21 @@ def exercise(lab, samples, concurrency):
     except httpx.HTTPError:
         disconnected = True
     sleep(3)
+    with psycopg.connect(lab.isolated_url) as connection:
+        disconnected_row = connection.execute('SELECT status,model_snapshot FROM recommendation_requests WHERE request_id=%s',
+                                              (disconnected_key,)).fetchone()
+        disconnected_items = connection.execute('SELECT item_id,score,source FROM request_items WHERE request_id=%s ORDER BY position',
+                                                 (disconnected_key,)).fetchall()
+    require(disconnected and disconnected_row is not None, 'client disconnect did not establish server admission')
     recovered, _ = post(lab.ready["url"], session, disconnected_key)
     require(recovered.status_code == 200 or (recovered.status_code == 409
             and not recovered.json()["error"]["retryable"]), "disconnect original key is not terminal")
     if recovered.status_code == 200:
         require(legal(recovered.json(), lab.ready, session), "disconnect replay identity differs")
+        require(disconnected_row[0] == 'completed'
+                and recovered.json()['captured_at_ms'] == disconnected_row[1]['timestamp_ms']
+                and [(item['item_id'],item['score'],item['source']) for item in recovered.json()['items']] == disconnected_items,
+                'disconnect response differs from the original completed ledger')
 
     # Kill the verified real API process while a real dense request is admitted.
     crash_key = str(uuid4())
@@ -174,6 +184,7 @@ def exercise(lab, samples, concurrency):
         item_count=lab.ready['item_count'], model_version=lab.ready['model_version'],
         profile='fixed_approved_training_seed_not_real_user',
         duplicate_key_single_result=True, disconnect_observed=disconnected,
+        disconnect_server_admission_observed=True,
         disconnect_terminal_status=recovered.status_code, hard_crash_admission_observed=admitted,
         crash_outcome="interrupted_without_partial_result" if interrupted else "completed_before_kill",
         explicit_new_key_after_crash_succeeded=True, load=dict(concurrency=concurrency,
