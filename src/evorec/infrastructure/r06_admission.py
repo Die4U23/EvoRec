@@ -115,7 +115,7 @@ def capture_model(connection, runtime, session, catalog, rows):
     if (tuple(row.item_id for row in rows) != bundle.adapter.features.item_ids
             or any(row.internal_item_id != index for index, row in enumerate(rows))):
         raise ManagementError("bundle_members_changed", "approved ordered membership changed", 409)
-    identities = []
+    active_count = 0
     for row in rows:
         if not row.is_active:
             continue
@@ -123,8 +123,13 @@ def capture_model(connection, runtime, session, catalog, rows):
         approved = runtime.catalog_items[item_id]
         if row.r06_model_text != approved.text or row.r06_first_seen_ms != approved.first_seen_ms:
             raise ManagementError("r06_catalog_changed", "actual model text/time changed", 409)
-        identities.append((item_id, bundle.catalog_item_sha256[item_id]))
-    if frozenset(item for item, _ in identities) != catalog.eligible_items or len(identities) != len(catalog.eligible_items):
+        if item_id not in catalog.eligible_items:
+            raise ManagementError("r06_catalog_changed", "eligible catalog changed during admission", 409)
+        active_count += 1
+    # Ordered membership above already proves unique approved IDs. Inclusion
+    # plus equal cardinality proves exact eligibility without a second set or
+    # a full list of identity pairs that the full-set seal does not use.
+    if active_count != len(catalog.eligible_items):
         raise ManagementError("r06_catalog_changed", "eligible catalog changed during admission", 409)
     seen = set(session.history) | session.hidden_items | session.favorite_items
     seen.update(row["item_id"] for row in connection.execute(
@@ -136,8 +141,8 @@ def capture_model(connection, runtime, session, catalog, rows):
     ).fetchone()["timestamp_ms"]
     # Actual ordered membership, text/time and eligible coverage were checked
     # above. Only their immutable canonical full-set digest is reused.
-    seal = (bundle.full_catalog_seal if len(identities) == len(bundle.catalog_item_sha256)
-            else _seal(bundle, identities))
+    seal = (bundle.full_catalog_seal if active_count == len(bundle.catalog_item_sha256)
+            else _seal(bundle, [(item, bundle.catalog_item_sha256[item]) for item in catalog.eligible_items]))
     try:
         return ModelSnapshot(bundle.manifest_sha256, bundle.model_version, timestamp, seen, seal)
     except ValueError as error:

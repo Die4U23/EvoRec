@@ -116,6 +116,26 @@ def test_capture_uses_compact_actual_rows_without_dropping_inactive_members(onli
     assert observed == [True]
 
 
+@pytest.mark.parametrize("replacement", [frozenset(), frozenset({"b", "c", "d", "e", "zero"}),
+                                        frozenset({"b", "c", "d", "e", "zero", "new"}),
+                                        frozenset({"a", "b", "c", "d", "e", "zero", "new"})])
+def test_capture_rejects_actual_eligibility_coverage_mismatch(online, monkeypatch, replacement):
+    from evorec.infrastructure import postgres
+    app, _, _ = online
+    original = postgres.capture_model
+
+    def capture(connection, runtime, session, catalog, rows):
+        return original(connection, runtime, session,
+                        replace(catalog, eligible_items=replacement), rows)
+
+    monkeypatch.setattr(postgres, "capture_model", capture)
+    async def run():
+        with pytest.raises(ManagementError) as error:
+            await app.backend.snapshot_for_comparison(await _command(app))
+        assert error.value.code == "r06_catalog_changed"
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("active", [frozenset(), frozenset({"b", "c"})])
 def test_subset_capture_restore_compute_exact_seal_and_reject_full_seal(online, active):
     import hashlib
