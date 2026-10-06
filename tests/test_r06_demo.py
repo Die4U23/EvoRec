@@ -198,7 +198,73 @@ def test_actual_child_tcp_and_owned_cleanup(isolated_database, tmp_path, monkeyp
                 from scripts.verify_r06_http import exercise
                 accepted = exercise(client, owned.ready, target, k=3)
                 assert accepted["detail_favorite_hide_undo_reset"] and accepted["actual_tcp_http"]
+                assert accepted["post_reset_fresh_dense_trials"] == 3
+                assert accepted["post_reset_dense_matches_initial_ids"]
+                assert accepted["post_reset_dense_replay_exact"]
     stopped = json.loads((output / "stopped.json").read_bytes())
     assert stopped["owned_schema_removed"] and stopped["cpu_jobs_drained"]
     with psycopg.connect(isolated_database) as c:
         assert c.execute("SELECT 1 FROM pg_namespace WHERE nspname=%s", (stopped["schema"],)).fetchone() is None
+
+
+@pytest.mark.parametrize("fault,trial", [
+    ("timeout", 1), ("timeout", 3), ("identity", 1), ("binding", 1), ("items", 1), ("replay", 1),
+])
+def test_tcp_verifier_rejects_fresh_post_reset_failure(isolated_database, tmp_path, fault, trial):
+    from evorec.domain.errors import ManagementError
+    from scripts.verify_r06_http import exercise
+
+    root, target, digest = _build(tmp_path)
+    owned = DemoProcess(_output(), isolated_database, root, UUID(target.name), digest,
+                        backend="stdlib", startup_timeout=30)
+    with owned, httpx.Client(base_url=owned.ready["url"], timeout=10, trust_env=False) as client:
+        class FaultClient:
+            # All setup, feedback and reset use real TCP. Only the named response
+            # is altered: this tests verifier rejection, not model performance.
+            reset_version = None
+            fresh_keys = []
+            triggered = False
+
+            def get(self, *args, **kwargs):
+                return client.get(*args, **kwargs)
+
+            def post(self, path, **kwargs):
+                response = client.post(path, **kwargs)
+                if path.endswith("/reset"):
+                    self.reset_version = response.json()["history_version"]
+                body = kwargs.get("json", {})
+                if (path != "/api/v1/recommendations" or self.reset_version is None
+                        or body.get("strategy") != "dense"
+                        or body.get("expected_history_version") != self.reset_version):
+                    return response
+                key = kwargs["headers"]["Idempotency-Key"]
+                replay = key in self.fresh_keys
+                if not replay:
+                    self.fresh_keys.append(key)
+                if len(self.fresh_keys) != trial or replay != (fault == "replay"):
+                    return response
+                self.triggered = True
+                assert response.status_code == 200, response.text
+                value = response.json()
+                if fault == "timeout":
+                    return httpx.Response(504, json={"error": {"code": "recommendation_timeout"}})
+                if fault == "identity":
+                    value["model_version"] = "0" * 64
+                elif fault == "binding":
+                    value["session_id"] = str(uuid4())
+                elif fault == "items":
+                    # Still k unique catalog IDs, but one original item is
+                    # replaced. A count/seed-only check is insufficient.
+                    present = {item["item_id"] for item in value["items"]}
+                    value["items"][0]["item_id"] = next(
+                        item for item in ("b", "c", "d", "e", "zero") if item not in present)
+                else:
+                    value["items"][0]["score"] += 1
+                return httpx.Response(200, json=value)
+
+        altered = FaultClient()
+        with pytest.raises((ManagementError, ValueError)):
+            exercise(altered, owned.ready, target, k=3)
+        assert altered.triggered
+        assert len(altered.fresh_keys) == trial  # No automatic retry of a failure.
+    assert owned.stopped["cpu_jobs_drained"] and owned.stopped["owned_schema_removed"]

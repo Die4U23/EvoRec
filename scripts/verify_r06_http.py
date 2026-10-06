@@ -128,6 +128,27 @@ def exercise(client, ready, directory, *, k=10):
     reset = ok(client.post(path + "/reset", headers=auth))
     _require(reset["history"] == [seed] and reset["epoch"] == 1
              and reset["hidden_items"] == reset["favorite_items"] == [], "reset differs from approved sample")
+    # Replaying a completed pre-reset row never exercises fresh admission or
+    # ranking. Require new calculations immediately after reset, with no retry
+    # that could erase the first failure. Keep each original key for its replay.
+    reset_seconds = []
+    initial_ids = [item["item_id"] for item in dense["items"]]
+    reset_body = {**body, "expected_history_version": reset["history_version"]}
+    for _ in range(3):
+        reset_headers = {**auth, "Idempotency-Key": str(uuid4())}
+        started = perf_counter()
+        restored = ok(client.post("/api/v1/recommendations", json=reset_body, headers=reset_headers))
+        reset_seconds.append(perf_counter() - started)
+        legal(restored, {seed})
+        _require(restored["request_id"] == reset_headers["Idempotency-Key"]
+                 and restored["request_id"] != dense["request_id"]
+                 and restored["session_id"] == sample["session_id"]
+                 and restored["session_epoch"] == reset["epoch"]
+                 and restored["history_version"] == reset["history_version"]
+                 and [item["item_id"] for item in restored["items"]] == initial_ids,
+                 "fresh post-reset identity or restored Top-K differs")
+        _require(ok(client.post("/api/v1/recommendations", json=reset_body, headers=reset_headers)) == restored,
+                 "fresh post-reset completed replay differs")
     rejected = client.post("/api/v1/feedback", json={**stale_event, "event_id": str(uuid4())}, headers=auth)
     _require(rejected.status_code == 409 and rejected.json()["error"]["code"] == "session_epoch_conflict",
              "old epoch feedback accepted")
@@ -142,6 +163,8 @@ def exercise(client, ready, directory, *, k=10):
                 recommendation_replay_exact=True, changed_key_and_wrong_owner_rejected=True,
                 training_popular_matches_raw_statistics=True, feedback_and_replay=True,
                 detail_favorite_hide_undo_reset=True, full_seen_retains_undone_feedback=True,
+                post_reset_fresh_dense_trials=len(reset_seconds), post_reset_dense_seconds=reset_seconds,
+                post_reset_dense_matches_initial_ids=True, post_reset_dense_replay_exact=True,
                 old_epoch_feedback_rejected=True, stored_recommendation_replays_after_reset=True)
 
 
