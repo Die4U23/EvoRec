@@ -94,6 +94,8 @@ python -m venv .venv
 
 策略对比另有独立的 `python -m scripts.comparison_worker`。应用最新迁移后，页面支持提交后台单次对比、进度查询、取消与编号恢复；完整结果仍与普通推荐记录隔离。worker 终端也需载入相同的数据库及受管目录环境变量，`.env` 不会自动读取。默认内容基线与显式启用、批准发布的 R06 路径不同，adaptive 不代表学习型路由，单次对比不代表批量评估完成。
 
+批量标注快照评估已提供 `/app/evaluations` 与独立 `python -m scripts.evaluation_worker`：绑定已保存比较，重新计算真实 Top-K、分组指标，支持进度、取消、冻结配置重放和 JSON 导出。先应用最新迁移；只启动 API 不会执行排队任务。安全隔离的完整 R06 工作台与可靠性/负载复验命令见[扩展入口](docs/product/demo-scope.md#2026-10-06-扩展阶段可靠性与评估工作台)，实测与负面记录见[分层验收](docs/validation/r06-reliability-evaluation-20261006.json)。这不是原 R06 全量时间协议复现，也不代表 300 ms / 20 QPS / 99% SLA 已达标。
+
 - `GET /health/live`：进程存活，返回 200。
 - `GET /health/ready`：检查数据库发布屏障和活动受控运行时；仅配置旧演示种子时仍返回 503，发布受控 bundle 且恢复对齐后可以返回 200。
 - `GET /api/v1/system`：返回真实版本、阶段与能力状态；配置数据库后 persistence 为 true。
