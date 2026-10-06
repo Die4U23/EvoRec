@@ -1,0 +1,127 @@
+{
+  "date": "2026-10-06",
+  "scope": "Approved full R06 corpus, isolated manual browser reset and recovery; no new training or evaluation",
+  "status": "partial_acceptance_reset_persisted_but_first_auto_recommendation_failed",
+  "source": {
+    "runtime_git_commit": "197282385659d0492851f5a8a27bd024d0b88d61",
+    "frontend_sha256": "918e12b0c82be2934fa9ddd0c8c19d365f8381329f195871836b0d6e2164e256",
+    "critical_source_files_compared_with_exact_git_blobs": 55,
+    "all_compared_runtime_bytes_match": true,
+    "source_archive_created_this_round": false,
+    "whole_worktree_claimed_clean": false,
+    "application_code_changed_this_round": false
+  },
+  "bundle": {
+    "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+    "item_count": 137249,
+    "backend": "numpy",
+    "api_deadline_seconds": 2.0,
+    "admin_enabled": false,
+    "sample_item_id": "0060501960",
+    "retrained": false,
+    "test_targets_evaluated": false
+  },
+  "manual_browser": {
+    "local_url": "http://127.0.0.1:62322/app",
+    "observation_count": 10,
+    "reset_action_time_user_confirmation_received": true,
+    "reset_click_count": 1,
+    "history_versions": [0, 1, 2, 3, 4, 5],
+    "sequence": [
+      "Initial sample dense returns 10/10 with approved bundle/model identity and real hydrated titles",
+      "Detail view and favorite first item B0BN942894; hide then undo second item B0C3KYVDWT; card count 10 -> 9 -> 10",
+      "Fresh dense before reset excludes both feedback items despite undo; same bundle/model",
+      "Authorized reset restores fixed history and clears favorites; version becomes 5",
+      "First automatic dense request fails with visible recommendation deadline exceeded and empty results",
+      "First explicit retry retains original key and reports terminal request; no result replay claimed",
+      "Second explicit click starts a new request and restores exact original Top-10, including both prior feedback items; same bundle/model",
+      "Reload restores fixed item ID, empty favorites and version 5; not a post-reload title hydration timing pass"
+    ],
+    "initial_and_recovered_top10": [
+      "B0BN942894", "B0C3KYVDWT", "B08GYNLVF4", "B08LT6PT1X", "B01N3ASPNV",
+      "B07CRX5X9T", "B07V8YSBFG", "B07TC8J6HK", "B07624RBWB", "B0CB7JB1V6"
+    ],
+    "reset_state_and_seen_restoration_passed": true,
+    "first_automatic_recommendation_passed": false,
+    "explicit_new_request_recovered": true,
+    "failed_request_reclassified_as_passed": false,
+    "automated_acceptance_report": false,
+    "instrumented": false,
+    "request_stage_timing_recorded": false,
+    "timeout_root_cause_identified": false
+  },
+  "independent_read_only_sql": {
+    "scope": "Exact owned schema; no owner/access tokens selected",
+    "before_reset": {
+      "epoch": 0, "history_version": 4,
+      "history": ["0060501960", "B0BN942894", "B0BN942894"],
+      "favorite_items": ["B0BN942894"], "hidden_items": []
+    },
+    "after_reset_and_after_reload": {
+      "epoch": 1, "history_version": 5,
+      "history": ["0060501960"], "favorite_items": [], "hidden_items": []
+    },
+    "requests_in_creation_order": [
+      {"epoch": 0, "history_version": 0, "strategy": "dense", "k": 10, "status": "completed", "failure_code": null},
+      {"epoch": 0, "history_version": 4, "strategy": "dense", "k": 10, "status": "completed", "failure_code": null},
+      {"epoch": 1, "history_version": 5, "strategy": "dense", "k": 10, "status": "failed", "failure_code": "execution_failed"},
+      {"epoch": 1, "history_version": 5, "strategy": "dense", "k": 10, "status": "completed", "failure_code": null}
+    ],
+    "counts_are_not_a_success_rate_or_load_measurement": true
+  },
+  "local_evidence": {
+    "directory": "artifacts/demo/r06-final-browser-20261006-a",
+    "raw_files_kept_git_ignored": true,
+    "browser_observations_sha256": "afe1b5686c78650964157d40496718f997e46e9105304bb9bb33734c4fe6e67e",
+    "before_reset_png_sha256": "93e5dd3cc1a6b8431b06c6af816015df9d78bc0f124dd1015aceca4b513bb92a",
+    "reset_deadline_failure_png_sha256": "ea8888b85ee083e597f905d7789379d9a030885b5efe87efe0bed0e5613ceb05",
+    "recovered_top10_png_sha256": "67ebc178df30c8975c3b77f56303287a0727588bba353f5af23f3b48bb71a793",
+    "reset_state_png_sha256": "c1cc7c651589110be22b2bf642155ff0588c2de664ca35981315f27ddb4e5681",
+    "stopped_json_sha256": "55ea32f6d0297bdbf5b6437d834c6bafff196047ac43ee2e6933848466707d18"
+  },
+  "cleanup": {
+    "normal_stop_file_used": true,
+    "process_exit_code": 0,
+    "cpu_jobs_drained": true,
+    "stopped_owned_schema_removed": true,
+    "independent_exact_owned_schema_count": 0,
+    "owned_port_listener_count": 0,
+    "owned_browser_tab_closed": true,
+    "temporary_database_removed_and_not_recoverable": true,
+    "env_bytes_unchanged": true,
+    "business_schema_or_active_model_changed": false,
+    "port_8000_modified": false,
+    "port_8000_listener_observed_at_initial_check": false,
+    "hard_kill_cleanup_guaranteed": false
+  },
+  "local_validation": {
+    "repository_hygiene": {
+      "scope": "Git index only", "tracked_files": 403, "local_links_checked": 539,
+      "python_files_parsed": 171, "no_tracked_local_materials_or_raw_artifacts": true,
+      "report_sha256": "76cb72b2371e64d0a38effb609ccb256673b8f973177ba3728a80af0b8c1d6c9"
+    },
+    "hygiene_regressions": {
+      "passed": 16, "failed": 0, "errors": 0, "skipped": 0,
+      "junit_sha256": "18abf46ffb01eacecfcc3adc34d7be8d683dfc4863ae67ec66e341b5c6616415"
+    },
+    "evidence_binding_check": {
+      "initial": "Default Windows GBK read failed to decode UTF-8 observations; not a product or service failure",
+      "final": "Explicit UTF-8 read passed observation count, source identity, six evidence hashes, exact Top-10, timeout/terminal messages and stopped marker checks"
+    },
+    "new_application_tests_added": 0,
+    "regressions_do_not_substitute_for_manual_browser_acceptance": true
+  },
+  "not_proven": [
+    "Automatic recommendation happy path after reset; original deadline failed in this round",
+    "Root cause or fix for this timeout; no stage attribution or acceleration claim",
+    "A complete timed three-minute rehearsal or author's own explanation/code change",
+    "Fresh-machine reproduction, sustained load, QPS, p99 or SLA",
+    "Independent process restart replay; reload only checked session restoration",
+    "Real browser packet loss or multi-operator publication conflict",
+    "Frozen R06 arbitrary new IDs, learned routing, generative/hybrid retrieval or new quality results"
+  ],
+  "review": {"main_thread_review": true, "independent_agent_review": false},
+  "remote_ci": "Verify latest PR head and merged main separately; CI cannot erase the browser failure"
+}
