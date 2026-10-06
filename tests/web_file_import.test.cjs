@@ -74,7 +74,7 @@ function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFet
       if (catalogFetch && url.startsWith('/api/v1/admin/catalog/') &&
           url !== '/api/v1/admin/catalog/file-import-jobs') return catalogFetch(url, options);
       if (catalogFetch && (url.startsWith('/api/v1/admin/publication') ||
-          url.startsWith('/api/v1/admin/bundles/'))) return catalogFetch(url, options);
+          url.startsWith('/api/v1/admin/bundles/') || url.startsWith('/api/v1/admin/items/'))) return catalogFetch(url, options);
       assert.equal(url, '/api/v1/admin/catalog/file-import-jobs');
       const reply = fileReplies.shift();
       if (reply instanceof Error) throw reply;
@@ -323,6 +323,108 @@ async function startMetadata(p) {
 }
 const cards = p => p.element('recommendations').children.filter(row => row.tagName === 'ARTICLE');
 const settle = () => new Promise(resolve => setImmediate(resolve));
+
+function previewPage(mutation) {
+  const state = {build_id: 'build-1', batch_id: 'batch-1', status: 'ready',
+    publication_status: 'active', processed_count: 1, total_count: 1, failed_count: 0, attempts: 1};
+  const items = {total_count: 1, offset: 0, items: [{item_id: 'cold', title: 'Cold',
+    category: 'test', is_active: true, currently_recommendable: true}]};
+  let delayed = null, delayedState = null;
+  const p = page([], (url, options) => {
+    if (url === '/api/v1/admin/catalog/builds/build-1') return delayedState ? delayedState() : ok({...state});
+    if (url.includes('/builds/build-1/items?')) return delayed ? delayed() : ok(items);
+    if (url === '/api/v1/admin/publication') return publicationState(nextBundle);
+    return mutation(url, options);
+  });
+  p.element('admin-token').value = 'fixture-admin'; p.element('catalog-build').value = 'build-1';
+  p.element('bundle-id').value = oldBundle; p.element('item-id').value = 'cold';
+  return {...p, delay: callback => { delayed = callback; },
+    delayState: callback => { delayedState = callback; }, state, items};
+}
+
+for (const action of ['rollback-bundle', 'publish-bundle', 'deactivate', 'recover']) {
+  for (const lost of [false, true]) {
+    test(`${action} invalidates old build preview even when response is lost=${lost}`, async () => {
+      const p = previewPage((url, options) => {
+        if (lost) throw new Error('lost response');
+        return url.includes('/bundles/') ? completedPublication(options, oldBundle) : ok({});
+      });
+      await p.ready; await p.element('refresh-build').onclick();
+      assert.match(p.element('build-preview').children[0].textContent, /当前活动版本/);
+      await p.element(action).onclick();
+      assert.equal(p.element('build-preview').children.length, 0);
+      assert.match(p.element('build-status').textContent, /需重新查询/);
+      assert.equal(p.element('publish-catalog').disabled, true);
+      assert.equal(p.element('preview-next').disabled, true);
+      if (lost) assert.match(p.element('message').textContent, /lost response/);
+    });
+  }
+}
+
+test('late preview response cannot restore active or eligible labels after a mutation', async () => {
+  const p = previewPage(() => ok({})); await p.ready;
+  let resolve;
+  p.delay(() => new Promise(done => { resolve = done; }));
+  const pending = p.element('refresh-build').onclick(); await settle();
+  await p.element('deactivate').onclick(); resolve(ok(p.items)); await pending;
+  assert.equal(p.element('build-preview').children.length, 0);
+  assert.match(p.element('build-status').textContent, /需重新查询/);
+});
+
+test('late build state cannot restore a current-version claim after a mutation', async () => {
+  const p = previewPage(() => ok({})); await p.ready;
+  let resolve; p.delayState(() => new Promise(done => { resolve = done; }));
+  const pending = p.element('refresh-build').onclick(); await settle();
+  await p.element('deactivate').onclick(); resolve(ok(p.state)); await pending;
+  assert.match(p.element('build-status').textContent, /需重新查询/);
+  assert.equal(p.element('build-preview').children.length, 0);
+  assert.equal(p.requests.filter(r => r.url.includes('/builds/build-1/items?')).length, 0);
+});
+
+test('explicit refresh replaces invalidated preview with actual retired and deactivated state', async () => {
+  const p = previewPage(() => ok({})); await p.ready;
+  await p.element('refresh-build').onclick(); await p.element('deactivate').onclick();
+  p.state.publication_status = 'retired'; p.items.items[0].is_active = false;
+  await p.element('refresh-build').onclick();
+  assert.match(p.element('build-preview').children[0].textContent, /此版本已被替代/);
+  assert.match(p.element('build-preview').children[1].children[1].textContent, /已下架/);
+  assert.equal(p.element('publish-catalog').disabled, true);
+});
+
+test('failed explicit preview refresh does not keep a previous current-version claim', async () => {
+  const p = previewPage(() => ok({})); await p.ready;
+  await p.element('refresh-build').onclick(); p.delay(() => { throw new Error('preview unavailable'); });
+  await p.element('refresh-build').onclick();
+  assert.equal(p.element('build-preview').children.length, 0);
+  assert.match(p.element('message').textContent, /preview unavailable/);
+  assert.match(p.element('build-status').textContent, /需重新查询/);
+  assert.equal(p.element('publish-catalog').disabled, true);
+});
+
+for (const lateError of [false, true]) {
+  test(`older preview response cannot replace a newer preview, late error=${lateError}`, async () => {
+    const p = previewPage(() => ok({})); await p.ready;
+    let resolve, reject;
+    p.delay(() => new Promise((done, fail) => { resolve = done; reject = fail; }));
+    const pending = p.element('refresh-build').onclick(); await settle();
+    p.delay(null); p.state.publication_status = 'retired';
+    await p.element('refresh-build').onclick();
+    if (lateError) reject(new Error('old unavailable')); else resolve(ok(p.items));
+    await pending;
+    assert.match(p.element('build-preview').children[0].textContent, /此版本已被替代/);
+    assert.equal(p.element('message').textContent, '');
+  });
+}
+
+test('changing the selected build discards a delayed preview', async () => {
+  const p = previewPage(() => ok({})); await p.ready;
+  let resolve; p.delay(() => new Promise(done => { resolve = done; }));
+  const pending = p.element('refresh-build').onclick(); await settle();
+  p.element('catalog-build').value = 'build-2'; p.element('catalog-build').oninput();
+  resolve(ok(p.items)); await pending;
+  assert.equal(p.element('build-preview').children.length, 0);
+  assert.equal(p.element('publish-catalog').disabled, true);
+});
 
 test('cards outside directory page hydrate real metadata without feedback or recomputation', async () => {
   const p = metadataPage(['outside/first-page'], url => {
