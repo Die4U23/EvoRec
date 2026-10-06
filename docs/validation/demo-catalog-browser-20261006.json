@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-06",
+  "scope": "隔离合成内容基线的实际文件上传、构建、发布、下架及守卫回滚；修复旧构建预览误导",
+  "implementation_commit": "de83d00a69c00625364f3c4740832ab901fc82f9",
+  "frontend_sha256": "918e12b0c82be2934fa9ddd0c8c19d365f8381329f195871836b0d6e2164e256",
+  "original_browser_frontend_commit": "608af166f7c9c5a5b08b2c106702a23a6a5e8010",
+  "backend_binding": "本轮只改变 web/index.html 和页面测试；既有隔离进程后端字节与 6ce17de 主线一致，无重启或后端修改",
+  "node": {
+    "before": {
+      "selected": 11, "passed": 1, "failed": 10, "skipped": 0,
+      "private_junit_sha256": "7d6328427bdf497f9b0aebfefce2a1da4e3e4b9884ef930fea5cee28390deb52"
+    },
+    "final": {
+      "files": 2, "passed": 100, "failed": 0, "skipped": 0, "new_cases": 15,
+      "private_junit_sha256": "88b53810de1fcca4bbc267524f2759166c5de13e9e12123365ccd5885363cc65"
+    },
+    "coverage": [
+      "高级发布/回滚、下架与恢复发布开始和结束时失效旧预览，包括响应丢失",
+      "失效后禁用构建发布与预览翻页，保留原发布操作身份与守卫",
+      "迟到状态、预览和旧请求错误不能恢复旧声明或覆盖较新预览",
+      "切换构建 ID 丢弃迟到预览；显式刷新失败不保留旧活动状态",
+      "显式重新查询后显示实际已退休版本及下架资格"
+    ]
+  },
+  "python": {
+    "files": ["test_management.py", "test_catalog_demo.py", "test_catalog_build.py", "test_repository_hygiene.py"],
+    "passed": 49, "failed": 0, "errors": 0, "skipped": 0,
+    "private_junit_sha256": "876945759bcbba0f784c0be4e7e60f833f8ac1965b9c66e7bcf04ee90ecd5267",
+    "real_tcp_catalog_demo_case_executed": true,
+    "overlapping_runs_not_added": true
+  },
+  "browser": {
+    "url": "http://127.0.0.1:56470/app",
+    "kind": "人工实际浏览器观察，不是自动化效果实验或负载验收",
+    "authorized": "用户对指定临时令牌及两份合成 CSV 确认请求回复继续；不视为永久重置授权",
+    "initial_bundle": "bc945cda-fbca-495e-b52e-0b77bcb09b9d",
+    "built_bundle": "3cf2c92c-b53a-41fa-b320-029f0469871c",
+    "build_id": "f28b9422-c877-4757-b59d-c83a4bc9e090",
+    "observed": [
+      "示例固定 demo-coop 历史，实际 dense 10/10；不推断模型为 R06",
+      "真实文件选择器上传错误 CSV，显示第 3 行 title 为空的逐行错误",
+      "真实文件选择器上传正确 CSV，明确导入 2 件但尚未构建/发布",
+      "导入后和 26/26 构建完成后重新取推荐，仍用初始包且不含新品",
+      "预览 26 件后明确发布，新请求使用新包，demo-new-coop 第一张",
+      "下架 demo-new-coop，新请求排除；目录明确标记已下架",
+      "回滚按钮记录操作 ID、预期新包及初始目标，完成后活动包回到初始包，下架版本仍为 1",
+      "回滚不改写页面上已显示的旧推荐；重新请求才显示初始包，不含新品",
+      "刷新已提交修复页面后，恢复收藏与会话版本 1；重新填入临时令牌后复验下架/高级发布/回滚",
+      "修复后旧预览为空并提示需重新查询；显式查询显示已退休版本与下架新品；最终 dense 10/10 使用初始包"
+    ],
+    "negative_observation": "修复前回滚及下架后仍保留旧预览的当前活动版本/当前可推荐文字；服务端和新推荐正确。保留原观察，不将手动刷新能纠正当作自动失效通过",
+    "private_observations_sha256": "874f2fa4dc31b22a6cab8e667dc84290fe145f532f9a6bdbf55c833b08790627",
+    "private_invalid_csv_screenshot_sha256": "b31cfa6ae6ae64b46b46d2d59e93554ba54a72d66518cc2f69d93d0bbcd5d278",
+    "private_published_recommendation_screenshot_sha256": "8599ebde5121199606e107dd6dce3febd037a8abe2a0ffa593085d590674bf3a",
+    "private_fixed_rollback_screenshot_sha256": "288ab529a3708dcdf74d34aec0aefd2f77804a608320ba96e0e4421ef26e42d9"
+  },
+  "independent_read_only_http_probe": {
+    "catalog_count": 26,
+    "both_invalid_csv_rows_absent": true,
+    "new_coop_inactive_after_rollback": true,
+    "other_imported_item_retained": true,
+    "boundary": "终端实际 HTTP 目录核对，不能冒称浏览器断言或校验任务的 HTTP 状态码；未保存独立原始报告哈希"
+  },
+  "lifecycle_at_this_checkpoint": {
+    "owned_schema": "test_evorec_b2c97f9c2cf3475781e9b849d7608154",
+    "pid": 12180,
+    "service_still_running_for_action_time_reset_confirmation": true,
+    "normal_exit_worker_schema_and_token_cleanup_not_yet_accepted": true,
+    "business_env_schema_active_model_and_8000_not_operated": true
+  },
+  "review": "主线程质量/性能/复用复查；技能所需角色参数不可用，不冒称独立 Agent。复用单个预览失效函数及代际守卫，不增加状态变更网络请求、不改变发布协议或原 2 秒期限",
+  "pending": ["动作时确认后的浏览器永久重置；本轮内容基线不能替代 R06 重置", "当前自有浏览器服务正常退出与 worker/schema/令牌清理", "真实网络故障和多操作者冲突实机（当前为 Node 故障模拟）", "三分钟实际计时复演与作者解释/修改验收"],
+  "not_claimed": ["完整 Demo 已交付", "合成同标题/类别新品第一名代表模型质量提升", "R06 动态新品、现场重训、效果提升或 SLA", "全新电脑复建、强杀恢复、独立进程重启重放", "本轮本地全服务测试；最新 PR head 和合并主线 CI 另核对"]
+}
