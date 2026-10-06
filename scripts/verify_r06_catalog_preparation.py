@@ -23,7 +23,8 @@ SOURCE_FILES = (*BUNDLE_SOURCES, "src/evorec/infrastructure/r06_catalog.py",
                 "src/evorec/infrastructure/management.py", "src/evorec/infrastructure/postgres.py",
                 "src/evorec/api/app.py", "src/evorec/bootstrap.py", "db/migrations/0009_r06_catalog_preparation.sql",
                 "scripts/migrate_database.py", "scripts/verify_r06_catalog_preparation.py",
-                "tests/test_r06_catalog_preparation.py", ".github/workflows/service-integration.yml")
+                "tests/test_r06_catalog_preparation.py", "tests/test_catalog_lock.py",
+                "src/evorec/infrastructure/catalog_file_job.py", ".github/workflows/service-integration.yml")
 
 
 def verify(output, database_url, managed_root, bundle_id, digest):

@@ -53,7 +53,7 @@ jobs:
             tests/test_catalog_file.py tests/test_catalog_file_jobs.py \
             tests/test_backup_restore.py \
             tests/test_catalog_build.py \
-            tests/test_feedback.py tests/test_management.py \
+            tests/test_feedback.py tests/test_management.py tests/test_catalog_lock.py \
             tests/test_migrations.py tests/test_model_runtime.py \
             tests/test_residual_ranker_runtime.py tests/test_r06_features_runtime.py \
             tests/test_content_encoder_runtime.py \

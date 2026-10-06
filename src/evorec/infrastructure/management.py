@@ -23,6 +23,12 @@ class CatalogManager:
     """One coordinator only; the database lock serializes publication/recovery."""
 
     LOCK_NAME = "evorec:publication"
+    # Scope to the physical control relation, not the first search_path entry:
+    # two namespaces may resolve the same catalog, while isolated demos must
+    # not block one another. Keep all publication users on this shared key.
+    # Changing from the legacy global key requires stopping old coordinators
+    # and workers before upgrading; mixed old/new binaries do not interlock.
+    LOCK_KEY_SQL = "(hashtext(%s)::bigint << 32) | 'catalog_control'::regclass::oid::bigint"
 
     def __init__(self, backend: PostgresDemoBackend, managed_root: Path | None):
         self.backend = backend
@@ -45,7 +51,7 @@ class CatalogManager:
         digest = hashlib.sha256(canonical).hexdigest()
         with self._connect() as connection:
             connection.execute(
-                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                f"SELECT pg_advisory_xact_lock({self.LOCK_KEY_SQL})",
                 (self.LOCK_NAME,),
             )
             prior = connection.execute(
@@ -281,7 +287,7 @@ class CatalogManager:
                 raise ManagementError("publication_aborted", "operation was aborted; use a new ID")
         self.recover()
         with self._connect(autocommit=True) as connection:
-            connection.execute("SELECT pg_advisory_lock(hashtext(%s))", (self.LOCK_NAME,))
+            connection.execute(f"SELECT pg_advisory_lock({self.LOCK_KEY_SQL})", (self.LOCK_NAME,))
             try:
                 prior = connection.execute(
                     "SELECT target_bundle_id, expected_active_bundle_id, status "
@@ -379,7 +385,7 @@ class CatalogManager:
                 return {"operation_id": operation_id, "active_bundle_id": bundle_id,
                         "status": "completed", "replayed": False}
             finally:
-                connection.execute("SELECT pg_advisory_unlock(hashtext(%s))", (self.LOCK_NAME,))
+                connection.execute(f"SELECT pg_advisory_unlock({self.LOCK_KEY_SQL})", (self.LOCK_NAME,))
 
     def ensure_ready(self) -> None:
         self.recover()
@@ -387,7 +393,7 @@ class CatalogManager:
     def recover(self) -> None:
         """On restart, reconcile the durable pointer and unfinished operation."""
         with self._connect(autocommit=True) as connection:
-            connection.execute("SELECT pg_advisory_lock(hashtext(%s))", (self.LOCK_NAME,))
+            connection.execute(f"SELECT pg_advisory_lock({self.LOCK_KEY_SQL})", (self.LOCK_NAME,))
             try:
                 control = connection.execute(
                     "SELECT active_bundle_id, admission_open FROM catalog_control WHERE singleton = 1"
@@ -457,4 +463,4 @@ class CatalogManager:
                         "UPDATE catalog_control SET admission_open = true WHERE singleton = 1"
                     )
             finally:
-                connection.execute("SELECT pg_advisory_unlock(hashtext(%s))", (self.LOCK_NAME,))
+                connection.execute(f"SELECT pg_advisory_unlock({self.LOCK_KEY_SQL})", (self.LOCK_NAME,))

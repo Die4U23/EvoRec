@@ -22,7 +22,7 @@ class CatalogFileJobService:
         digest = hashlib.sha256(media_type.encode("utf-8") + b"\0" + data).hexdigest()
         with self.manager._connect() as connection:
             connection.execute(
-                "SELECT pg_advisory_xact_lock(hashtext(%s))", (self.manager.LOCK_NAME,),
+                f"SELECT pg_advisory_xact_lock({self.manager.LOCK_KEY_SQL})", (self.manager.LOCK_NAME,),
             )
             prior = connection.execute(
                 "SELECT payload_sha256 FROM catalog_file_jobs WHERE batch_id = %s FOR UPDATE",

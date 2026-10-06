@@ -98,7 +98,7 @@ class R06CatalogPreparation:
         except ControlledLoadError as error:
             raise ManagementError(error.code, "R06 source changed during preparation", 422) from error
         with self.manager._connect() as connection:
-            connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (self.manager.LOCK_NAME,))
+            connection.execute(f"SELECT pg_advisory_xact_lock({self.manager.LOCK_KEY_SQL})", (self.manager.LOCK_NAME,))
             prior = connection.execute(
                 "SELECT manifest_sha256, artifact_path, runtime_kind, status FROM bundle_versions "
                 "WHERE bundle_id = %s FOR UPDATE", (bundle_id,),
