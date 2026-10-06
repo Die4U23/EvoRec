@@ -15,6 +15,7 @@ from evorec.infrastructure.readiness import UnconfiguredReadiness
 if TYPE_CHECKING:
     from evorec.infrastructure.management import CatalogManager
     from evorec.infrastructure.comparison_job import ComparisonJobService
+    from evorec.infrastructure.evaluation_job import EvaluationJobService
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,7 @@ class DemoApplication:
     persistent: bool
     manager: "CatalogManager | None" = None
     comparison_jobs: "ComparisonJobService | None" = None
+    evaluation_jobs: "EvaluationJobService | None" = None
 
 
 def build_demo_application(
@@ -60,9 +62,12 @@ def build_demo_application(
         readiness = ReadinessQuery(UnconfiguredReadiness())
     compare = CompareStrategies(backend, backend, comparison_records)
     jobs = None
+    evaluations = None
     if comparison_records is not None:
         from evorec.infrastructure.comparison_job import ComparisonJobService
 
         jobs = ComparisonJobService(compare, comparison_records)
+        from evorec.infrastructure.evaluation_job import EvaluationJobService
+        evaluations = EvaluationJobService(compare, comparison_records)
     return DemoApplication(backend, Recommend(backend, backend, backend), compare, readiness,
-                           persistent, manager, jobs)
+                           persistent, manager, jobs, evaluations)

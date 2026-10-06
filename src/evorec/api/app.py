@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI, Header, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from evorec.api.web_assets import R06_ASSETS, WEB_PAGES
+from evorec.api.evaluation import router as evaluation_router
 from pydantic import BaseModel, ConfigDict, Field
 import psycopg
 
@@ -444,6 +445,7 @@ def create_app(
         ),
         lifespan=lifespan,
     )
+    app.include_router(evaluation_router(demo.evaluation_jobs, _error))
 
     @app.exception_handler(psycopg.Error)
     async def database_error(_, __):
@@ -504,6 +506,14 @@ def create_app(
     @app.get("/app/results", tags=["web"], include_in_schema=False)
     def experiment_page():
         return FileResponse(project / WEB_PAGES["/app/results"], headers={"Cache-Control": "no-cache"})
+
+    @app.get('/app/evaluations',include_in_schema=False)
+    def evaluation_page():
+        return FileResponse(project / WEB_PAGES['/app/evaluations'],headers={'Cache-Control':'no-cache'})
+
+    @app.get('/app/evaluations.js',include_in_schema=False)
+    def evaluation_script():
+        return FileResponse(project / WEB_PAGES['/app/evaluations.js'],headers={'Cache-Control':'no-cache'})
 
     @app.get("/app/evidence/r06/{asset:path}", tags=["web"], include_in_schema=False)
     def experiment_evidence(asset: str):

@@ -1,5 +1,6 @@
 """Only public repository display assets; shared by routing and link checks."""
 WEB_PAGES = {"/app": "web/index.html", "/app/results": "web/results.html"}
+WEB_PAGES.update({'/app/evaluations':'web/evaluations.html', '/app/evaluations.js':'web/evaluations.js'})
 R06_ASSETS = {name: "docs/experiments/r06-multi-interest/" + name for name in (
     "results.json", "uncertainty.json", "report.md", "report.html", "figures/manifest.json",
     "figures/coverage-and-ranking.png", "figures/learning-curves.png", "figures/paired-intervals.png",
