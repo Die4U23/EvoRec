@@ -8,6 +8,7 @@ Only static stage labels/times/statuses are recorded, never arguments or bodies.
 import argparse
 from contextlib import ExitStack, contextmanager
 from functools import wraps
+import gc
 import json
 import os
 from pathlib import Path
@@ -40,6 +41,17 @@ class RequestTimings:
         self.requests = []
         self.current = None
         self.lock = Lock()
+        self.after_reset = False
+        self._gc_started = None
+
+    def gc(self, phase, info):
+        """Observe collection duration only; never collect, disable or tune GC."""
+        if phase == "start":
+            self._gc_started = (self.current, info["generation"], perf_counter(), thread_time())
+        elif phase == "stop" and self._gc_started is not None:
+            request, generation, started, cpu_started = self._gc_started
+            self._gc_started = None
+            self._event(request, f"gc_generation_{generation}", started, cpu_started, None)
 
     def _event(self, request, label, started, cpu_started, error):
         if request is not None:
@@ -80,13 +92,17 @@ class RequestTimings:
         @wraps(original)
         async def timed(client, url, *args, **kwargs):
             if not str(url).endswith("/api/v1/recommendations"):
-                return await original(client, url, *args, **kwargs)
+                response = await original(client, url, *args, **kwargs)
+                if str(url).endswith("/reset") and response.status_code == 200:
+                    self.after_reset = True
+                return response
             if self.current is not None:
                 raise ValueError("diagnostic only supports sequential API requests")
             body = kwargs.get("json")
             value = body.get("strategy") if isinstance(body, dict) else None
             strategy = value if type(value) is str and value in {"popular", "dense", "adaptive"} else "other"
-            request = dict(strategy=strategy, started=perf_counter(), stages=[], status_code=None, error_type=None)
+            request = dict(strategy=strategy, after_reset=self.after_reset, started=perf_counter(),
+                           stages=[], status_code=None, error_type=None)
             self.current = request
             try:
                 response = await original(client, url, *args, **kwargs)
@@ -128,6 +144,9 @@ def observe(timings):
                                     (R06CPUQueue, "run", "queue_and_cpu_drain")):
             stack.enter_context(patch.object(target, name, timings.async_stage(label, getattr(target, name))))
         stack.enter_context(patch.object(httpx.AsyncClient, "post", timings.post(httpx.AsyncClient.post)))
+        callback = timings.gc
+        gc.callbacks.append(callback)
+        stack.callback(gc.callbacks.remove, callback)
         yield
 
 
@@ -137,7 +156,10 @@ def _schemas(database_url):
             "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'test_evorec_%'"))
 
 
-def profile(output, database_url, managed_root, bundle_id, digest, *, content_backend="stdlib", sample_profile=False):
+def profile(output, database_url, managed_root, bundle_id, digest, *, content_backend="stdlib",
+            sample_profile=False, sample_reset=False):
+    if sample_reset and not sample_profile:
+        raise ValueError("sample reset requires the actual sample profile")
     project = Path(__file__).resolve().parents[1]
     output = Path(output).resolve()
     if not output.is_relative_to(project / "artifacts") or output == project / "artifacts":
@@ -153,7 +175,7 @@ def profile(output, database_url, managed_root, bundle_id, digest, *, content_ba
     with observe(timings), patch.object(verifier, "SOURCE_FILES", sources):
         try:
             verifier.verify(output / "service", database_url, managed_root, bundle_id, digest,
-                            content_backend=content_backend, sample_profile=sample_profile)
+                            content_backend=content_backend, sample_profile=sample_profile, sample_reset=sample_reset)
         except (ValueError, OSError, psycopg.Error, subprocess.SubprocessError, ManagementError, SnapshotMismatch) as failure:
             status = "failed"
             error = dict(code=getattr(failure, "code", "verification_failed"), type=type(failure).__name__)
@@ -163,6 +185,7 @@ def profile(output, database_url, managed_root, bundle_id, digest, *, content_ba
     result = dict(status="diagnostic_completed", service_status=status, service_error=error,
                   source_commit=base, source_working_tree_dirty=False, source_files_expected=len(sources),
                   content_backend=content_backend, ranker_backend=content_backend, sample_profile=sample_profile,
+                  sample_reset=sample_reset,
                   api_deadline_seconds=2.0, deadline_increased=False,
                   temporary_schema_set_restored=restored,
                   requests=[{k: v for k, v in request.items() if k != "started"} for request in timings.requests],
@@ -188,6 +211,7 @@ def main(argv=None):
     parser.add_argument("--expected-manifest-sha256", required=True)
     parser.add_argument("--content-backend", choices=("stdlib", "numpy"), default="stdlib")
     parser.add_argument("--sample-profile", action="store_true", help="diagnose the actual Demo fixed sample history")
+    parser.add_argument("--sample-reset", action="store_true", help="diagnose sample feedback/reset and three fresh calculations")
     args = parser.parse_args(argv)
     url = os.getenv("EVOREC_DATABASE_URL")
     if not url:
@@ -195,7 +219,8 @@ def main(argv=None):
         return 1
     try:
         result = profile(args.output, url, args.managed_root, args.bundle_id, args.expected_manifest_sha256,
-                         content_backend=args.content_backend, sample_profile=args.sample_profile)
+                         content_backend=args.content_backend, sample_profile=args.sample_profile or args.sample_reset,
+                         sample_reset=args.sample_reset)
     except (ValueError, OSError, psycopg.Error, subprocess.SubprocessError) as error:
         print(json.dumps(dict(status="failed", code=getattr(error, "code", "diagnostic_failed"),
                               error_type=type(error).__name__)))

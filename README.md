@@ -90,6 +90,8 @@ python -m venv .venv
 
 商品工作台使用后台构建任务。完成数据库迁移后，在另一个终端载入相同的 `EVOREC_DATABASE_URL` 与 `EVOREC_BUNDLE_ROOT`，运行 `python -m scripts.catalog_worker`；可用 `--once` 只处理一个排队任务。停止 worker 不会发布半成品；重启后中断的后台任务按原快照重排。只启动 API、不启动 worker 时任务会保持排队，可通过构建 ID 查询。页面应从 `http://127.0.0.1:8000/app` 打开，直接打开 `web/index.html` 的 `file://` 地址无法调用 API。
 
+发布锁已按实际 `catalog_control` 表隔离，独立演示 schema 的准备/恢复不再争用同一发布锁。由旧的数据库全局发布锁升级时，必须先正常停止同一目录的 API、catalog worker、comparison worker 及其他协调进程，再统一启动新代码；旧/新锁键不兼容，不能混跑或滚动切换。此改动不代表多协调实例、所有 worker 锁或持续负载已验收；本轮不会自动重启你的业务服务。
+
 策略对比另有独立的 `python -m scripts.comparison_worker`。应用最新迁移后，页面支持提交后台单次对比、进度查询、取消与编号恢复；完整结果仍与普通推荐记录隔离。worker 终端也需载入相同的数据库及受管目录环境变量，`.env` 不会自动读取。默认内容基线与显式启用、批准发布的 R06 路径不同，adaptive 不代表学习型路由，单次对比不代表批量评估完成。
 
 - `GET /health/live`：进程存活，返回 200。

@@ -56,6 +56,31 @@ def test_atomic_prepare_persisted_and_replayed_after_restart(prepared_setup):
     assert _counts(url) == (6, 1, 6)
 
 
+def test_new_preparation_collects_scoped_planner_statistics_without_publishing(prepared_setup):
+    app, identity, digest, _ = prepared_setup
+    before = app.manager.publication_state()
+    app.manager.prepare_r06_bundle(identity, digest)
+    with app.manager._connect() as connection:
+        rows = connection.execute(
+            "SELECT relname, reltuples FROM pg_class "
+            "WHERE oid IN ('items'::regclass, 'bundle_items'::regclass) ORDER BY relname"
+        ).fetchall()
+        assert rows == [dict(relname="bundle_items", reltuples=6.), dict(relname="items", reltuples=6.)]
+        assert len(connection.execute(
+            "SELECT attname FROM pg_stats WHERE schemaname=current_schema() "
+            "AND tablename='bundle_items' AND attname='bundle_id'"
+        ).fetchall()) == 1
+    assert app.manager.publication_state() == before and app.backend.runtime is None
+    # Statistics are not a content admission claim: normal replay must still
+    # reject changed actual model inputs, and leave the pointer untouched.
+    with app.manager._connect() as connection:
+        connection.execute("UPDATE items SET r06_model_text='changed' WHERE item_id='a'")
+    with pytest.raises(ManagementError) as error:
+        app.manager.prepare_r06_bundle(identity, digest)
+    assert error.value.code == "r06_catalog_changed"
+    assert app.manager.publication_state() == before
+
+
 def test_prepare_api_requires_admin_approval_and_keeps_unready(prepared_setup):
     _, identity, digest, url = prepared_setup
     async def run():
