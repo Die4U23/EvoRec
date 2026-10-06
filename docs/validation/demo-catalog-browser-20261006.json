@@ -46,10 +46,14 @@
       "回滚按钮记录操作 ID、预期新包及初始目标，完成后活动包回到初始包，下架版本仍为 1",
       "回滚不改写页面上已显示的旧推荐；重新请求才显示初始包，不含新品",
       "刷新已提交修复页面后，恢复收藏与会话版本 1；重新填入临时令牌后复验下架/高级发布/回滚",
-      "修复后旧预览为空并提示需重新查询；显式查询显示已退休版本与下架新品；最终 dense 10/10 使用初始包"
+      "修复后旧预览为空并提示需重新查询；显式查询显示已退休版本与下架新品；最终 dense 10/10 使用初始包",
+      "动作时获得明确允许后点击重置，收藏清空、历史恢复固定示例、版本 2；自动 dense 10/10 使用初始包，刷新后仍是固定历史/空收藏/版本 2"
     ],
     "negative_observation": "修复前回滚及下架后仍保留旧预览的当前活动版本/当前可推荐文字；服务端和新推荐正确。保留原观察，不将手动刷新能纠正当作自动失效通过",
-    "private_observations_sha256": "874f2fa4dc31b22a6cab8e667dc84290fe145f532f9a6bdbf55c833b08790627",
+    "reset_authorized_at_action_time_and_executed": true,
+    "reset_is_content_baseline_not_r06_acceptance": true,
+    "private_observations_sha256": "61b91902b7d5cc206173f12183fa52df13b97781340f9e6bac7688d5dbb76621",
+    "private_reset_screenshot_sha256": "a8d6057a17f171bfb6c788630513706d4a312312384753bc285b6e2bcfe666ee",
     "private_invalid_csv_screenshot_sha256": "b31cfa6ae6ae64b46b46d2d59e93554ba54a72d66518cc2f69d93d0bbcd5d278",
     "private_published_recommendation_screenshot_sha256": "8599ebde5121199606e107dd6dce3febd037a8abe2a0ffa593085d590674bf3a",
     "private_fixed_rollback_screenshot_sha256": "288ab529a3708dcdf74d34aec0aefd2f77804a608320ba96e0e4421ef26e42d9"
@@ -61,14 +65,21 @@
     "other_imported_item_retained": true,
     "boundary": "终端实际 HTTP 目录核对，不能冒称浏览器断言或校验任务的 HTTP 状态码；未保存独立原始报告哈希"
   },
-  "lifecycle_at_this_checkpoint": {
+  "lifecycle": {
     "owned_schema": "test_evorec_b2c97f9c2cf3475781e9b849d7608154",
     "pid": 12180,
-    "service_still_running_for_action_time_reset_confirmation": true,
-    "normal_exit_worker_schema_and_token_cleanup_not_yet_accepted": true,
+    "normal_process_exit_code": 0,
+    "worker_drained": true,
+    "owned_schema_removed_marker": true,
+    "independent_owned_schema_count": 0,
+    "temporary_token_absent": true,
+    "owned_listener_absent": true,
+    "owned_browser_tab_closed": true,
+    "private_stopped_marker_sha256": "0814eb6c6d73ce67d142fb6eb736173da494cb71ffacda17dcc65c16aa6611a0",
+    "temporary_database_irrecoverably_removed_synthetic_files_and_observations_retained_ignored": true,
     "business_env_schema_active_model_and_8000_not_operated": true
   },
   "review": "主线程质量/性能/复用复查；技能所需角色参数不可用，不冒称独立 Agent。复用单个预览失效函数及代际守卫，不增加状态变更网络请求、不改变发布协议或原 2 秒期限",
-  "pending": ["动作时确认后的浏览器永久重置；本轮内容基线不能替代 R06 重置", "当前自有浏览器服务正常退出与 worker/schema/令牌清理", "真实网络故障和多操作者冲突实机（当前为 Node 故障模拟）", "三分钟实际计时复演与作者解释/修改验收"],
+  "pending": ["R06 浏览器永久重置：本轮内容基线不能替代", "真实网络故障和多操作者冲突实机（当前为 Node 故障模拟）", "三分钟实际计时复演与作者解释/修改验收"],
   "not_claimed": ["完整 Demo 已交付", "合成同标题/类别新品第一名代表模型质量提升", "R06 动态新品、现场重训、效果提升或 SLA", "全新电脑复建、强杀恢复、独立进程重启重放", "本轮本地全服务测试；最新 PR head 和合并主线 CI 另核对"]
 }
