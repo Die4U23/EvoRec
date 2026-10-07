@@ -70,6 +70,7 @@ jobs:
             tests/test_evaluation_jobs.py \
             tests/test_catalog_demo.py \
             tests/test_recommendation_recovery.py \
+            tests/test_session_admission_lock.py \
             tests/test_postgres_api.py tests/test_recommendation.py \
             tests/test_strategy_comparison.py \
             tests/test_comparison_jobs.py \
