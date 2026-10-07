@@ -87,6 +87,9 @@ def exercise(lab, samples, concurrency):
         session = response.json()
     key = str(uuid4())
     response, latency = post(lab.ready["url"], session, key)
+    # Record numeric observations before the assertion; no tokens, URLs,
+    # response bodies or arbitrary server text enter the failure report.
+    lab.observations.update(first_dense_http_status=response.status_code, first_dense_elapsed_ms=latency)
     require(response.status_code == 200 and legal(response.json(), lab.ready, session), "first dense failed")
     original = response.json()
     lab.stop()
