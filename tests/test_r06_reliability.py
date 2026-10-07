@@ -1,6 +1,7 @@
 """Independent percentile oracle and actual synthetic-package process restart."""
 
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import httpx
@@ -10,6 +11,26 @@ import pytest
 from scripts.r06_service_lab import R06ServiceLab
 from scripts.verify_r06_reliability import percentiles, summarize, terminal_replay_matches
 from test_r06_bundle import _build
+
+
+@pytest.mark.parametrize("status", [504, 500, 200])
+def test_first_dense_failure_preserves_status_and_latency_without_response_secrets(monkeypatch, status):
+    from scripts import verify_r06_reliability as verifier
+
+    class Client:
+        def __enter__(self): return self
+        def __exit__(self, *_): pass
+        def post(self, *args, **kwargs):
+            return httpx.Response(201, json={"access_token": "never-record-token"})
+
+    lab = SimpleNamespace(ready={"url": "http://127.0.0.1:1", "bundle_id": "approved"})
+    monkeypatch.setattr(verifier.httpx, "Client", lambda **kwargs: Client())
+    monkeypatch.setattr(verifier, "post", lambda *args, **kwargs: (
+        httpx.Response(status, json={"bundle_id": "wrong", "message": "never-record-token"}), 12.5))
+    with pytest.raises(verifier.VerificationFailure, match="first dense failed"):
+        verifier.exercise(lab, 2, 2)
+    assert lab.observations == {"phase": "initial", "load": None,
+                               "first_dense_http_status": status, "first_dense_elapsed_ms": 12.5}
 
 
 def test_latency_includes_failures_and_empty_success_is_unknown():

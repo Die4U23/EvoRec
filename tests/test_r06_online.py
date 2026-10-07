@@ -118,6 +118,37 @@ def test_capture_uses_compact_actual_rows_without_dropping_inactive_members(onli
     assert observed == [True]
 
 
+@pytest.mark.parametrize("damage", ["missing", "order", "index", "unknown", "duplicate"])
+def test_capture_checks_all_ordered_members_before_content_or_admission(online, monkeypatch, damage):
+    from evorec.infrastructure import postgres
+    app, _, _ = online
+    original = postgres.capture_model
+
+    def capture(connection, runtime, session, catalog, rows):
+        rows = list(rows)
+        # An earlier bad active digest must not mask a later membership error.
+        rows[0] = rows[0]._replace(r06_text_sha256=None)
+        if damage == "missing":
+            rows.pop()
+        elif damage == "order":
+            rows[-2], rows[-1] = rows[-1], rows[-2]
+        elif damage == "index":
+            rows[-1] = rows[-1]._replace(internal_item_id=99)
+        else:
+            item_id = "unapproved" if damage == "unknown" else rows[0].item_id
+            rows[-1] = rows[-1]._replace(item_id=item_id)
+        return original(connection, runtime, session, catalog, rows)
+
+    monkeypatch.setattr(postgres, "capture_model", capture)
+    async def run():
+        with pytest.raises(ManagementError) as error:
+            await app.recommend.execute(await _command(app))
+        assert error.value.code == "bundle_members_changed"
+        with app.backend._connect() as connection:
+            assert connection.execute("SELECT count(*) AS n FROM recommendation_requests").fetchone()["n"] == 0
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("replacement", [frozenset(), frozenset({"b", "c", "d", "e", "zero"}),
                                         frozenset({"b", "c", "d", "e", "zero", "new"}),
                                         frozenset({"a", "b", "c", "d", "e", "zero", "new"})])
