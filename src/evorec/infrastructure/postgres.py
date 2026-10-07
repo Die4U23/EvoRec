@@ -337,11 +337,15 @@ class PostgresDemoBackend:
 
     def _admit(self, command: RecommendationCommand) -> RequestContext:
         with self._connect() as connection:
+            # Admission only reads session state. Shared readers may capture
+            # distinct keys concurrently, but feedback/reset retain FOR UPDATE
+            # and cannot change this snapshot until admission commits. The
+            # request-scoped execution lease still serializes identical keys.
             cursor = connection.execute(
                 """
                 SELECT session_id, owner_token_sha256, epoch, history_version,
                        history, hidden_items, favorite_items, seed_user_id
-                FROM sessions WHERE session_id = %s FOR UPDATE
+                FROM sessions WHERE session_id = %s FOR SHARE
                 """,
                 (command.session_id,),
             )

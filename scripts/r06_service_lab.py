@@ -26,7 +26,10 @@ from scripts.run_r06_demo import marker, serve, validate
 class R06ServiceLab:
     """Restart actual API processes without replacing the owned database or bundle."""
 
-    def __init__(self, output, database_url, root, bundle_id, digest, backend="numpy"):
+    def __init__(self, output, database_url, root, bundle_id, digest, backend="numpy", *, profile_samples=0):
+        if type(profile_samples) is not int or not 0 <= profile_samples <= 122:
+            raise ValueError("profile samples must be 0..122")
+        self.profile_samples = profile_samples
         self.output, self.root, parameters = validate(
             output, database_url, root, bundle_id, digest, backend, 0)
         self.database_url, self.bundle_id, self.digest, self.backend = database_url, bundle_id, digest, backend
@@ -67,8 +70,10 @@ class R06ServiceLab:
         environment.update(EVOREC_DATABASE_URL=self.isolated_url, EVOREC_BUNDLE_ROOT=str(self.root),
                            EVOREC_R06_SERVING_ENABLED="1", EVOREC_R06_CONTENT_BACKEND=self.backend,
                            EVOREC_R06_RANKER_BACKEND=self.backend)
-        self.process = subprocess.Popen([sys.executable, "-m", "scripts.r06_service_lab",
-            str(self.child_output), self.run_id], env=environment, stdout=subprocess.DEVNULL,
+        command = [sys.executable, "-m", "scripts.r06_service_lab", str(self.child_output), self.run_id]
+        if self.profile_samples:
+            command.extend(("--profile-samples", str(self.profile_samples)))
+        self.process = subprocess.Popen(command, env=environment, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, cwd=Path(__file__).resolve().parents[1],
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         deadline = monotonic() + 180
@@ -85,6 +90,7 @@ class R06ServiceLab:
                 or self.ready["manifest_sha256"] != self.digest or self.ready["admin_enabled"] is not False
                 or type(self.ready['pid']) is not int or self.ready['pid'] <= 0
                 or self.ready['backend'] != self.backend or self.ready['api_deadline_seconds'] != 2.0
+                or self.ready.get('profile_samples', 0) != self.profile_samples
                 or address.scheme != 'http' or address.hostname != '127.0.0.1'
                 or address.port in (None,0,8000) or address.username is not None
                 or address.path or address.query or address.fragment):
@@ -128,7 +134,9 @@ class R06ServiceLab:
         self.close()
 
 
-def child(output, run_id):
+def child(output, run_id, *, profile_samples=0):
+    if type(profile_samples) is not int or not 0 <= profile_samples <= 122:
+        raise ValueError("profile samples must be 0..122")
     output = output.resolve()
     project = Path(__file__).resolve().parents[1]
     if not output.is_relative_to(project / "artifacts"):
@@ -155,7 +163,21 @@ def child(output, run_id):
                 item_count=len(runtime.item_ids),
                 backend=application.backend.r06_content_backend,
                 admin_enabled=False, ephemeral=True, api_deadline_seconds=2.0)
-            asyncio.run(serve(application, listener, output, metadata))
+            if profile_samples:
+                from scripts.r06_process_trace import ConcurrentTimings, trace_api
+                timings = ConcurrentTimings(profile_samples)
+                metadata["profile_samples"] = profile_samples
+                try:
+                    with trace_api(timings):
+                        asyncio.run(serve(application, listener, output, metadata))
+                finally:
+                    # serve/aclose drains real workers before snapshots are exported.
+                    asyncio.run(application.backend.aclose())
+                    marker(output, "profile", dict(requests=timings.report(),
+                        instrumentation_overhead_not_subtracted=True, timings_overlap_do_not_sum=True,
+                        gc_attribution_not_exclusive=True, production_acceptance=False))
+            else:
+                asyncio.run(serve(application, listener, output, metadata))
             marker(output, "stopped", dict(run_id=run_id,
                 cpu_jobs_drained=application.backend.r06_queue.outstanding == 0))
     finally:
@@ -166,9 +188,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
     parser.add_argument("run_id")
+    parser.add_argument("--profile-samples", type=int, default=0)
     args = parser.parse_args()
     try:
-        child(args.output, args.run_id)
+        child(args.output, args.run_id, profile_samples=args.profile_samples)
     except Exception as error:
         print(json.dumps(dict(status="failed", error_type=type(error).__name__)), flush=True)
         raise SystemExit(1)
