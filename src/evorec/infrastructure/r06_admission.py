@@ -119,17 +119,20 @@ def capture_model(connection, runtime, session, catalog, rows):
     if (row is None or row["runtime_kind"] != KIND
             or (row["manifest_sha256"] or "").strip() != bundle.manifest_sha256):
         raise ManagementError("r06_snapshot_changed", "registered model identity differs", 503)
-    if (tuple(row.item_id for row in rows) != bundle.adapter.features.item_ids
-            or any(row.internal_item_id != index for index, row in enumerate(rows))):
+    # Tuple fields: item_id, internal_item_id, is_active, actual text SHA, raw time.
+    # Check all ordered members before content (including inactive members),
+    # without allocating another full-size tuple of IDs.
+    expected = bundle.adapter.features.item_ids
+    if (len(rows) != len(expected)
+            or any(row[0] != expected[index] or row[1] != index for index, row in enumerate(rows))):
         raise ManagementError("bundle_members_changed", "approved ordered membership changed", 409)
     active_count = 0
-    for row in rows:
-        if not row.is_active:
+    for item_id, _, is_active, text_sha256, first_seen_ms in rows:
+        if not is_active:
             continue
-        item_id = row.item_id
         approved = runtime.catalog_items[item_id]
-        if (row.r06_text_sha256 != runtime.catalog_text_sha256[item_id]
-                or row.r06_first_seen_ms != approved.first_seen_ms):
+        if (text_sha256 != runtime.catalog_text_sha256[item_id]
+                or first_seen_ms != approved.first_seen_ms):
             raise ManagementError("r06_catalog_changed", "actual model text/time changed", 409)
         if item_id not in catalog.eligible_items:
             raise ManagementError("r06_catalog_changed", "eligible catalog changed during admission", 409)

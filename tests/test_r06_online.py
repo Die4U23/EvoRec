@@ -98,14 +98,16 @@ def test_capture_uses_compact_actual_rows_without_dropping_inactive_members(onli
 
     def capture(connection, runtime, session, catalog, rows):
         fields = ("item_id", "internal_item_id", "is_active", "r06_text_sha256", "r06_first_seen_ms")
-        # Container budget only, not a process RSS or wall-time assertion. A
-        # future equivalent compact representation can satisfy the same test.
+        # Built-in tuples avoid a GC-tracked per-row namedtuple wrapper. This
+        # representation contract is not a process RSS or wall-time assertion.
         assert len(rows) == 6
+        assert all(type(row) is tuple for row in rows)
         assert all(sys.getsizeof(row) < sys.getsizeof(dict.fromkeys(fields)) for row in rows)
-        first = next(row for row in rows if row.item_id == "a")
-        assert first.r06_text_sha256 == hashlib.sha256("中文 alpha".encode("utf-8")).digest()
-        assert first.r06_first_seen_ms == 1
-        assert first.is_active is (not inactive)
+        first = next(row for row in rows if row[0] == "a")
+        assert first[1] == 0
+        assert first[3] == hashlib.sha256("中文 alpha".encode("utf-8")).digest()
+        assert first[4] == 1
+        assert first[2] is (not inactive)
         observed.append(True)
         return original(connection, runtime, session, catalog, rows)
 
@@ -116,6 +118,37 @@ def test_capture_uses_compact_actual_rows_without_dropping_inactive_members(onli
         assert restore_request(app.backend.runtime.bundle, context).context is context
     asyncio.run(run())
     assert observed == [True]
+
+
+@pytest.mark.parametrize("damage", ["missing", "order", "index", "unknown", "duplicate"])
+def test_capture_checks_all_ordered_members_before_content_or_admission(online, monkeypatch, damage):
+    from evorec.infrastructure import postgres
+    app, _, _ = online
+    original = postgres.capture_model
+
+    def capture(connection, runtime, session, catalog, rows):
+        rows = list(rows)
+        # An earlier bad active digest must not mask a later membership error.
+        rows[0] = (*rows[0][:3], None, rows[0][4])
+        if damage == "missing":
+            rows.pop()
+        elif damage == "order":
+            rows[-2], rows[-1] = rows[-1], rows[-2]
+        elif damage == "index":
+            rows[-1] = (rows[-1][0], 99, *rows[-1][2:])
+        else:
+            item_id = "unapproved" if damage == "unknown" else rows[0][0]
+            rows[-1] = (item_id, *rows[-1][1:])
+        return original(connection, runtime, session, catalog, rows)
+
+    monkeypatch.setattr(postgres, "capture_model", capture)
+    async def run():
+        with pytest.raises(ManagementError) as error:
+            await app.recommend.execute(await _command(app))
+        assert error.value.code == "bundle_members_changed"
+        with app.backend._connect() as connection:
+            assert connection.execute("SELECT count(*) AS n FROM recommendation_requests").fetchone()["n"] == 0
+    asyncio.run(run())
 
 
 @pytest.mark.parametrize("replacement", [frozenset(), frozenset({"b", "c", "d", "e", "zero"}),
