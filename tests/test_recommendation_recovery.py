@@ -21,6 +21,7 @@ from evorec.domain.errors import ManagementError, SnapshotMismatch
 from evorec.domain.models import RecommendationCommand, RecommendationResult, Strategy
 from evorec.domain.recommendation import select_results
 from evorec.infrastructure.postgres import PostgresDemoBackend
+import evorec.infrastructure.postgres as postgres_adapter
 from evorec.infrastructure.recommendation_execution import RecommendationExecution
 from scripts.seed_demo_catalog import main as seed_demo_catalog
 from test_r06_online import online, _command
@@ -265,6 +266,104 @@ async def started(event):
     async with asyncio.timeout(5):
         while not event.is_set():
             await asyncio.sleep(.01)
+
+
+@pytest.mark.parametrize("worker_fails", [False, True])
+def test_readiness_cancellation_drains_real_connection_before_return(recovery, monkeypatch, worker_fails):
+    application, command = recovery
+    backend = application.backend
+    manager = backend.manager
+    entered, release, exited = Event(), Event(), Event()
+    connections, allocations = [], []
+    failure = ManagementError("readiness_probe_failed", "intentional readiness failure", 503)
+    original_execution = postgres_adapter.RecommendationExecution
+
+    def tracked_execution(*args, **kwargs):
+        execution = original_execution(*args, **kwargs)
+        allocations.append(execution)
+        return execution
+
+    def gated_readiness():
+        try:
+            with manager._connect(autocommit=True) as connection:
+                connections.append(connection)
+                connection.execute(f"SELECT pg_advisory_lock({manager.LOCK_KEY_SQL})", (manager.LOCK_NAME,))
+                entered.set()
+                assert release.wait(10), "readiness probe was not released"
+                if worker_fails:
+                    raise failure
+        finally:
+            exited.set()
+
+    monkeypatch.setattr(manager, "ensure_ready", gated_readiness)
+    monkeypatch.setattr(postgres_adapter, "RecommendationExecution", tracked_execution)
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        unhandled = []
+        previous_handler = loop.get_exception_handler()
+        loop.set_exception_handler(lambda _loop, context: unhandled.append(context))
+        task = asyncio.create_task(application.recommend.execute(command))
+        try:
+            await started(entered)
+            owner = connections[0]
+            with manager._connect(autocommit=True) as observer:
+                for _ in range(3):
+                    task.cancel()
+                    await asyncio.sleep(.01)
+                    assert not task.done() and not exited.is_set()
+                    assert not owner.closed
+                    assert not observer.execute(
+                        f"SELECT pg_try_advisory_xact_lock({manager.LOCK_KEY_SQL}) AS held",
+                        (manager.LOCK_NAME,),
+                    ).fetchone()["held"]
+                    assert not allocations and not backend._executions
+                    assert state(backend, command) is None
+                release.set()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+                assert exited.is_set() and owner.closed
+                assert observer.execute(
+                    f"SELECT pg_try_advisory_xact_lock({manager.LOCK_KEY_SQL}) AS held",
+                    (manager.LOCK_NAME,),
+                ).fetchone()["held"]
+            assert not allocations and not backend._executions
+            assert state(backend, command) is None
+            await asyncio.sleep(0)
+            assert not unhandled
+        finally:
+            release.set()
+            await asyncio.gather(task, return_exceptions=True)
+            # Drain the real worker even when the pre-fix assertion fails.
+            await started(exited)
+            assert all(connection.closed for connection in connections)
+            loop.set_exception_handler(previous_handler)
+
+    asyncio.run(run())
+
+
+def test_readiness_worker_failure_propagates_before_execution_allocation(recovery, monkeypatch):
+    application, command = recovery
+    backend = application.backend
+    failure = ManagementError("readiness_probe_failed", "intentional readiness failure", 503)
+    connections = []
+
+    def failed_readiness():
+        with backend.manager._connect(autocommit=True) as connection:
+            connections.append(connection)
+            connection.execute("SELECT 1")
+            raise failure
+
+    def forbidden_execution(*args, **kwargs):
+        pytest.fail("failed readiness allocated a recommendation execution")
+
+    monkeypatch.setattr(backend.manager, "ensure_ready", failed_readiness)
+    monkeypatch.setattr(postgres_adapter, "RecommendationExecution", forbidden_execution)
+    with pytest.raises(ManagementError) as caught:
+        asyncio.run(application.recommend.execute(command))
+    assert caught.value is failure
+    assert connections and all(connection.closed for connection in connections)
+    assert not backend._executions and state(backend, command) is None
 
 
 def test_actual_process_kill_reconciles_without_reranking_and_allows_explicit_new_key(recovery, tmp_path):
