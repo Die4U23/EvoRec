@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 from scripts import profile_r06_tcp as profiler
-from scripts.r06_process_trace import ConcurrentTimings, trace_api
+from scripts.r06_process_trace import ConcurrentTimings, query_kind, trace_api
 from scripts.r06_service_lab import R06ServiceLab
 from evorec.infrastructure.r06_async import R06CPUQueue
 from test_r06_bundle import _build
@@ -227,6 +227,153 @@ def test_real_synthetic_package_tcp_trace_is_correlated_and_drained(isolated_dat
     assert all(r["status_code"] == 200 for r in report["requests"])
     for request in report["requests"]:
         assert {s["stage"] for s in request["stages"]} >= {
-            "actual_catalog_read_and_capture", "cpu_queue_wait", "retrieval_and_ranking", "result_write"}
+            "actual_catalog_read_and_capture", "cpu_queue_wait", "retrieval_and_ranking", "result_write",
+            "publication_recovery_database_connect", "database_admission_database_connect",
+            "database_admission_database_execute_session_snapshot_lock",
+            "actual_catalog_read_and_capture_database_execute_actual_catalog_rows",
+            "actual_catalog_read_and_capture_database_fetchall_decode",
+            "result_write_database_commit", "result_write_database_close"}
+    assert report["database_driver_version"]
     assert not lab.created and lab.stopped[-1]["normal_cpu_drain"]
     assert not report["production_acceptance"] and session["access_token"] not in json.dumps(report)
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("SELECT *\n FROM sessions WHERE session_id = %s FOR SHARE", "session_snapshot_lock"),
+    ("SELECT * FROM recommendation_requests WHERE request_id = %s FOR UPDATE", "request_row_lock"),
+    ("SELECT * FROM catalog_control WHERE singleton = 1 AND admission_open FOR SHARE", "catalog_barrier"),
+    ("SELECT * FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id", "actual_catalog_rows"),
+    ("INSERT INTO recommendation_requests VALUES (%s)", "accepted_insert"),
+    ("SELECT pg_advisory_lock(123)", "publication_lock"),
+    ("SELECT pg_try_advisory_lock(%s)", "execution_lock"),
+    (b"PRIVATE-QUERY", "other"),
+    ("PRIVATE-QUERY", "other"),
+    ("SELECT pg_advisory_lock(" + "x" * 4096, "other"),
+])
+def test_database_query_classifier_returns_only_fixed_labels(query, expected):
+    assert query_kind(query) == expected
+
+
+def test_database_classifier_never_stringifies_arbitrary_query():
+    class Query:
+        def __str__(self): pytest.fail("do not stringify SQL objects or private values")
+    assert query_kind(Query()) == "other"
+
+
+def test_database_timer_retains_results_errors_phase_and_bypasses_untraced_calls():
+    timing = ConcurrentTimings(1)
+    result, failure = object(), RuntimeError("PRIVATE-ERROR")
+    calls = []
+    def execute(cursor, query, parameters, **kwargs):
+        calls.append((cursor, query, parameters, kwargs))
+        if kwargs.get("fail"): raise failure
+        return result
+    timed = timing.database("execute", execute)
+    # No request: exact pass-through, no SQL classification or retained record.
+    assert timed(None, "PRIVATE-QUERY", ("PRIVATE-TOKEN",)) is result
+    assert not timing.report()
+    request = dict(sample=0, started=profiler.perf_counter(), stages=[])
+    token = timing.active.set(request)
+    try:
+        def outer():
+            assert timed(None, "SELECT * FROM sessions WHERE session_id = %s FOR SHARE",
+                         ("PRIVATE-TOKEN",), binary=True) is result
+            assert timing.phase.get() == "database_admission"
+            with pytest.raises(RuntimeError) as caught:
+                timed(None, "PRIVATE-QUERY", ("PRIVATE-TOKEN",), fail=True)
+            assert caught.value is failure
+        timing.sync("database_admission", outer)()
+        assert timing.phase.get() == "other"
+    finally:
+        timing.active.reset(token)
+    assert calls[1][-1] == {"binary": True}
+    assert {s["stage"] for s in request["stages"]} == {
+        "database_admission", "database_admission_database_execute_session_snapshot_lock",
+        "database_admission_database_execute_other"}
+    assert "PRIVATE" not in json.dumps(request["stages"])
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_real_database_trace_preserves_commit_rollback_close_and_restores_patches(isolated_database, fail):
+    import psycopg
+    from psycopg.rows import namedtuple_row
+    originals = (psycopg.connect, psycopg.Cursor.execute, psycopg.Cursor.fetchall,
+                 psycopg.Connection.__exit__, psycopg.Connection.commit, psycopg.Connection.rollback)
+    timing = ConcurrentTimings(1)
+    failure = RuntimeError("PRIVATE-ERROR")
+    rows = []
+    async def app(*args):
+        def work():
+            with psycopg.connect(isolated_database) as connection:
+                with connection.cursor(row_factory=namedtuple_row, binary=True) as cursor:
+                    cursor.execute("SELECT 17::integer AS count, '中文'::text AS title")
+                    rows.extend(cursor.fetchall())
+                connection.execute("CREATE TABLE traced_commit (value integer)")
+                connection.execute("INSERT INTO traced_commit VALUES (17)")
+                if fail: raise failure
+        return await asyncio.to_thread(timing.sync("database_admission", work))
+    with trace_api(timing):
+        if fail:
+            with pytest.raises(RuntimeError) as caught:
+                asyncio.run(timing.wrap(app)(scope(), None, None))
+            assert caught.value is failure
+        else:
+            asyncio.run(timing.wrap(app)(scope(), None, None))
+    assert originals == (psycopg.connect, psycopg.Cursor.execute, psycopg.Cursor.fetchall,
+                         psycopg.Connection.__exit__, psycopg.Connection.commit, psycopg.Connection.rollback)
+    assert rows[0].count == 17 and rows[0].title == "中文"
+    with psycopg.connect(isolated_database) as connection:
+        exists = connection.execute("SELECT to_regclass('traced_commit')").fetchone()[0]
+        if fail: assert exists is None
+        else: assert connection.execute("SELECT value FROM traced_commit").fetchall() == [(17,)]
+    stages = {s["stage"] for s in timing.report()[0]["stages"]}
+    assert stages >= {"database_admission_database_connect", "database_admission_database_execute_other",
+                      "database_admission_database_fetchall_decode", "database_admission_database_cursor_close",
+                      "database_admission_database_transaction_exit", "database_admission_database_close"}
+    assert "database_admission_database_" + ("rollback" if fail else "commit") in stages
+    assert "PRIVATE" not in json.dumps(timing.report())
+
+
+def test_concurrent_database_phases_are_request_local_and_clear_after_errors():
+    timing = ConcurrentTimings(2)
+    arrived, release = Event(), Event()
+    async def app(request_scope, *args):
+        index = int(request_scope["headers"][0][1])
+        phase = "database_admission" if index == 0 else "result_write"
+        def work():
+            if index == 0:
+                arrived.set()
+                assert release.wait(5)
+            else:
+                assert arrived.wait(5)
+                release.set()
+            assert timing.phase.get() == phase
+            def execute(*args):
+                if index == 0: raise ValueError("PRIVATE")
+                return index
+            return timing.database("execute", execute)(None, "PRIVATE-SQL", ("PRIVATE-PARAM",))
+        try:
+            return await asyncio.to_thread(timing.sync(phase, work))
+        finally:
+            assert timing.phase.get() == "other"
+    async def run():
+        results = await asyncio.gather(*(timing.wrap(app)(scope(i), None, None) for i in range(2)),
+                                       return_exceptions=True)
+        assert isinstance(results[0], ValueError) and results[1] == 1
+        assert timing.current is None and timing.phase.get() == "other"
+    asyncio.run(run())
+    for index, request in enumerate(timing.report()):
+        phase = "database_admission" if index == 0 else "result_write"
+        assert {s["stage"] for s in request["stages"]} == {phase, phase + "_database_execute_other"}
+    assert "PRIVATE" not in json.dumps(timing.report())
+
+
+@pytest.mark.parametrize("database_complete", [False, True])
+def test_cli_refuses_incomplete_successful_database_trace(monkeypatch, tmp_path, database_complete):
+    monkeypatch.setenv("EVOREC_DATABASE_URL", "PRIVATE")
+    monkeypatch.setattr(profiler, "profile", lambda *args, **kwargs: dict(
+        status="instrumented_diagnostic_completed_not_performance_acceptance", trace_complete=True,
+        client_status_matches_server=True, successful_identities_valid=True,
+        successful_database_traces_complete=database_complete))
+    result = profiler.main([str(tmp_path), str(tmp_path), str(uuid4()), "--expected-manifest-sha256", "b" * 64])
+    assert result == (0 if database_complete else 1)

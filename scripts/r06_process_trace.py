@@ -1,11 +1,33 @@
 """Opt-in, bounded per-request tracing for the owned process lab, not production."""
 
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
+from functools import wraps
 from time import perf_counter
 from unittest.mock import patch
 
+import psycopg
+
 from scripts.profile_r06_online import RequestTimings, observe
+
+
+def query_kind(query):
+    """Return fixed labels only, never persist SQL, parameters or their hashes."""
+    if type(query) is not str or len(query) > 4096:
+        return "other"
+    statement = " ".join(query.split())
+    for fragment, label in (
+        ("FROM sessions WHERE session_id = %s FOR SHARE", "session_snapshot_lock"),
+        ("FROM recommendation_requests WHERE request_id = %s FOR UPDATE", "request_row_lock"),
+        ("FROM catalog_control WHERE singleton = 1 AND admission_open FOR SHARE", "catalog_barrier"),
+        ("FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id", "actual_catalog_rows"),
+        ("INSERT INTO recommendation_requests", "accepted_insert"),
+        ("SELECT pg_advisory_lock(", "publication_lock"),
+        ("SELECT pg_try_advisory_lock(", "execution_lock"),
+    ):
+        if fragment in statement:
+            return label
+    return "other"
 
 
 class ConcurrentTimings(RequestTimings):
@@ -14,6 +36,7 @@ class ConcurrentTimings(RequestTimings):
             raise ValueError("trace samples must be 1..122")
         self.samples = samples
         self.active = ContextVar("r06_diagnostic_request", default=None)
+        self.phase = ContextVar("r06_diagnostic_phase", default="other")
         self.seen = set()
         super().__init__()
 
@@ -28,6 +51,34 @@ class ConcurrentTimings(RequestTimings):
     def post(self, original):
         # The request boundary is real ASGI, not a patched HTTP client.
         return original
+
+    def sync(self, label, original):
+        timed = super().sync(label, original)
+        @wraps(original)
+        def scoped(*args, **kwargs):
+            token = self.phase.set(label)
+            try:
+                return timed(*args, **kwargs)
+            finally:
+                self.phase.reset(token)
+        return scoped
+
+    def database(self, operation, original):
+        phases = {"publication_recovery", "execution_lease_and_admission", "database_admission",
+                  "actual_catalog_read_and_capture", "actual_content_and_model_capture",
+                  "result_write", "failure_write", "execution_lease_close"}
+        @wraps(original)
+        def timed(*args, **kwargs):
+            if self.current is None:
+                return original(*args, **kwargs)
+            phase = self.phase.get()
+            phase = phase if phase in phases else "other"
+            kind = query_kind(args[1] if len(args) > 1 else kwargs.get("query")) if operation == "execute" else ""
+            label = f"{phase}_database_{operation}" + (f"_{kind}" if kind else "")
+            # Use the base timer: an inner driver call must not change the
+            # containing business phase or replace arguments/results/errors.
+            return super(ConcurrentTimings, self).sync(label, original)(*args, **kwargs)
+        return timed
 
     def async_stage(self, label, original):
         if label != "queue_and_cpu_drain":
@@ -92,5 +143,18 @@ class ConcurrentTimings(RequestTimings):
 def trace_api(timings):
     from evorec.api import app as api
     original = api.create_app
-    with observe(timings), patch.object(api, "create_app", lambda *a, **kw: timings.wrap(original(*a, **kw))):
+    with observe(timings), ExitStack() as stack:
+        stack.enter_context(patch.object(api, "create_app", lambda *a, **kw: timings.wrap(original(*a, **kw))))
+        stack.enter_context(patch.object(psycopg, "connect", timings.database("connect", psycopg.connect)))
+        for target, method, label in (
+            (psycopg.Cursor, "execute", "execute"),
+            (psycopg.Cursor, "fetchall", "fetchall_decode"),
+            (psycopg.Cursor, "fetchone", "fetchone_decode"),
+            (psycopg.Cursor, "close", "cursor_close"),
+            (psycopg.Connection, "__exit__", "transaction_exit"),
+            (psycopg.Connection, "commit", "commit"),
+            (psycopg.Connection, "rollback", "rollback"),
+            (psycopg.Connection, "close", "close"),
+        ):
+            stack.enter_context(patch.object(target, method, timings.database(label, getattr(target, method))))
         yield
