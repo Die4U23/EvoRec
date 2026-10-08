@@ -1,0 +1,70 @@
+{
+  "date": "2026-10-08",
+  "status": "experimental_result_connection_reuse_not_accepted_for_merge",
+  "measurement_source_commit": "576bf29be638ff0ef3990b54982c900adfb065bb",
+  "negative_test_source_commit": "de24416f83f9043f297d15693c38bce6d1a26dbb",
+  "scope": {
+    "change": "result writes borrow only the admitted request's execution-lease connection in a serialized independent transaction",
+    "pool_or_cross_request_reuse": false,
+    "admission_transaction_and_explicit_orphan_terminal_commit_changed": false,
+    "legacy_and_completed_result_path": "independent connection retained when no admitted execution is owned",
+    "owner_binding_and_session_lock_checks_retained": true,
+    "outer_transaction_or_non_autocommit_session_refused": true,
+    "commit_and_rollback_keep_session_lock_and_leave_idle": true,
+    "cancel_drains_actual_write_before_closing_lease": true,
+    "api_deadline_seconds": 2.0,
+    "transport_security_or_business_environment_changed": false,
+    "references": ["https://www.psycopg.org/psycopg3/docs/basic/transactions.html", "https://www.postgresql.org/docs/18/explicit-locking.html#ADVISORY-LOCKS"]
+  },
+  "tests": {
+    "red": {"report": "artifacts/test-result-connection-red-20261008-a.xml", "sha256": "57103a47976871e1de3ee7ad90d4c059d8e87aab1d7e8a1787c53b643f27b040", "tests": 2, "failures": 1, "errors": 0, "skipped": 0, "failure": "old writer opens another physical result connection"},
+    "initial_related": {"report": "artifacts/test-result-connection-green-20261008-a.xml", "sha256": "69006fe4b7ead92ba8969f61c5af7ea8703672a22a42793e53b7e6b9dce64181", "tests": 115, "failures": 0, "errors": 0, "skipped": 0, "seconds": 341.115, "scope": "development checkpoint before later lifecycle tests"},
+    "lifecycle_and_trace": {"report": "artifacts/test-result-connection-boundaries-20261008-a.xml", "sha256": "3cf4ed511122e42dae8e1be4ae89ba30a2cf2e78939fb2e199887fc45c1d1ef4", "tests": 105, "failures": 0, "errors": 0, "skipped": 0, "seconds": 130.834, "scope": "before the final explicit idle-session guard"},
+    "outer_transaction_guard": {"report": "artifacts/test-result-connection-idle-20261008-a.xml", "sha256": "31ef87babac962625c4aa93edfd0d7c48f7007101fb8c7da81e32a55d50eafce", "tests": 1, "failures": 0, "errors": 0, "skipped": 0},
+    "final_negative": {"report": "artifacts/test-result-connection-final-20261008-b.xml", "sha256": "018310f160b283882b216a671c7bd4fa84c87c02388502cca911f09750f38e80", "source_commit": "ae1abcc73301531907de5c5bb1e12580a1ca929d", "tests": 102, "failures": 1, "errors": 0, "skipped": 0, "seconds": 122.682, "failure": "concurrent orphan retry expected 409 responses but observed four (504, recommendation_timeout); root cause unknown"},
+    "failure_diagnostic_change": "ae1abcc adds actual HTTP statuses and fixed error codes to the failed orphan assertion; isolated fresh-fixture rerun artifacts/test-result-connection-orphan-20261008-b.xml passes (1 test, 0 failures/errors/skips, 5.088 seconds), not a root-cause fix or erasure of the broader failure",
+    "numpy": {"report": "artifacts/test-result-connection-numpy-20261008-a.xml", "sha256": "9c5d7dc30a9383d6cadd693bdee170e38d5dbd3d77e98fc33a41c44f14be9bf5", "tests": 151, "failures": 0, "errors": 0, "skipped": 0},
+    "page_scripts": {"tests": 112, "failures": 0, "skipped": 0, "browser_acceptance": false},
+    "overlapping_runs_not_added": true,
+    "actual_database_checks": ["same physical backend PID, no new result connection, committed result, idle session, retained lock and original-key replay", "real trigger failure after item insertion rolls back all items without closing lease", "outer transaction rejected rather than return uncommitted success", "two threaded borrowers cannot share a transaction or roll back each other", "pg_blocking_pids verifies owned lease PID blocked inside result transaction; repeated cancellation drains before close", "existing lost lease/changed owner, explicit orphan terminal commit and legacy compatibility retained"],
+    "small_bundle_tcp": "three connections for each successful new traced request; not evidence of full-bundle success",
+    "existing_test_files_explicitly_selected_in_ci": true,
+    "review": "main-thread quality/performance/reuse review; no independent agent review claimed"
+  },
+  "bundle": {"id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec", "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6", "items": 137249, "backend": "numpy", "profile": "fixed approved training seed, not a real user", "retrained": false},
+  "uninstrumented_tcp": {
+    "report": "artifacts/replays/r06-result-connection-http-20261008-a/request-observations.json",
+    "sha256": "6b3f39e266719abe97598eeb3b712db601cda33c1117f3671c6731d8c4458f57",
+    "source_clean": true, "status": "failed", "first_new_dense_status": 504, "cli_error_code": "recommendation_timeout", "client_seconds": 2.71122329996433,
+    "later_functional_flow_executed": false, "cpu_drained_and_owned_schema_removed": true
+  },
+  "instrumented_diagnostic": {
+    "report": "artifacts/diagnostics/r06-result-connection-stages-20261008-a/profile.json",
+    "sha256": "f4a4f8438b6b5189048dcbad72c401dcfadcc335065ba5b7dd686eed03a6f36b",
+    "observations_sha256": "700e939151a5866a06797d374d5ff45abe8b957be6c001c48a95a4b6ba060f13",
+    "child_profile_sha256": "651101c8f9df56597461e2d616e1b95b3a2ee08316f8497423357263427b5e63",
+    "source_clean": true, "driver_version": "3.3.6", "sequential_requests": 2, "sequential_successes": 0, "load_requests": 24, "concurrency": 2, "load_successes": 0, "status_counts": {"504": 24},
+    "load_wall_seconds": 48.177343100018334, "successful_requests_per_second": 0.0,
+    "all_requests_latency_ms": {"p50": 4001.3562999665737, "p95": 4251.481100043748, "p99": 4434.696400014218}, "successful_latency": null,
+    "all_26_client_server_statuses_correlated": true, "requests_reaching_result_write": 0,
+    "successful_full_bundle_result_reuse_observed": false, "connections_per_failed_request": 4, "fourth_connection": "failure_write, not result_write",
+    "successful_trace_completeness_boolean_vacuous_with_zero_successes": true, "exit_zero_means_diagnostic_collected_not_performance_passed": true,
+    "first_sequential_stages_seconds": {"publication_recovery": 0.2326007999945432, "database_admission": 1.2726580000016838, "actual_catalog_read_and_capture": 1.1573575999937, "persisted_snapshot_verification": 0.132212999975309, "retrieval_and_ranking": 0.608321700012311, "ranking_started_at": 1.75788300001295},
+    "nested_stages_not_added": true, "instrumentation_overhead_not_subtracted": true, "normal_cpu_drain_and_owned_schema_removal": true,
+    "not_controlled_old_new_ab_or_proof_of_root_cause": true
+  },
+  "uninstrumented_recovery_load_gate": {
+    "report": "artifacts/replays/r06-result-connection-load-20261008-a/observations.json", "sha256": "3ec32e5b3ff77acb4dfcccc3260af1c42115ca759a7c2b077e5317b58b8ad25d",
+    "source_clean": true, "status": "failed_first_dense", "first_dense_status": 504, "first_dense_client_ms": 3372.7719000307843,
+    "planned_load_requests": 120, "actual_load_requests": 0, "load_summary": null, "restart_duplicate_disconnect_or_hard_kill_checks_executed": false,
+    "normal_cpu_drain_and_owned_schema_removal": true
+  },
+  "acceptance": {
+    "full_bundle_functional_and_recovery_gates_passed": false, "performance_improvement_proven": false, "prior_seven_timeouts_closed": false, "sla_proven": false,
+    "pr_created": false,
+    "ci_run": false,
+    "merge_authorized": false,
+    "independent_cleanup": {"exact_owned_schemas_absent": 3, "current_test_namespace_count": 0, "exact_owned_ports_without_listener": 3, "protected_port_8000_probed": false, "env_hash": "32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267"},
+    "next": "controlled current-environment old baseline plus admission/ranking investigation; preserve deadline and all catalog/seen/ownership guards"
+  }
+}
