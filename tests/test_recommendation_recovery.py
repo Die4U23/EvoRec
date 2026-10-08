@@ -10,7 +10,9 @@ import time
 from uuid import uuid4
 
 import httpx
+import psycopg
 import pytest
+from psycopg.pq import TransactionStatus
 
 from evorec.api.app import create_app
 from evorec.bootstrap import build_demo_application
@@ -51,6 +53,77 @@ def assert_unlocked(backend, command):
             "SELECT pg_try_advisory_xact_lock(hashtextextended('evorec:recommendation:' "
             "|| current_schema() || ':' || %s, 0)) AS held", (str(command.request_id),),
         ).fetchone()["held"]
+
+
+def result_for(application, context, command):
+    batch = asyncio.run(application.backend.rank(context, command))
+    return RecommendationResult(context.binding, command.strategy, batch.actual_strategy,
+                                select_results(batch.candidates, context, command.k), batch.fallback_reason)
+
+
+def test_result_write_reuses_owned_connection_and_leaves_idle_lock_until_close(recovery, monkeypatch):
+    application, command = recovery
+    backend = application.backend
+    execution = RecommendationExecution(backend, command)
+    try:
+        context = execution.admit()
+        result = result_for(application, context, command)
+        owner = execution.connection
+        pid = owner.info.backend_pid
+        # Real admitted request and real writes; any new physical connection is a failure.
+        with monkeypatch.context() as patch:
+            def forbidden_connect():
+                pytest.fail("result write opened another physical connection")
+            patch.setattr(backend, "_connect", forbidden_connect)
+            asyncio.run(backend.save(result))
+        assert execution.connection is owner and owner.info.backend_pid == pid
+        assert not owner.closed and owner.autocommit
+        assert owner.info.transaction_status == TransactionStatus.IDLE
+        execution.assert_held()
+        assert state(backend, command)["status"] == "completed"
+        # Commit does not release the session lease.
+        with backend._connect() as c:
+            assert not c.execute("SELECT pg_try_advisory_xact_lock(%s) AS held",
+                                 (execution.lock_key,)).fetchone()["held"]
+    finally:
+        execution.close()
+    assert owner.closed
+    assert_unlocked(backend, command)
+    first, second = asyncio.run(post(application, command)), asyncio.run(post(application, command))
+    assert first.status_code == second.status_code == 200 and first.json() == second.json()
+
+
+def test_result_transaction_failure_rolls_back_all_items_without_closing_lease(recovery):
+    application, command = recovery
+    backend = application.backend
+    execution = RecommendationExecution(backend, command)
+    try:
+        context = execution.admit()
+        result = result_for(application, context, command)
+        assert result.items
+        with backend._connect() as c:
+            c.execute("CREATE FUNCTION reject_result_commit() RETURNS trigger LANGUAGE plpgsql AS $$ "
+                      "BEGIN IF NEW.status='completed' THEN RAISE check_violation; END IF; RETURN NEW; END $$")
+            c.execute("CREATE TRIGGER reject_result_commit BEFORE UPDATE ON recommendation_requests "
+                      "FOR EACH ROW EXECUTE FUNCTION reject_result_commit()")
+        with pytest.raises(psycopg.errors.CheckViolation):
+            asyncio.run(backend.save(result))
+        assert not execution.connection.closed
+        assert execution.connection.info.transaction_status == TransactionStatus.IDLE
+        execution.assert_held()
+        assert state(backend, command)["status"] == "accepted"
+        with backend._connect() as c:
+            assert c.execute("SELECT count(*) AS n FROM request_items WHERE request_id=%s",
+                             (command.request_id,)).fetchone()["n"] == 0
+            c.execute("DROP TRIGGER reject_result_commit ON recommendation_requests")
+            c.execute("DROP FUNCTION reject_result_commit()")
+        asyncio.run(backend.save(result))
+        assert state(backend, command)["status"] == "completed"
+        assert execution.connection.info.transaction_status == TransactionStatus.IDLE
+        execution.assert_held()
+    finally:
+        execution.close()
+    assert_unlocked(backend, command)
 
 
 async def post(application, command):
