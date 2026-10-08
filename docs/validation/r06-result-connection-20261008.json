@@ -63,8 +63,20 @@
     "full_bundle_functional_and_recovery_gates_passed": false, "performance_improvement_proven": false, "prior_seven_timeouts_closed": false, "sla_proven": false,
     "pr_created": false,
     "ci_run": false,
-    "merge_authorized": false,
+    "merge_performed": false,
+    "merge_allowed_by_acceptance": false,
     "independent_cleanup": {"exact_owned_schemas_absent": 3, "current_test_namespace_count": 0, "exact_owned_ports_without_listener": 3, "protected_port_8000_probed": false, "env_hash": "32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267"},
     "next": "controlled current-environment old baseline plus admission/ranking investigation; preserve deadline and all catalog/seen/ownership guards"
+  },
+  "readiness_followup": {
+    "red": {"source_commit": "16f3fa32f917a54848d52c8d51c5884501026c75", "report": "artifacts/test-readiness-drain-red-20261008-a.xml", "sha256": "b564a950402fca2d73461c8073b3b7ec54029c64060d0fab14dfa7817e22af12", "tests": 3, "failures": 2, "errors": 0, "skipped": 0, "seconds": 3.780, "result": "two repeated-cancellation cases failed because Recommend.execute completed before the real worker drained; worker-failure propagation before execution allocation passed"},
+    "fix": {"commit": "6023e1a4ba4a82d04045b7c1ebc67ad9f9e56857", "scope": "only acquire readiness task, shielding, and drain behavior", "behavior": "repeated cancellation keeps the owner connection and PUBLICATION advisory lock until the actual worker finishes; no execution is allocated during readiness; normal failure identity is preserved"},
+    "green_checkpoint": {"report": "artifacts/test-readiness-drain-green-20261008-a.xml", "sha256": "0899a804b93c38ba24443ecf368e3d4df03fe55a2f457ec6b6fb5fabae20ab7e", "tests": 11, "failures": 0, "errors": 0, "skipped": 0, "scope": "development checkpoint before fix commit; not broad regression, CI, performance, or acceptance evidence"},
+    "trace_coverage_truth": {"commit": "16f3fa32f917a54848d52c8d51c5884501026c75", "change": "adds successful_database_trace_count and reports coverage null when success count is zero", "exit_zero_means": "collection and consistency checks passed only; not performance acceptance", "prior_576_report_vacuous_boolean": "preserved unchanged; not rewritten as evidence of success"},
+    "delegation_and_review": {"requested_by_user": true, "excluded_model": "GPT-6 Astra", "GPT-6.1 Sol": "investigation and readiness implementation", "GPT-6 Sol": "fresh independent review completed; no actionable readiness defect in 6023e1a", "GPT-6 Luna": "diagnostic and documentation implementation", "main_agent": "final acceptance", "review_of_6023e1a_completed": true, "adjacent_identity_truth_finding": "accepted and corrected; this was distinct from a readiness defect"},
+    "diagnostic_truth_followup": {"commit": "83e95f073309d01c2237992f9e0f41e2dd2c32b2", "change": "reports identity as null at zero successful traces and checks explicit CLI key presence", "missing_zero_key_loophole": "caught by main and fixed with actual missing-key tests", "report": "artifacts/test-diagnostic-truth-final-20261008-a.xml", "sha256": "8b62731638c34e78bd42a1a88d1820aeeff9c9f98f4f04d0d089aac88e8df633", "tests": 53, "failures": 0, "errors": 0, "skipped": 0, "scope": "development check before committing the identity refinement; overlapping with broad regression, not full-bundle acceptance"},
+    "latest_broad_regression": {"report": "artifacts/test-readiness-delivery-20261008-a.xml", "sha256": "bca5a4ce592d61d6a345edc46666dc2a62aa41f8548c92cd1a13dd094b44394b", "checkpoint_commit": "6023e1a4ba4a82d04045b7c1ebc67ad9f9e56857", "tests": 160, "failures": 0, "errors": 0, "skipped": 0, "seconds": 98.487, "orphan_retry_observation": "four requests returned expected 409 within this run; does not prove the cause of earlier broad failures"},
+    "historical_failures_retained": "both prior broad 102-test failures and complete-bundle 504 gates remain in the record; this later passing regression does not erase or explain them",
+    "current_state": "160-test broad regression passed; full-bundle negative evidence remains; no CI or PR yet; merge not performed and not allowed by current acceptance"
   }
 }
