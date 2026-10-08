@@ -140,6 +140,20 @@ def test_failure_identity_capacity_and_callbacks_preserved():
     assert len(timing.report()) == 1
 
 
+@pytest.mark.parametrize("gc_events", [True, False])
+def test_gc_event_observer_is_optional_and_restored(gc_events):
+    timing = ConcurrentTimings(1)
+    callbacks, enabled, threshold = list(gc.callbacks), gc.isenabled(), gc.get_threshold()
+    with trace_api(timing, gc_events=gc_events):
+        added = [callback for callback in gc.callbacks if callback not in callbacks]
+        if gc_events:
+            assert len(added) == 1 and added[0] == timing.gc
+        else:
+            assert gc.callbacks == callbacks
+        assert gc.isenabled() == enabled and gc.get_threshold() == threshold
+    assert gc.callbacks == callbacks and gc.isenabled() == enabled and gc.get_threshold() == threshold
+
+
 @pytest.mark.parametrize("status", [200, 504])
 def test_client_phase_timer_omits_secrets_and_has_no_retry(monkeypatch, status):
     calls = []
@@ -168,6 +182,50 @@ def test_lab_profile_flag_rejected_before_validation_or_database(bad, monkeypatc
         R06ServiceLab(None, "PRIVATE", None, None, None, profile_samples=bad)
 
 
+def test_lab_gc_events_flag_requires_bool_before_validation(monkeypatch):
+    from scripts import r06_service_lab as lab
+    monkeypatch.setattr(lab, "validate", lambda *args: pytest.fail("reject flag first"))
+    with pytest.raises(ValueError, match="gc_events"):
+        R06ServiceLab(None, "PRIVATE", None, None, None, gc_events=1)
+
+
+@pytest.mark.parametrize("profile_samples,gc_events,ready_gc_events,should_raise", [
+    (2, False, False, False), (2, False, True, True), (0, True, False, False)])
+def test_lab_propagates_gc_events_and_checks_ready(
+        tmp_path, monkeypatch, profile_samples, gc_events, ready_gc_events, should_raise):
+    from scripts import r06_service_lab as lab_module
+    bundle_id = uuid4()
+    monkeypatch.setattr(lab_module, "validate", lambda output, database_url, root, *_: (output, root, {}))
+    monkeypatch.setattr(lab_module, "make_conninfo", lambda **kwargs: "PRIVATE-DB")
+    lab = R06ServiceLab(tmp_path / "diagnostic", "PRIVATE", tmp_path, bundle_id, "b" * 64,
+                        "stdlib", profile_samples=profile_samples, gc_events=gc_events)
+    launched = {}
+
+    class Process:
+        def __init__(self, command, **kwargs):
+            launched["command"] = command
+            child_output = Path(command[3])
+            child_output.mkdir(parents=True)
+            ready = dict(run_id=lab.run_id, schema=lab.schema, bundle_id=str(bundle_id),
+                         manifest_sha256=lab.digest, admin_enabled=False, pid=17, backend=lab.backend,
+                         api_deadline_seconds=2.0, profile_samples=lab.profile_samples,
+                         gc_events_enabled=ready_gc_events,
+                         url="http://127.0.0.1:43210")
+            (child_output / "ready.json").write_text(json.dumps(ready))
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(lab_module.subprocess, "Popen", Process)
+    if should_raise:
+        with pytest.raises(ValueError, match="identity changed"):
+            lab.start()
+    else:
+        lab.start()
+    assert ("--no-gc-events" in launched["command"]) is (not gc_events)
+    assert lab.ready["gc_events_enabled"] is ready_gc_events
+
+
 @pytest.mark.parametrize("source_changes", [False, True])
 def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(tmp_path, monkeypatch, source_changes):
     from scripts.run_r06_demo import marker
@@ -176,13 +234,16 @@ def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(
     monkeypatch.setattr(profiler, "_source", lambda _: next(commits))
     monkeypatch.setattr(profiler, "subprocess_sources", lambda _: {})
     class Lab:
-        def __init__(self, output, *args, profile_samples):
+        def __init__(self, output, *args, profile_samples, gc_events):
             assert profile_samples == 4
+            assert gc_events is True
             self.output, self.child_output, self.created = output, output/"child", True
-            self.ready = dict(url="http://127.0.0.1:1", model_version="approved", item_count=6)
+            self.ready = dict(url="http://127.0.0.1:1", model_version="approved", item_count=6,
+                              gc_events_enabled=gc_events)
         def __enter__(self):
             self.child_output.mkdir(parents=True)
-            marker(self.child_output, "profile", dict(requests=[dict(sample=i,status_code=504) for i in range(4)]))
+            marker(self.child_output, "profile", dict(requests=[dict(sample=i,status_code=504) for i in range(4)],
+                                                        gc_events_enabled=True))
             return self
         def __exit__(self, *_): self.created = False
     class Client:
@@ -204,16 +265,23 @@ def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(
         assert report["trace_complete"] and report["client_status_matches_server"]
         assert report["load"]["successful"] == 0 and report["load"]["failures"] == 2
         assert report["load"]["successful_latency"]["p95_ms"] is None
+        assert report["gc_events_enabled"] is True
+        assert report["successful_identities_valid"] is None
+        assert report["successful_database_trace_count"] == 0
+        assert report["successful_database_traces_complete"] is None
         assert not report["production_acceptance"] and not report["sla_proven"]
     assert "PRIVATE" not in (output/"observations.json").read_text()
 
 
-def test_real_synthetic_package_tcp_trace_is_correlated_and_drained(isolated_database, tmp_path):
+@pytest.mark.parametrize("gc_events", [True, False])
+def test_real_synthetic_package_tcp_trace_is_correlated_and_drained(isolated_database, tmp_path, gc_events):
     root, target, digest = _build(tmp_path)
     output = Path(__file__).resolve().parents[1]/"artifacts"/"test-tcp-profile"/uuid4().hex
-    lab = R06ServiceLab(output, isolated_database, root, UUID(target.name), digest, "stdlib", profile_samples=2)
+    lab = R06ServiceLab(output, isolated_database, root, UUID(target.name), digest, "stdlib",
+                        profile_samples=2, gc_events=gc_events)
     with lab:
         assert lab.ready["profile_samples"] == 2
+        assert lab.ready["gc_events_enabled"] is gc_events
         with httpx.Client(base_url=lab.ready["url"], timeout=10, trust_env=False) as client:
             session = client.post("/api/v1/sessions", json={"profile_id":"sample"}).json()
             for index in range(2):
@@ -234,6 +302,10 @@ def test_real_synthetic_package_tcp_trace_is_correlated_and_drained(isolated_dat
             "actual_catalog_read_and_capture_database_fetchall_decode",
             "result_write_database_commit", "result_write_database_close"}
     assert report["database_driver_version"]
+    assert report["gc_events_enabled"] is gc_events
+    if not gc_events:
+        assert all(not stage["stage"].startswith("gc_generation_")
+                   for request in report["requests"] for stage in request["stages"])
     assert not lab.created and lab.stopped[-1]["normal_cpu_drain"]
     assert not report["production_acceptance"] and session["access_token"] not in json.dumps(report)
 
@@ -368,12 +440,51 @@ def test_concurrent_database_phases_are_request_local_and_clear_after_errors():
     assert "PRIVATE" not in json.dumps(timing.report())
 
 
-@pytest.mark.parametrize("database_complete", [False, True])
-def test_cli_refuses_incomplete_successful_database_trace(monkeypatch, tmp_path, database_complete):
+@pytest.mark.parametrize("count,coverage,identity,coverage_present,identity_present,expected", [
+    (0, None, None, True, True, 0),
+    (1, True, True, True, True, 0),
+    (1, False, True, True, True, 1),
+    (0, True, None, True, True, 1),
+    (0, None, True, True, True, 1),
+    (0, None, None, False, True, 1),
+    (0, None, None, True, False, 1),
+    (None, None, None, True, True, 1),
+    (-1, None, None, True, True, 1),
+    (True, True, True, True, True, 1),
+    (1.0, True, True, True, True, 1),
+    ("1", True, True, True, True, 1),
+    (0, False, None, True, True, 1),
+    (0, None, False, True, True, 1),
+    (1, True, None, True, True, 1),
+    (1, True, True, True, False, 1),
+])
+def test_cli_requires_consistent_successful_trace_summaries(
+        monkeypatch, tmp_path, count, coverage, identity, coverage_present, identity_present, expected):
     monkeypatch.setenv("EVOREC_DATABASE_URL", "PRIVATE")
-    monkeypatch.setattr(profiler, "profile", lambda *args, **kwargs: dict(
-        status="instrumented_diagnostic_completed_not_performance_acceptance", trace_complete=True,
-        client_status_matches_server=True, successful_identities_valid=True,
-        successful_database_traces_complete=database_complete))
+    result_data = dict(status="instrumented_diagnostic_completed_not_performance_acceptance", trace_complete=True,
+                       client_status_matches_server=True, successful_database_trace_count=count)
+    if coverage_present:
+        result_data["successful_database_traces_complete"] = coverage
+    if identity_present:
+        result_data["successful_identities_valid"] = identity
+    monkeypatch.setattr(profiler, "profile", lambda *args, **kwargs: result_data)
     result = profiler.main([str(tmp_path), str(tmp_path), str(uuid4()), "--expected-manifest-sha256", "b" * 64])
-    assert result == (0 if database_complete else 1)
+    assert result == expected
+
+
+def test_cli_defaults_to_gc_events_and_accepts_no_gc_events_flag(monkeypatch, tmp_path):
+    monkeypatch.setenv("EVOREC_DATABASE_URL", "PRIVATE")
+    seen = []
+
+    def fake_profile(*args, **kwargs):
+        seen.append(kwargs["gc_events"])
+        return dict(status="instrumented_diagnostic_completed_not_performance_acceptance", trace_complete=True,
+                    client_status_matches_server=True, gc_events_enabled=kwargs["gc_events"],
+                    successful_identities_valid=None, successful_database_trace_count=0,
+                    successful_database_traces_complete=None)
+
+    monkeypatch.setattr(profiler, "profile", fake_profile)
+    args = [str(tmp_path), str(tmp_path), str(uuid4()), "--expected-manifest-sha256", "b" * 64]
+    assert profiler.main(args) == 0
+    assert profiler.main([*args, "--no-gc-events"]) == 0
+    assert seen == [True, False]

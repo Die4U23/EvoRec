@@ -186,14 +186,19 @@ def test_gc_stage_records_only_generation_and_elapsed_time():
     assert "PRIVATE" not in json.dumps(timing.requests)
 
 
-def test_sample_reset_cli_uses_sample_profile_without_changing_deadline(monkeypatch, tmp_path, capsys):
+@pytest.mark.parametrize("gc_events", [True, False])
+def test_sample_reset_cli_uses_sample_profile_without_changing_deadline(monkeypatch, tmp_path, capsys, gc_events):
     monkeypatch.setenv("EVOREC_DATABASE_URL", "PRIVATE-CONNECTION")
     calls = []
     def profile(*args, **kwargs):
         calls.append(kwargs)
         return dict(service_status="passed", temporary_schema_set_restored=True)
     monkeypatch.setattr(profiler, "profile", profile)
-    assert profiler.main([str(tmp_path), str(tmp_path), str(uuid4()), "--expected-manifest-sha256", "b"*64,
-                          "--sample-reset"]) == 0
-    assert calls == [{"content_backend": "stdlib", "sample_profile": True, "sample_reset": True}]
+    args = [str(tmp_path), str(tmp_path), str(uuid4()), "--expected-manifest-sha256", "b"*64,
+            "--sample-reset"]
+    if not gc_events:
+        args.append("--no-gc-events")
+    assert profiler.main(args) == 0
+    assert calls == [{"content_backend": "stdlib", "sample_profile": True,
+                      "sample_reset": True, "gc_events": gc_events}]
     assert "PRIVATE" not in capsys.readouterr().out

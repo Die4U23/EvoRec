@@ -120,7 +120,9 @@ class RequestTimings:
 
 
 @contextmanager
-def observe(timings):
+def observe(timings, *, gc_events=True):
+    if type(gc_events) is not bool:
+        raise ValueError("gc_events must be a bool")
     sync_stages = (
         (CatalogManager, "ensure_ready", "publication_recovery"),
         (RecommendationExecution, "admit", "execution_lease_and_admission"),
@@ -144,9 +146,10 @@ def observe(timings):
                                     (R06CPUQueue, "run", "queue_and_cpu_drain")):
             stack.enter_context(patch.object(target, name, timings.async_stage(label, getattr(target, name))))
         stack.enter_context(patch.object(httpx.AsyncClient, "post", timings.post(httpx.AsyncClient.post)))
-        callback = timings.gc
-        gc.callbacks.append(callback)
-        stack.callback(gc.callbacks.remove, callback)
+        if gc_events:
+            callback = timings.gc
+            gc.callbacks.append(callback)
+            stack.callback(gc.callbacks.remove, callback)
         yield
 
 
@@ -157,7 +160,9 @@ def _schemas(database_url):
 
 
 def profile(output, database_url, managed_root, bundle_id, digest, *, content_backend="stdlib",
-            sample_profile=False, sample_reset=False):
+            sample_profile=False, sample_reset=False, gc_events=True):
+    if type(gc_events) is not bool:
+        raise ValueError("gc_events must be a bool")
     if sample_reset and not sample_profile:
         raise ValueError("sample reset requires the actual sample profile")
     project = Path(__file__).resolve().parents[1]
@@ -172,7 +177,7 @@ def profile(output, database_url, managed_root, bundle_id, digest, *, content_ba
     timings = RequestTimings()
     sources = (*verifier.SOURCE_FILES, "scripts/profile_r06_online.py", "tests/test_r06_profile.py")
     status, error = "passed", None
-    with observe(timings), patch.object(verifier, "SOURCE_FILES", sources):
+    with observe(timings, gc_events=gc_events), patch.object(verifier, "SOURCE_FILES", sources):
         try:
             verifier.verify(output / "service", database_url, managed_root, bundle_id, digest,
                             content_backend=content_backend, sample_profile=sample_profile, sample_reset=sample_reset)
@@ -186,6 +191,7 @@ def profile(output, database_url, managed_root, bundle_id, digest, *, content_ba
                   source_commit=base, source_working_tree_dirty=False, source_files_expected=len(sources),
                   content_backend=content_backend, ranker_backend=content_backend, sample_profile=sample_profile,
                   sample_reset=sample_reset,
+                  gc_events_enabled=gc_events,
                   api_deadline_seconds=2.0, deadline_increased=False,
                   temporary_schema_set_restored=restored,
                   requests=[{k: v for k, v in request.items() if k != "started"} for request in timings.requests],
@@ -212,6 +218,9 @@ def main(argv=None):
     parser.add_argument("--content-backend", choices=("stdlib", "numpy"), default="stdlib")
     parser.add_argument("--sample-profile", action="store_true", help="diagnose the actual Demo fixed sample history")
     parser.add_argument("--sample-reset", action="store_true", help="diagnose sample feedback/reset and three fresh calculations")
+    parser.add_argument("--no-gc-events", dest="gc_events", action="store_false",
+                        help="omit garbage-collection callback observations")
+    parser.set_defaults(gc_events=True)
     args = parser.parse_args(argv)
     url = os.getenv("EVOREC_DATABASE_URL")
     if not url:
@@ -220,7 +229,7 @@ def main(argv=None):
     try:
         result = profile(args.output, url, args.managed_root, args.bundle_id, args.expected_manifest_sha256,
                          content_backend=args.content_backend, sample_profile=args.sample_profile or args.sample_reset,
-                         sample_reset=args.sample_reset)
+                         sample_reset=args.sample_reset, gc_events=args.gc_events)
     except (ValueError, OSError, psycopg.Error, subprocess.SubprocessError) as error:
         print(json.dumps(dict(status="failed", code=getattr(error, "code", "diagnostic_failed"),
                               error_type=type(error).__name__)))

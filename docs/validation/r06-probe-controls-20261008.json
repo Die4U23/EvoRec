@@ -1,0 +1,55 @@
+{
+  "date": "2026-10-08",
+  "status": "diagnostic_snapshot_not_acceptance",
+  "measurement_source_commit": "6e44594f55dd180ec4bacce1ed8d19e7bf4aee61",
+  "raw_reports_are_ignored_in_original_checkout_not_repository_attachments": true,
+  "branch_base": "d9f929272d8f6b2dbf62506ac9b7e45bde7f4494",
+  "scope": {
+    "branch_contains_pr44_production_reuse_or_drain_changes": false,
+    "new_diagnostic_controls_change_production_deadline_or_gc_configuration": false,
+    "api_deadline_seconds": 2.0,
+    "gc_events_default": true,
+    "no_gc_events_flag": "disables only GC callback observation; does not disable or configure GC and does not change the deadline",
+    "instrumentation_overhead_subtracted": false
+  },
+  "bundle": {
+    "id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "items": 137249,
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6"
+  },
+  "rounds": [
+    {"name": "a1", "report": "artifacts/diagnostics/r06-concurrency-abba-20261008-a1/profile.json", "service_trace": "artifacts/diagnostics/r06-concurrency-abba-20261008-a1/process-1/profile.json", "concurrency": 1, "sequential_references": {"requests": 2, "successes": 2}, "load": {"requests": 4, "successes": 4, "failures": 0, "status_counts": {"200": 4}}},
+    {"name": "b1", "report": "artifacts/diagnostics/r06-concurrency-abba-20261008-b1/profile.json", "service_trace": "artifacts/diagnostics/r06-concurrency-abba-20261008-b1/process-1/profile.json", "concurrency": 2, "sequential_references": {"requests": 2, "successes": 2}, "load": {"requests": 4, "successes": 1, "failures": 3, "status_counts": {"200": 1, "504": 3}}},
+    {"name": "b2", "report": "artifacts/diagnostics/r06-concurrency-abba-20261008-b2/profile.json", "service_trace": "artifacts/diagnostics/r06-concurrency-abba-20261008-b2/process-1/profile.json", "concurrency": 2, "sequential_references": {"requests": 2, "successes": 2}, "load": {"requests": 4, "successes": 0, "failures": 4, "status_counts": {"504": 4}}},
+    {"name": "a2", "report": "artifacts/diagnostics/r06-concurrency-abba-20261008-a2/profile.json", "service_trace": "artifacts/diagnostics/r06-concurrency-abba-20261008-a2/process-1/profile.json", "concurrency": 1, "sequential_references": {"requests": 2, "successes": 2}, "load": {"requests": 4, "successes": 4, "failures": 0, "status_counts": {"200": 4}}}
+  ],
+  "interpretation": {
+    "sequential_references": "8 of 8 succeeded",
+    "observed_pattern": "both concurrency-1 load rounds returned 4/4 HTTP 200; concurrency-2 rounds returned 1/4 and 0/4 HTTP 200",
+    "conclusion": "concurrency-related observation only; does not establish a cause, stable performance, or SLA",
+    "prior_112_of_120_and_eight_504_evidence": "retained; not overwritten by these runs"
+  },
+  "raw_report_sha256": {
+    "a1": {"profile": "35dcccc5dd3d691c613f8217c972c7e7325007a593c85d1bc2da394abe3369a5", "service_trace": "fc6f775a341d85dbc8dfebe29442232b772a4f7bf64d5d98fcd27b70fc851731"},
+    "b1": {"profile": "8850bc4cefc18804140f7a8057fe9fe3f803ff58449ef87bc60deff2a8be4376", "service_trace": "3fb41dd398bfb68f58a5d263d136066f7b3f7953fbb9bb487514a5a323f3b7fe"},
+    "b2": {"profile": "1e60b124a2e56919adde93a895ec429c7d8ad3e457bdc442d0f45d9c8855af40", "service_trace": "abb0a988355f204e0a46245e46b5faebdcd1fba87d0d4710d91e11d298be1cfa"},
+    "a2": {"profile": "09bbeb11c6bfc4fd7a187661e86ce51ff391122fbb7f2deabac09b06b694b415", "service_trace": "5e5fb902b2995b9e43463191d58609cc54f6eb2a3fe65f23c48e33e6786d8f85"}
+  },
+  "capture_median_seconds_by_round": [0.7657704999728594, 0.9539042999967933, 1.0562217500119004, 0.7020743000030052],
+  "diagnostic_contract": {
+    "zero_success_summary": "identity and successful database trace coverage are null when there are no successful requests",
+    "cli": "requires summary keys and values to be present and consistent; exit 0 validates diagnostic completeness/consistency only, not performance acceptance"
+  },
+  "publication": {
+    "pr44": "remains draft",
+    "new_diagnostic_changes": "to be recorded in a separate PR",
+    "tests": {
+      "initial": {"report": "artifacts/test-probe-controls-20261008-a.xml", "sha256": "b46ab2f8865cbb0dc6c0da885095fbf878b29a41523cee29640c1983aeb7d614", "tests": 115, "failures": 1, "errors": 0, "skipped": 0, "failure": "existing CLI kwargs assertion lacked new default gc_events parameter", "source": "development edits, not replayable solely from branch base"},
+      "final_development": {"report": "artifacts/test-probe-controls-20261008-b.xml", "sha256": "a82df5ecd82b4698439ba44250d5afc3f8f38dc96bc0f46cfb5ab24c11ceaee8", "tests": 139, "failures": 0, "errors": 0, "skipped": 0, "seconds": 121.900, "source": "development checkpoint before Git commit"},
+      "real_subprocess_default_and_no_gc_branches": true,
+      "counts_overlap_not_added": true
+    },
+    "ci": null,
+    "local_test_state_at_documentation_checkpoint": "139 passed after preserving initial 115-test run with one failure; CI and clean-source full-package control remain separate"
+  }
+}
