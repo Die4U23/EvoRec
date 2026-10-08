@@ -205,6 +205,7 @@ def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(
         assert report["trace_complete"] and report["client_status_matches_server"]
         assert report["load"]["successful"] == 0 and report["load"]["failures"] == 2
         assert report["load"]["successful_latency"]["p95_ms"] is None
+        assert report["successful_identities_valid"] is None
         assert report["successful_database_trace_count"] == 0
         assert report["successful_database_traces_complete"] is None
         assert not report["production_acceptance"] and not report["sla_proven"]
@@ -381,20 +382,28 @@ def test_concurrent_database_phases_are_request_local_and_clear_after_errors():
     assert "PRIVATE" not in json.dumps(timing.report())
 
 
-@pytest.mark.parametrize("count,complete,expected", [
-    (0, None, 0),       # All-failed, fully collected diagnostics are not acceptance.
-    (2, True, 0),        # Successful requests have complete database traces.
-    (2, False, 1),       # At least one successful request is missing required stages.
-    (2, None, 1),        # Positive count with unknown completeness fails closed.
-    (0, True, 1),        # Zero count cannot claim completeness.
-    (None, None, 1),     # Older or malformed results missing the count fail closed.
+@pytest.mark.parametrize("count,complete,complete_present,identities_valid,identity_present,expected", [
+    (0, None, True, None, True, 0),       # All-failed diagnostics are collected, not accepted.
+    (2, True, True, True, True, 0),       # Successful requests have complete traces and identities.
+    (2, False, True, True, True, 1),      # At least one successful request is missing required stages.
+    (2, None, True, True, True, 1),       # Positive count with unknown completeness fails closed.
+    (0, True, True, None, True, 1),       # Zero count cannot claim completeness.
+    (0, None, True, True, True, 1),       # Zero count cannot claim successful identity validation.
+    (2, True, True, None, True, 1),       # Positive count with unknown identity validation fails closed.
+    (2, True, True, True, False, 1),      # Missing positive-count identity summary fails closed.
+    (0, None, False, None, True, 1),      # Missing zero-count database summary fails closed.
+    (0, None, True, None, False, 1),      # Missing zero-count identity summary fails closed.
+    (None, None, True, None, True, 1),    # Older or malformed results missing the count fail closed.
 ])
-def test_cli_requires_consistent_successful_database_trace_summary(monkeypatch, tmp_path, count, complete, expected):
+def test_cli_requires_consistent_successful_trace_summaries(
+        monkeypatch, tmp_path, count, complete, complete_present, identities_valid, identity_present, expected):
     monkeypatch.setenv("EVOREC_DATABASE_URL", "PRIVATE")
     result_data = dict(status="instrumented_diagnostic_completed_not_performance_acceptance", trace_complete=True,
-                       client_status_matches_server=True, successful_identities_valid=True,
-                       successful_database_trace_count=count,
-                       successful_database_traces_complete=complete)
+                       client_status_matches_server=True, successful_database_trace_count=count)
+    if complete_present:
+        result_data["successful_database_traces_complete"] = complete
+    if identity_present:
+        result_data["successful_identities_valid"] = identities_valid
     monkeypatch.setattr(profiler, "profile", lambda *args, **kwargs: result_data)
     result = profiler.main([str(tmp_path), str(tmp_path), str(uuid4()), "--expected-manifest-sha256", "b" * 64])
     assert result == expected

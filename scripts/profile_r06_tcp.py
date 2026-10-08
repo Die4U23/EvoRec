@@ -93,13 +93,14 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
         "result_write_database_execute_request_row_lock",
         "result_write_database_transaction_block_exit", "execution_lease_close_database_close",
     }
+    successful_client_requests = [r for r in records if r.get("status_code") == 200]
     result.update(status="instrumented_diagnostic_completed_not_performance_acceptance",
                   source_commit=commit, source_sha256=hashes, requests=records, server_requests=server,
                   trace_complete=len(server) == samples+2 and indices == set(range(samples+2)),
                   client_status_matches_server=all(next((s["status_code"] for s in server
                         if s["sample"] == c["sample"]), None) == c["status_code"] for c in records),
-                  successful_identities_valid=all(c["status_code"] != 200
-                        or c["response_identity_valid"] is True for c in records),
+                  successful_identities_valid=(all(c["response_identity_valid"] is True
+                        for c in successful_client_requests) if successful_client_requests else None),
                   api_deadline_seconds=2.0, owned_schema_removed=True, automatic_retries=0,
                   timings_overlap_do_not_sum=True, instrumentation_overhead_not_subtracted=True,
                   gc_attribution_not_exclusive=True, production_acceptance=False, sla_proven=False)
@@ -137,13 +138,18 @@ def main(argv=None):
         return 1
     success_count = result.get("successful_database_trace_count")
     complete = result.get("successful_database_traces_complete")
-    database_trace_gate = (type(success_count) is int and success_count >= 0
+    identities_valid = result.get("successful_identities_valid")
+    database_trace_gate = ("successful_database_traces_complete" in result
+                           and type(success_count) is int and success_count >= 0
                            and ((success_count == 0 and complete is None)
                                 or (success_count > 0 and complete is True)))
+    identity_gate = ("successful_identities_valid" in result
+                     and ((success_count == 0 and identities_valid is None)
+                          or (type(success_count) is int and success_count > 0 and identities_valid is True)))
     print(json.dumps(dict(status=result["status"], output=str(args.output), trace_complete=result["trace_complete"],
                           successful_database_trace_count=success_count)))
     return 0 if (result["trace_complete"] and result["client_status_matches_server"]
-                 and result["successful_identities_valid"] and database_trace_gate) else 1
+                 and identity_gate and database_trace_gate) else 1
 
 
 if __name__ == "__main__":
