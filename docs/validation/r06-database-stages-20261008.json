@@ -1,0 +1,128 @@
+{
+  "date": "2026-10-08",
+  "status": "driver_phase_diagnostic_complete_not_timeout_fix_or_performance_acceptance",
+  "diagnostic_source_commit": "27e6f4f7cf8609cc04543ee9442bb4da5b6316f3",
+  "production_source_changed": false,
+  "bundle": {
+    "id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+    "items": 137249,
+    "backend": "numpy",
+    "profile": "fixed_approved_training_seed_not_real_user",
+    "api_deadline_seconds": 2.0,
+    "retrained": false
+  },
+  "diagnostic_mechanism": {
+    "entry": "python -m scripts.profile_r06_tcp",
+    "scope": "owned loopback child and fresh owned schema only; disabled by default",
+    "driver_version": "3.3.6",
+    "operations": ["connect", "execute", "fetchall_decode", "fetchone_decode", "cursor_close", "transaction_exit", "commit", "rollback", "close"],
+    "phase_binding": "business phase ContextVar retained across nested driver calls and reset after exceptions",
+    "query_binding": "fixed allowlisted labels; SQL objects, nonstrings, oversized and unknown queries become other",
+    "query_text_arguments_hashes_tokens_or_error_messages_recorded": false,
+    "untraced_calls_passthrough_and_patches_restored": true,
+    "successful_response_requires_complete_database_trace": true,
+    "failed_response_partial_trace_allowed": true,
+    "execute_includes_driver_lock_wait_network_server_query_and_result_receive": true,
+    "fetch_includes_driver_decode_row_factory_and_python_materialization": true,
+    "transaction_exit_overlaps_commit_and_close": true,
+    "nested_timings_do_not_sum": true,
+    "cpu_queue_wait_includes_submission_and_dispatch": true,
+    "gc_attribution_not_exclusive_or_tuned": true,
+    "instrumentation_overhead_not_subtracted": true,
+    "pure_sql_execution_or_exact_database_lock_wait_measured": false,
+    "reference": "https://www.psycopg.org/psycopg3/docs/api/cursors.html",
+    "automatic_retries": 0,
+    "source_commit_and_tracked_source_hashes_checked_before_and_after": true
+  },
+  "full_package_trace": {
+    "report": "artifacts/diagnostics/r06-database-stages-20261008-a/profile.json",
+    "sha256": "43a6129d39ba0ce38959612f03f456a8bd58a4f40cd1f835cb43ffed30baeba5",
+    "observations_sha256": "5d50466f6314411b82d47536ff2b253fcfc03f5edee65e69177ebc1659120d41",
+    "child_report_sha256": "8fe587fc37ba05e03fc786fc1c0f403cc7e547f9f944d510fe8fd3a7f3533e4d",
+    "sequential_requests_before_load": 2,
+    "sequential_status_counts": {"200": 2},
+    "load_requests": 24,
+    "concurrency": 2,
+    "load_status_counts": {"200": 24},
+    "all_26_client_and_server_requests_correlated": true,
+    "all_successful_identities_and_database_traces_complete": true,
+    "wall_seconds": 22.994101499964017,
+    "successful_requests_per_second": 1.043745936323607,
+    "all_and_successful_latency_ms": {"p50": 1869.004300038796, "p95": 2261.617899988778, "p99": 2297.0251999795437},
+    "client_total_includes_fresh_httpx_construction_exchange_validation_and_close": true,
+    "load_phase_median_ms": {
+      "publication_recovery_database_connect": 140.82594998762943,
+      "execution_lease_and_admission_database_connect": 120.65999998594634,
+      "database_admission_database_connect": 90.49279999453574,
+      "result_write_database_connect": 132.00010001310147,
+      "actual_catalog_read_and_capture_database_execute_actual_catalog_rows": 354.1127500066068,
+      "actual_catalog_read_and_capture_database_fetchall_decode": 97.66154998214915,
+      "result_write_database_commit": 0.42860000394284725
+    },
+    "disjoint_connection_cost_per_load_request": {
+      "connections_per_request": 4,
+      "samples": 24,
+      "calculation": "sum four sequential nonoverlapping connect spans per request, then summarize those 24 sums; not sum of phase medians",
+      "minimum_ms": 380.13399991905317,
+      "median_ms": 543.5925000347197,
+      "maximum_ms": 786.0876000486314
+    },
+    "performance_acceptance": false,
+    "does_not_override_previous_seven_uninstrumented_timeouts": true
+  },
+  "tests": [
+    {
+      "report": "artifacts/test-r06-database-profile-20261008-a.xml",
+      "sha256": "839f81d236d363081e8dce86a2ad18a304c3d32a4152b921b1aaa3208f6d83d5",
+      "tests": 101, "failures": 0, "errors": 0, "skipped": 0,
+      "scope": "driver trace argument/result/exception identity, real PostgreSQL commit and rollback, namedtuple and binary rows, concurrent phase separation, restoration, TCP completeness and existing admission/architecture/contracts/hygiene guards"
+    },
+    {
+      "report": "artifacts/test-r06-database-stage-service-20261008-a.xml",
+      "sha256": "d38f54112bc3c2b964a046107064ef2df21672bb4581dcddd5d94e2bf5d37002",
+      "tests": 869, "failures": 0, "errors": 0, "skipped": 0,
+      "scope": "complete service-integration CI Python selection against real isolated PostgreSQL schemas; no optional NumPy or research dependencies"
+    },
+    {
+      "report": "artifacts/test-r06-database-stage-numpy-20261008-a.xml",
+      "sha256": "c33bc2f9432c8b04fbf2b28eabb9d5a140564163c41e05c3607f6adee28cb48a",
+      "tests": 151, "failures": 0, "errors": 0, "skipped": 0,
+      "scope": "optional NumPy retrieval/runtime/benchmark and residual ranker numerical parity"
+    },
+    {
+      "command": "node --test tests/web_file_import.test.cjs tests/web_results.test.cjs tests/web_evaluations.test.cjs",
+      "tests": 112, "failures": 0, "skipped": 0,
+      "evidence": "local command output only; not browser or new page implementation"
+    }
+  ],
+  "review_and_limits": {
+    "main_thread_quality_performance_reuse_review": true,
+    "independent_agent_review": false,
+    "agent_type_dispatch_not_available": true,
+    "overlapping_test_reports_not_added": true,
+    "existing_ci_selects_updated_test_file": true,
+    "latest_pr_head_and_merged_main_ci_checked_separately": "delivery verification; not inferred from local tests",
+    "connection_handshake_cause_proven": false,
+    "connection_pool_or_transport_security_configuration_changed": false,
+    "controlled_interleaved_performance_ab_or_statistical_improvement_proven": false,
+    "all_timeout_causes_resolved": false,
+    "browser_retested": false,
+    "open_arrival_20_qps_10_minutes_300_ms_99_percent_sla_proven": false,
+    "previous_uninstrumented_load_record": "docs/validation/r06-concurrent-admission-20261007.json",
+    "next_investigation": "bounded connection-handshake comparison before proposing pool/lifecycle changes; retain original deadline, TLS policy, actual data guards and execution lease semantics"
+  },
+  "cleanup": {
+    "owned_schema": "test_evorec_049c884a6fb2417f8a998b8bdb11e2bc",
+    "independent_exact_owned_schema_remaining": 0,
+    "final_test_namespace_count": 0,
+    "owned_port_without_listener": 49419,
+    "normal_child_actual_cpu_drain": true,
+    "hard_killed": false,
+    "deleted_temporary_schema_data_recoverable": false,
+    "ignored_observation_files_and_original_model_retained": true,
+    "business_env_sha256_unchanged": "32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267",
+    "business_schema_model_and_8000_not_operated": true
+  }
+}
