@@ -140,10 +140,10 @@ class ConcurrentTimings(RequestTimings):
 
 
 @contextmanager
-def trace_api(timings):
+def trace_api(timings, *, gc_events=True):
     from evorec.api import app as api
     original = api.create_app
-    with observe(timings), ExitStack() as stack:
+    with observe(timings, gc_events=gc_events), ExitStack() as stack:
         stack.enter_context(patch.object(api, "create_app", lambda *a, **kw: timings.wrap(original(*a, **kw))))
         stack.enter_context(patch.object(psycopg, "connect", timings.database("connect", psycopg.connect)))
         for target, method, label in (
