@@ -84,8 +84,21 @@
   },
   "local_tests": [
     {"report": "artifacts/test-handshake-probe-20261008-d.xml", "sha256": "2f09cada185a5f247894617911b93af2d3e78f5295aca24dcee11773bdec6cbb", "tests": 143, "failures": 0, "errors": 0, "skipped": 0, "scope": "final probe before measurement; guards, real backend PID separation/read-only enforcement, completeness/privacy, TCP and repository/contracts/architecture; later cast regression checked separately"},
-    {"report": "artifacts/test-handshake-delivery-20261008-a.xml", "sha256": "26e265cb6ef50fc21f49e1631038284a0f8135dff2a6de6b6783f2cf887f33ce", "tests": 144, "failures": 0, "errors": 0, "skipped": 0, "scope": "final delivery including real old-cast counterexample; overlapping previous selection, not added to prior test totals"}
+    {"report": "artifacts/test-handshake-delivery-20261008-a.xml", "sha256": "26e265cb6ef50fc21f49e1631038284a0f8135dff2a6de6b6783f2cf887f33ce", "tests": 144, "failures": 0, "errors": 0, "skipped": 0, "scope": "native Windows delivery before portability repair, including real old-cast counterexample; not proof of initial Linux CI success"},
+    {"report": "artifacts/test-handshake-portable-20261008-a.xml", "sha256": "834700a4addd606769e6a18d565065820d92c458667908e28c0b987e9988fc88", "tests": 144, "failures": 0, "errors": 0, "skipped": 0, "scope": "portable test repair; explicit owned existing directory and actual server-address acceptance/refusal; overlaps prior selection"}
   ],
+  "initial_ci_negative_evidence": {
+    "run": "https://github.com/Die4U23/EvoRec/actions/runs/37755335006",
+    "head_sha": "229b7b140d1e4cef701457212f920861099f95e2",
+    "event": "push",
+    "conclusion": "failure",
+    "observed_failed_tests": ["test_real_database_connections_are_fresh_readonly_and_preserve_session_security", "test_output_boundary_checked_before_source_and_connections[existing]"],
+    "total_tests_not_inferred_from_log": true,
+    "cause": "tests assumed server loopback behind Docker forwarding and existence of an ignored local delivery directory",
+    "repair": "use a fresh owned existing directory; assert acceptance for actual server loopback or the exact nonlocal refusal, with real distinct backend PIDs, readonly enforcement and closure in either case",
+    "production_guard_weakened_or_test_skipped": false,
+    "does_not_override_latest_head_ci_gate": true
+  },
   "review": {
     "main_thread_quality_performance_reuse_review": true,
     "independent_agent_review": false,

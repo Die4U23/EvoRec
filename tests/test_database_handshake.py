@@ -1,6 +1,7 @@
 """Connection diagnostic guards, negative evidence, and real read-only sessions."""
 
 from collections import Counter
+import ipaddress
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -188,11 +189,13 @@ def numeric_fixture_arms(database_url):
     # rejects hostnames; pin only this isolated test URL to its actual endpoint.
     with probe.psycopg.connect(database_url) as connection:
         address = connection.info.hostaddr
-    return probe.parameters(make_conninfo(database_url, host=address, hostaddr=address))
+        server_address = connection.execute("SELECT pg_catalog.host(pg_catalog.inet_server_addr())").fetchone()[0]
+    return (probe.parameters(make_conninfo(database_url, host=address, hostaddr=address)),
+            ipaddress.ip_address(server_address).is_loopback)
 
 
 def test_real_database_connections_are_fresh_readonly_and_preserve_session_security(isolated_database, monkeypatch):
-    arms = numeric_fixture_arms(isolated_database)
+    arms, server_is_loopback = numeric_fixture_arms(isolated_database)
     connect = probe.psycopg.connect
     pids = []
     def physical_connect(*args, **kwargs):
@@ -204,7 +207,14 @@ def test_real_database_connections_are_fresh_readonly_and_preserve_session_secur
     records = []
     for arm in probe.ARMS:
         record, identity = probe.observe(arms[arm], arm, -1, expected)
-        assert record["success"] and record["read_only"] and record["connection_closed"], record
+        assert record["connection_closed"], record
+        if server_is_loopback:
+            assert record["success"] and record["read_only"], record
+        else:
+            # Docker forwards a client loopback port to a nonloopback server
+            # address. Prove refusal, not acceptance or a skipped real test.
+            assert not record["success"]
+            assert record["error_code"] == "nonlocal_writable_or_gss_session_refused"
         expected = identity
         records.append(record)
     assert "PRIVATE" not in json.dumps(records)
@@ -215,7 +225,7 @@ def test_real_database_connections_are_fresh_readonly_and_preserve_session_secur
 
 
 def test_real_cast_regression_cannot_be_hidden_by_mocked_bare_ip_rows(isolated_database, monkeypatch):
-    arms = numeric_fixture_arms(isolated_database)
+    arms, _ = numeric_fixture_arms(isolated_database)
     old = probe.METADATA.replace("pg_catalog.host(pg_catalog.inet_server_addr())", "pg_catalog.inet_server_addr()::text")
     assert old != probe.METADATA
     monkeypatch.setattr(probe, "METADATA", old)
@@ -243,7 +253,11 @@ def test_cli_preflight_exception_message_is_not_exported(monkeypatch, tmp_path, 
 @pytest.mark.parametrize("target", ["outside", "root", "existing"])
 def test_output_boundary_checked_before_source_and_connections(monkeypatch, tmp_path, target):
     root = Path(__file__).resolve().parents[1]
-    path = tmp_path if target == "outside" else root / "artifacts" if target == "root" else root / "artifacts/delivery"
+    path = tmp_path if target == "outside" else root / "artifacts" if target == "root" else root / "artifacts" / f"test-existing-{uuid4().hex}"
+    if target == "existing": path.mkdir(parents=True)
     monkeypatch.setattr(probe, "_source", lambda *a: pytest.fail("output boundary first"))
-    with pytest.raises(probe.GuardError, match="fresh_artifacts_subdirectory_required"):
-        probe.profile(path, URL, rounds=6)
+    try:
+        with pytest.raises(probe.GuardError, match="fresh_artifacts_subdirectory_required"):
+            probe.profile(path, URL, rounds=6)
+    finally:
+        if target == "existing": path.rmdir()
