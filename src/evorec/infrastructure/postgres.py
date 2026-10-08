@@ -762,7 +762,10 @@ class PostgresDemoBackend:
 
     def _save(self, result: RecommendationResult) -> None:
         binding = result.binding
-        with self._connect() as connection:
+        execution = self._execution(binding.request_id)
+        transaction = (execution.result_transaction()
+                       if execution is not None and execution.admitted else self._connect())
+        with transaction as connection:
             cursor = connection.execute(
                 """
                 SELECT session_id, session_epoch, history_version, bundle_id,

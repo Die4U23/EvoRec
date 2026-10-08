@@ -1,6 +1,7 @@
 """Real database execution-lock and terminal crash reconciliation, not reranking."""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 import subprocess
@@ -124,6 +125,131 @@ def test_result_transaction_failure_rolls_back_all_items_without_closing_lease(r
     finally:
         execution.close()
     assert_unlocked(backend, command)
+
+
+def test_result_borrow_refuses_outer_transaction_instead_of_returning_uncommitted_success(recovery):
+    application, command = recovery
+    backend = application.backend
+    execution = RecommendationExecution(backend, command)
+    try:
+        context = execution.admit()
+        result = result_for(application, context, command)
+        execution.connection.execute("BEGIN")
+        with pytest.raises(ManagementError) as failure:
+            asyncio.run(backend.save(result))
+        assert failure.value.code == "recommendation_execution_lost"
+        with backend._connect() as c:
+            assert c.execute("SELECT count(*) AS n FROM request_items WHERE request_id=%s",
+                             (command.request_id,)).fetchone()["n"] == 0
+        assert state(backend, command)["status"] == "accepted"
+        execution.connection.rollback()
+        asyncio.run(backend.save(result))
+        assert state(backend, command)["status"] == "completed"
+        execution.assert_held()
+    finally:
+        execution.close()
+    assert_unlocked(backend, command)
+
+
+def test_concurrent_borrowers_cannot_share_transaction_or_rollback_each_other(recovery):
+    application, command = recovery
+    backend = application.backend
+    execution = RecommendationExecution(backend, command)
+    entered, release, attempting, second_entered = Event(), Event(), Event(), Event()
+    try:
+        execution.admit()
+        with backend._connect() as c:
+            c.execute("CREATE TABLE result_connection_probe (value integer PRIMARY KEY)")
+
+        def first():
+            with execution.result_transaction() as c:
+                c.execute("INSERT INTO result_connection_probe VALUES (1)")
+                entered.set()
+                assert release.wait(10)
+                raise RuntimeError("intentional rollback")
+
+        def second():
+            attempting.set()
+            with execution.result_transaction() as c:
+                second_entered.set()
+                c.execute("INSERT INTO result_connection_probe VALUES (2)")
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            a = pool.submit(first)
+            try:
+                assert entered.wait(5)
+                b = pool.submit(second)
+                assert attempting.wait(5)
+                assert not second_entered.wait(.2)
+            finally:
+                release.set()
+            with pytest.raises(RuntimeError, match="intentional rollback"):
+                a.result(timeout=5)
+            b.result(timeout=5)
+        assert second_entered.is_set()
+        with backend._connect() as c:
+            assert c.execute("SELECT value FROM result_connection_probe ORDER BY value").fetchall() == [{"value": 2}]
+        assert execution.connection.info.transaction_status == TransactionStatus.IDLE
+        execution.assert_held()
+    finally:
+        release.set()
+        execution.close()
+    assert_unlocked(backend, command)
+
+
+def test_cancel_while_real_result_transaction_waits_drains_before_lease_close(recovery, monkeypatch):
+    application, command = recovery
+    backend = application.backend
+    entered, release = Event(), Event()
+    original_rank = backend.rank
+
+    async def paused_rank(context, cmd):
+        def pause():
+            entered.set()
+            assert release.wait(10)
+        await backend.r06_queue.run(pause)
+        return await original_rank(context, cmd)
+
+    monkeypatch.setattr(backend, "rank", paused_rank)
+
+    async def run():
+        task = asyncio.create_task(application.recommend.execute(command))
+        blocker = backend._connect()
+        observer = backend._connect()
+        observer.autocommit = True
+        try:
+            await started(entered)
+            execution = backend._execution(command.request_id)
+            owner = execution.connection
+            blocker.execute("SELECT request_id FROM recommendation_requests WHERE request_id=%s FOR UPDATE",
+                            (command.request_id,)).fetchone()
+            release.set()
+            async with asyncio.timeout(10):
+                while not observer.execute("SELECT %s = ANY(pg_blocking_pids(%s)) AS waiting",
+                                           (blocker.info.backend_pid, owner.info.backend_pid)).fetchone()["waiting"]:
+                    await asyncio.sleep(.02)
+            # The owned physical session, not a new result connection, is blocked.
+            for _ in range(3):
+                task.cancel()
+                await asyncio.sleep(.01)
+                assert not task.done() and not owner.closed
+            reply = await post(application, command)
+            assert reply.json()["error"]["code"] == "recommendation_in_progress"
+            blocker.rollback()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert owner.closed and not backend._executions
+            assert state(backend, command)["status"] == "completed"
+            first, second = await post(application, command), await post(application, command)
+            assert first.status_code == second.status_code == 200 and first.json() == second.json()
+            assert_unlocked(backend, command)
+        finally:
+            release.set()
+            blocker.close()
+            observer.close()
+            await asyncio.gather(task, return_exceptions=True)
+
+    asyncio.run(run())
 
 
 async def post(application, command):

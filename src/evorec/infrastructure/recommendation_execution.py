@@ -4,7 +4,11 @@ A lost session lock permits terminal reconciliation, never reranking old input.
 An extra connection remains owned until admission, CPU and result writes drain.
 """
 
+from contextlib import contextmanager
+from threading import Lock
 from uuid import uuid4
+
+from psycopg.pq import TransactionStatus
 
 from evorec.domain.errors import IdempotencyInProgress, ManagementError, ResourceNotFound
 
@@ -16,6 +20,7 @@ class RecommendationExecution:
         self.connection = None
         self.lock_key = None
         self.admitted = False
+        self._result_lock = Lock()
 
     def admit(self):
         connection = self.connection = self.backend._connect()
@@ -58,6 +63,21 @@ class RecommendationExecution:
         ).fetchone()["held"]
         if not held:
             raise ManagementError("recommendation_execution_lost", "execution lease is no longer held", 503)
+
+    @contextmanager
+    def result_transaction(self):
+        """Borrow the owned session without closing it or sharing a transaction.
+
+        Admission keeps its separate transaction (including orphan reconciliation).
+        save() drains its worker before acquire() closes this session, even when
+        repeatedly cancelled. The session lock survives commit and rollback.
+        """
+        with self._result_lock:
+            if (self.connection is None or not self.connection.autocommit
+                    or self.connection.info.transaction_status != TransactionStatus.IDLE):
+                raise ManagementError("recommendation_execution_lost", "execution session is not idle", 503)
+            with self.connection.transaction():
+                yield self.connection
 
     def close(self):
         with self.backend._execution_lock:

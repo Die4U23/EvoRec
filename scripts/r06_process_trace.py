@@ -152,6 +152,7 @@ def trace_api(timings):
             (psycopg.Cursor, "fetchone", "fetchone_decode"),
             (psycopg.Cursor, "close", "cursor_close"),
             (psycopg.Connection, "__exit__", "transaction_exit"),
+            (psycopg.Transaction, "__exit__", "transaction_block_exit"),
             (psycopg.Connection, "commit", "commit"),
             (psycopg.Connection, "rollback", "rollback"),
             (psycopg.Connection, "close", "close"),

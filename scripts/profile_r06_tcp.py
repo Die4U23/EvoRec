@@ -90,7 +90,8 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
         "database_admission_database_execute_session_snapshot_lock",
         "actual_catalog_read_and_capture_database_execute_actual_catalog_rows",
         "actual_catalog_read_and_capture_database_fetchall_decode",
-        "result_write_database_commit", "result_write_database_close",
+        "result_write_database_execute_request_row_lock",
+        "result_write_database_transaction_block_exit", "execution_lease_close_database_close",
     }
     result.update(status="instrumented_diagnostic_completed_not_performance_acceptance",
                   source_commit=commit, source_sha256=hashes, requests=records, server_requests=server,
