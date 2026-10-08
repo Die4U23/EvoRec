@@ -301,7 +301,13 @@ class PostgresDemoBackend:
     @asynccontextmanager
     async def acquire(self, command: RecommendationCommand):
         if self.manager is not None:
-            await asyncio.to_thread(self.manager.ensure_ready)
+            readiness = asyncio.create_task(asyncio.to_thread(self.manager.ensure_ready))
+            try:
+                await asyncio.shield(readiness)
+            except asyncio.CancelledError:
+                # Recovery may own a database connection before any execution exists.
+                await _drain(readiness)
+                raise
         execution = RecommendationExecution(self, command)
         admission = asyncio.create_task(asyncio.to_thread(execution.admit))
         try:
