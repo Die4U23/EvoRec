@@ -61,8 +61,8 @@
   },
   "acceptance": {
     "full_bundle_functional_and_recovery_gates_passed": false, "performance_improvement_proven": false, "prior_seven_timeouts_closed": false, "sla_proven": false,
-    "pr_created": false,
-    "ci_run": false,
+    "pr_created_at_documentation_checkpoint": false,
+    "ci_run_at_documentation_checkpoint": false,
     "merge_performed": false,
     "merge_allowed_by_acceptance": false,
     "independent_cleanup": {"exact_owned_schemas_absent": 3, "current_test_namespace_count": 0, "exact_owned_ports_without_listener": 3, "protected_port_8000_probed": false, "env_hash": "32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267"},
@@ -76,7 +76,8 @@
     "delegation_and_review": {"requested_by_user": true, "excluded_model": "GPT-6 Astra", "GPT-6.1 Sol": "investigation and readiness implementation", "GPT-6 Sol": "fresh independent review completed; no actionable readiness defect in 6023e1a", "GPT-6 Luna": "diagnostic and documentation implementation", "main_agent": "final acceptance", "review_of_6023e1a_completed": true, "adjacent_identity_truth_finding": "accepted and corrected; this was distinct from a readiness defect"},
     "diagnostic_truth_followup": {"commit": "83e95f073309d01c2237992f9e0f41e2dd2c32b2", "change": "reports identity as null at zero successful traces and checks explicit CLI key presence", "missing_zero_key_loophole": "caught by main and fixed with actual missing-key tests", "report": "artifacts/test-diagnostic-truth-final-20261008-a.xml", "sha256": "8b62731638c34e78bd42a1a88d1820aeeff9c9f98f4f04d0d089aac88e8df633", "tests": 53, "failures": 0, "errors": 0, "skipped": 0, "scope": "development check before committing the identity refinement; overlapping with broad regression, not full-bundle acceptance"},
     "latest_broad_regression": {"report": "artifacts/test-readiness-delivery-20261008-a.xml", "sha256": "bca5a4ce592d61d6a345edc46666dc2a62aa41f8548c92cd1a13dd094b44394b", "checkpoint_commit": "6023e1a4ba4a82d04045b7c1ebc67ad9f9e56857", "tests": 160, "failures": 0, "errors": 0, "skipped": 0, "seconds": 98.487, "orphan_retry_observation": "four requests returned expected 409 within this run; does not prove the cause of earlier broad failures"},
+    "clean_final_checkpoint": {"commit": "bebbe3cea788001e9beb293c68e3335036d21d2d", "report": "artifacts/test-readiness-clean-final-20261008-a.xml", "sha256": "f65c743b16dfae3c70ba4e756d4457eb79368e824b5eaccbf4c16021936a70e2", "tests": 56, "failures": 0, "errors": 0, "skipped": 0, "seconds": 12.708, "scope": "53 diagnostic-truth cases plus 3 readiness cases on the committed clean checkpoint; overlaps the 160-test run and is not added to its count"},
     "historical_failures_retained": "both prior broad 102-test failures and complete-bundle 504 gates remain in the record; this later passing regression does not erase or explain them",
-    "current_state": "160-test broad regression passed; full-bundle negative evidence remains; no CI or PR yet; merge not performed and not allowed by current acceptance"
+    "current_state": "160-test broad regression and committed 56-test clean checkpoint passed; full-bundle negative evidence remains; check latest PR head and CI separately; these results are not performance acceptance"
   }
 }
