@@ -182,13 +182,17 @@ def test_invalid_bounds_rejected_before_any_resource(monkeypatch, tmp_path, roun
     with pytest.raises(probe.GuardError): probe.profile(tmp_path, URL, rounds=rounds)
 
 
-def test_real_database_connections_are_fresh_readonly_and_preserve_session_security(isolated_database, monkeypatch):
+def numeric_fixture_arms(database_url):
     from psycopg.conninfo import make_conninfo
     # CI's fixture uses localhost. This numeric-only diagnostic intentionally
     # rejects hostnames; pin only this isolated test URL to its actual endpoint.
-    with probe.psycopg.connect(isolated_database) as connection:
+    with probe.psycopg.connect(database_url) as connection:
         address = connection.info.hostaddr
-    arms = probe.parameters(make_conninfo(isolated_database, host=address, hostaddr=address))
+    return probe.parameters(make_conninfo(database_url, host=address, hostaddr=address))
+
+
+def test_real_database_connections_are_fresh_readonly_and_preserve_session_security(isolated_database, monkeypatch):
+    arms = numeric_fixture_arms(isolated_database)
     connect = probe.psycopg.connect
     pids = []
     def physical_connect(*args, **kwargs):
@@ -208,6 +212,16 @@ def test_real_database_connections_are_fresh_readonly_and_preserve_session_secur
     with probe.psycopg.connect(**arms["baseline"], autocommit=True) as connection:
         with pytest.raises(probe.psycopg.errors.ReadOnlySqlTransaction):
             connection.execute("CREATE TABLE forbidden_probe_write (n integer)")
+
+
+def test_real_cast_regression_cannot_be_hidden_by_mocked_bare_ip_rows(isolated_database, monkeypatch):
+    arms = numeric_fixture_arms(isolated_database)
+    old = probe.METADATA.replace("pg_catalog.host(pg_catalog.inet_server_addr())", "pg_catalog.inet_server_addr()::text")
+    assert old != probe.METADATA
+    monkeypatch.setattr(probe, "METADATA", old)
+    record, _ = probe.observe(arms["baseline"], "baseline", -1)
+    assert not record["success"] and record["error_code"] == "connection_or_metadata_error"
+    assert record["connection_closed"]
 
 
 @pytest.mark.parametrize("complete", [False, True])
