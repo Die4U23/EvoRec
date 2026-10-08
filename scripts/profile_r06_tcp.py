@@ -104,13 +104,18 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
                   timings_overlap_do_not_sum=True, instrumentation_overhead_not_subtracted=True,
                   gc_attribution_not_exclusive=True, production_acceptance=False, sla_proven=False)
     result.update(database_driver_version=trace.get("database_driver_version"),
-                  successful_database_traces_complete=all(r["status_code"] != 200
-                      or required_database_stages <= {s["stage"] for s in r.get("stages", [])} for r in server),
+                  successful_database_trace_count=sum(r.get("status_code") == 200 for r in server),
                   database_driver_operations_traced=True,
                   database_execute_includes_driver_lock_wait_network_and_result_receive=True,
                   database_fetch_includes_driver_decode_row_factory_and_python_materialization=True,
                   database_transaction_exit_overlaps_commit_and_close=True,
                   pure_sql_execution_or_exact_database_lock_wait_measured=False)
+    successful_server_requests = [r for r in server if r.get("status_code") == 200]
+    result["successful_database_traces_complete"] = (
+        all(required_database_stages <= {s["stage"] for s in r.get("stages", [])}
+            for r in successful_server_requests)
+        if successful_server_requests else None
+    )
     marker(lab.output, "profile", result)
     return result
 
@@ -130,9 +135,15 @@ def main(argv=None):
     except Exception as error:
         print(json.dumps(dict(status="failed", error_type=type(error).__name__)))
         return 1
-    print(json.dumps(dict(status=result["status"], output=str(args.output), trace_complete=result["trace_complete"])))
+    success_count = result.get("successful_database_trace_count")
+    complete = result.get("successful_database_traces_complete")
+    database_trace_gate = (type(success_count) is int and success_count >= 0
+                           and ((success_count == 0 and complete is None)
+                                or (success_count > 0 and complete is True)))
+    print(json.dumps(dict(status=result["status"], output=str(args.output), trace_complete=result["trace_complete"],
+                          successful_database_trace_count=success_count)))
     return 0 if (result["trace_complete"] and result["client_status_matches_server"]
-                 and result["successful_identities_valid"] and result["successful_database_traces_complete"]) else 1
+                 and result["successful_identities_valid"] and database_trace_gate) else 1
 
 
 if __name__ == "__main__":
