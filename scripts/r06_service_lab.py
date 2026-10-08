@@ -174,6 +174,7 @@ def child(output, run_id, *, profile_samples=0):
                     # serve/aclose drains real workers before snapshots are exported.
                     asyncio.run(application.backend.aclose())
                     marker(output, "profile", dict(requests=timings.report(),
+                        database_driver_version=psycopg.__version__,
                         instrumentation_overhead_not_subtracted=True, timings_overlap_do_not_sum=True,
                         gc_attribution_not_exclusive=True, production_acceptance=False))
             else:
