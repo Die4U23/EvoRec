@@ -1,6 +1,7 @@
 """Real database execution-lock and terminal crash reconciliation, not reranking."""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 import subprocess
@@ -10,7 +11,9 @@ import time
 from uuid import uuid4
 
 import httpx
+import psycopg
 import pytest
+from psycopg.pq import TransactionStatus
 
 from evorec.api.app import create_app
 from evorec.bootstrap import build_demo_application
@@ -18,6 +21,7 @@ from evorec.domain.errors import ManagementError, SnapshotMismatch
 from evorec.domain.models import RecommendationCommand, RecommendationResult, Strategy
 from evorec.domain.recommendation import select_results
 from evorec.infrastructure.postgres import PostgresDemoBackend
+import evorec.infrastructure.postgres as postgres_adapter
 from evorec.infrastructure.recommendation_execution import RecommendationExecution
 from scripts.seed_demo_catalog import main as seed_demo_catalog
 from test_r06_online import online, _command
@@ -53,6 +57,202 @@ def assert_unlocked(backend, command):
         ).fetchone()["held"]
 
 
+def result_for(application, context, command):
+    batch = asyncio.run(application.backend.rank(context, command))
+    return RecommendationResult(context.binding, command.strategy, batch.actual_strategy,
+                                select_results(batch.candidates, context, command.k), batch.fallback_reason)
+
+
+def test_result_write_reuses_owned_connection_and_leaves_idle_lock_until_close(recovery, monkeypatch):
+    application, command = recovery
+    backend = application.backend
+    execution = RecommendationExecution(backend, command)
+    try:
+        context = execution.admit()
+        result = result_for(application, context, command)
+        owner = execution.connection
+        pid = owner.info.backend_pid
+        # Real admitted request and real writes; any new physical connection is a failure.
+        with monkeypatch.context() as patch:
+            def forbidden_connect():
+                pytest.fail("result write opened another physical connection")
+            patch.setattr(backend, "_connect", forbidden_connect)
+            asyncio.run(backend.save(result))
+        assert execution.connection is owner and owner.info.backend_pid == pid
+        assert not owner.closed and owner.autocommit
+        assert owner.info.transaction_status == TransactionStatus.IDLE
+        execution.assert_held()
+        assert state(backend, command)["status"] == "completed"
+        # Commit does not release the session lease.
+        with backend._connect() as c:
+            assert not c.execute("SELECT pg_try_advisory_xact_lock(%s) AS held",
+                                 (execution.lock_key,)).fetchone()["held"]
+    finally:
+        execution.close()
+    assert owner.closed
+    assert_unlocked(backend, command)
+    first, second = asyncio.run(post(application, command)), asyncio.run(post(application, command))
+    assert first.status_code == second.status_code == 200 and first.json() == second.json()
+
+
+def test_result_transaction_failure_rolls_back_all_items_without_closing_lease(recovery):
+    application, command = recovery
+    backend = application.backend
+    execution = RecommendationExecution(backend, command)
+    try:
+        context = execution.admit()
+        result = result_for(application, context, command)
+        assert result.items
+        with backend._connect() as c:
+            c.execute("CREATE FUNCTION reject_result_commit() RETURNS trigger LANGUAGE plpgsql AS $$ "
+                      "BEGIN IF NEW.status='completed' THEN RAISE check_violation; END IF; RETURN NEW; END $$")
+            c.execute("CREATE TRIGGER reject_result_commit BEFORE UPDATE ON recommendation_requests "
+                      "FOR EACH ROW EXECUTE FUNCTION reject_result_commit()")
+        with pytest.raises(psycopg.errors.CheckViolation):
+            asyncio.run(backend.save(result))
+        assert not execution.connection.closed
+        assert execution.connection.info.transaction_status == TransactionStatus.IDLE
+        execution.assert_held()
+        assert state(backend, command)["status"] == "accepted"
+        with backend._connect() as c:
+            assert c.execute("SELECT count(*) AS n FROM request_items WHERE request_id=%s",
+                             (command.request_id,)).fetchone()["n"] == 0
+            c.execute("DROP TRIGGER reject_result_commit ON recommendation_requests")
+            c.execute("DROP FUNCTION reject_result_commit()")
+        asyncio.run(backend.save(result))
+        assert state(backend, command)["status"] == "completed"
+        assert execution.connection.info.transaction_status == TransactionStatus.IDLE
+        execution.assert_held()
+    finally:
+        execution.close()
+    assert_unlocked(backend, command)
+
+
+def test_result_borrow_refuses_outer_transaction_instead_of_returning_uncommitted_success(recovery):
+    application, command = recovery
+    backend = application.backend
+    execution = RecommendationExecution(backend, command)
+    try:
+        context = execution.admit()
+        result = result_for(application, context, command)
+        execution.connection.execute("BEGIN")
+        with pytest.raises(ManagementError) as failure:
+            asyncio.run(backend.save(result))
+        assert failure.value.code == "recommendation_execution_lost"
+        with backend._connect() as c:
+            assert c.execute("SELECT count(*) AS n FROM request_items WHERE request_id=%s",
+                             (command.request_id,)).fetchone()["n"] == 0
+        assert state(backend, command)["status"] == "accepted"
+        execution.connection.rollback()
+        asyncio.run(backend.save(result))
+        assert state(backend, command)["status"] == "completed"
+        execution.assert_held()
+    finally:
+        execution.close()
+    assert_unlocked(backend, command)
+
+
+def test_concurrent_borrowers_cannot_share_transaction_or_rollback_each_other(recovery):
+    application, command = recovery
+    backend = application.backend
+    execution = RecommendationExecution(backend, command)
+    entered, release, attempting, second_entered = Event(), Event(), Event(), Event()
+    try:
+        execution.admit()
+        with backend._connect() as c:
+            c.execute("CREATE TABLE result_connection_probe (value integer PRIMARY KEY)")
+
+        def first():
+            with execution.result_transaction() as c:
+                c.execute("INSERT INTO result_connection_probe VALUES (1)")
+                entered.set()
+                assert release.wait(10)
+                raise RuntimeError("intentional rollback")
+
+        def second():
+            attempting.set()
+            with execution.result_transaction() as c:
+                second_entered.set()
+                c.execute("INSERT INTO result_connection_probe VALUES (2)")
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            a = pool.submit(first)
+            try:
+                assert entered.wait(5)
+                b = pool.submit(second)
+                assert attempting.wait(5)
+                assert not second_entered.wait(.2)
+            finally:
+                release.set()
+            with pytest.raises(RuntimeError, match="intentional rollback"):
+                a.result(timeout=5)
+            b.result(timeout=5)
+        assert second_entered.is_set()
+        with backend._connect() as c:
+            assert c.execute("SELECT value FROM result_connection_probe ORDER BY value").fetchall() == [{"value": 2}]
+        assert execution.connection.info.transaction_status == TransactionStatus.IDLE
+        execution.assert_held()
+    finally:
+        release.set()
+        execution.close()
+    assert_unlocked(backend, command)
+
+
+def test_cancel_while_real_result_transaction_waits_drains_before_lease_close(recovery, monkeypatch):
+    application, command = recovery
+    backend = application.backend
+    entered, release = Event(), Event()
+    original_rank = backend.rank
+
+    async def paused_rank(context, cmd):
+        def pause():
+            entered.set()
+            assert release.wait(10)
+        await backend.r06_queue.run(pause)
+        return await original_rank(context, cmd)
+
+    monkeypatch.setattr(backend, "rank", paused_rank)
+
+    async def run():
+        task = asyncio.create_task(application.recommend.execute(command))
+        blocker = backend._connect()
+        observer = backend._connect()
+        observer.autocommit = True
+        try:
+            await started(entered)
+            execution = backend._execution(command.request_id)
+            owner = execution.connection
+            blocker.execute("SELECT request_id FROM recommendation_requests WHERE request_id=%s FOR UPDATE",
+                            (command.request_id,)).fetchone()
+            release.set()
+            async with asyncio.timeout(10):
+                while not observer.execute("SELECT %s = ANY(pg_blocking_pids(%s)) AS waiting",
+                                           (blocker.info.backend_pid, owner.info.backend_pid)).fetchone()["waiting"]:
+                    await asyncio.sleep(.02)
+            # The owned physical session, not a new result connection, is blocked.
+            for _ in range(3):
+                task.cancel()
+                await asyncio.sleep(.01)
+                assert not task.done() and not owner.closed
+            reply = await post(application, command)
+            assert reply.json()["error"]["code"] == "recommendation_in_progress"
+            blocker.rollback()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert owner.closed and not backend._executions
+            assert state(backend, command)["status"] == "completed"
+            first, second = await post(application, command), await post(application, command)
+            assert first.status_code == second.status_code == 200 and first.json() == second.json()
+            assert_unlocked(backend, command)
+        finally:
+            release.set()
+            blocker.close()
+            observer.close()
+            await asyncio.gather(task, return_exceptions=True)
+
+    asyncio.run(run())
+
+
 async def post(application, command):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(demo_application=application)),
                                  base_url="http://isolated") as client:
@@ -66,6 +266,104 @@ async def started(event):
     async with asyncio.timeout(5):
         while not event.is_set():
             await asyncio.sleep(.01)
+
+
+@pytest.mark.parametrize("worker_fails", [False, True])
+def test_readiness_cancellation_drains_real_connection_before_return(recovery, monkeypatch, worker_fails):
+    application, command = recovery
+    backend = application.backend
+    manager = backend.manager
+    entered, release, exited = Event(), Event(), Event()
+    connections, allocations = [], []
+    failure = ManagementError("readiness_probe_failed", "intentional readiness failure", 503)
+    original_execution = postgres_adapter.RecommendationExecution
+
+    def tracked_execution(*args, **kwargs):
+        execution = original_execution(*args, **kwargs)
+        allocations.append(execution)
+        return execution
+
+    def gated_readiness():
+        try:
+            with manager._connect(autocommit=True) as connection:
+                connections.append(connection)
+                connection.execute(f"SELECT pg_advisory_lock({manager.LOCK_KEY_SQL})", (manager.LOCK_NAME,))
+                entered.set()
+                assert release.wait(10), "readiness probe was not released"
+                if worker_fails:
+                    raise failure
+        finally:
+            exited.set()
+
+    monkeypatch.setattr(manager, "ensure_ready", gated_readiness)
+    monkeypatch.setattr(postgres_adapter, "RecommendationExecution", tracked_execution)
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        unhandled = []
+        previous_handler = loop.get_exception_handler()
+        loop.set_exception_handler(lambda _loop, context: unhandled.append(context))
+        task = asyncio.create_task(application.recommend.execute(command))
+        try:
+            await started(entered)
+            owner = connections[0]
+            with manager._connect(autocommit=True) as observer:
+                for _ in range(3):
+                    task.cancel()
+                    await asyncio.sleep(.01)
+                    assert not task.done() and not exited.is_set()
+                    assert not owner.closed
+                    assert not observer.execute(
+                        f"SELECT pg_try_advisory_xact_lock({manager.LOCK_KEY_SQL}) AS held",
+                        (manager.LOCK_NAME,),
+                    ).fetchone()["held"]
+                    assert not allocations and not backend._executions
+                    assert state(backend, command) is None
+                release.set()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+                assert exited.is_set() and owner.closed
+                assert observer.execute(
+                    f"SELECT pg_try_advisory_xact_lock({manager.LOCK_KEY_SQL}) AS held",
+                    (manager.LOCK_NAME,),
+                ).fetchone()["held"]
+            assert not allocations and not backend._executions
+            assert state(backend, command) is None
+            await asyncio.sleep(0)
+            assert not unhandled
+        finally:
+            release.set()
+            await asyncio.gather(task, return_exceptions=True)
+            # Drain the real worker even when the pre-fix assertion fails.
+            await started(exited)
+            assert all(connection.closed for connection in connections)
+            loop.set_exception_handler(previous_handler)
+
+    asyncio.run(run())
+
+
+def test_readiness_worker_failure_propagates_before_execution_allocation(recovery, monkeypatch):
+    application, command = recovery
+    backend = application.backend
+    failure = ManagementError("readiness_probe_failed", "intentional readiness failure", 503)
+    connections = []
+
+    def failed_readiness():
+        with backend.manager._connect(autocommit=True) as connection:
+            connections.append(connection)
+            connection.execute("SELECT 1")
+            raise failure
+
+    def forbidden_execution(*args, **kwargs):
+        pytest.fail("failed readiness allocated a recommendation execution")
+
+    monkeypatch.setattr(backend.manager, "ensure_ready", failed_readiness)
+    monkeypatch.setattr(postgres_adapter, "RecommendationExecution", forbidden_execution)
+    with pytest.raises(ManagementError) as caught:
+        asyncio.run(application.recommend.execute(command))
+    assert caught.value is failure
+    assert connections and all(connection.closed for connection in connections)
+    assert not backend._executions and state(backend, command) is None
 
 
 def test_actual_process_kill_reconciles_without_reranking_and_allows_explicit_new_key(recovery, tmp_path):
@@ -383,7 +681,9 @@ def test_concurrent_orphan_retries_share_one_terminal_outcome_without_execution(
     async def run():
         replies = await asyncio.gather(*(post(app, command) for app in apps))
         codes = {reply.json()["error"]["code"] for reply in replies}
-        assert all(reply.status_code == 409 for reply in replies)
+        assert all(reply.status_code == 409 for reply in replies), [
+            (reply.status_code, reply.json()["error"]["code"]) for reply in replies
+        ]
         assert "recommendation_interrupted" in codes
         assert codes <= {"recommendation_interrupted", "recommendation_in_progress"}
         for app in apps:

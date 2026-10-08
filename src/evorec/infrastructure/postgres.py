@@ -301,7 +301,13 @@ class PostgresDemoBackend:
     @asynccontextmanager
     async def acquire(self, command: RecommendationCommand):
         if self.manager is not None:
-            await asyncio.to_thread(self.manager.ensure_ready)
+            readiness = asyncio.create_task(asyncio.to_thread(self.manager.ensure_ready))
+            try:
+                await asyncio.shield(readiness)
+            except asyncio.CancelledError:
+                # Recovery may own a database connection before any execution exists.
+                await _drain(readiness)
+                raise
         execution = RecommendationExecution(self, command)
         admission = asyncio.create_task(asyncio.to_thread(execution.admit))
         try:
@@ -762,7 +768,10 @@ class PostgresDemoBackend:
 
     def _save(self, result: RecommendationResult) -> None:
         binding = result.binding
-        with self._connect() as connection:
+        execution = self._execution(binding.request_id)
+        transaction = (execution.result_transaction()
+                       if execution is not None and execution.admitted else self._connect())
+        with transaction as connection:
             cursor = connection.execute(
                 """
                 SELECT session_id, session_epoch, history_version, bundle_id,

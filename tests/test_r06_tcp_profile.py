@@ -1,6 +1,7 @@
 """Concurrent diagnostic attribution, behavior preservation and real TCP wiring."""
 
 import asyncio
+from contextlib import nullcontext
 import gc
 import json
 from pathlib import Path
@@ -204,6 +205,9 @@ def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(
         assert report["trace_complete"] and report["client_status_matches_server"]
         assert report["load"]["successful"] == 0 and report["load"]["failures"] == 2
         assert report["load"]["successful_latency"]["p95_ms"] is None
+        assert report["successful_identities_valid"] is None
+        assert report["successful_database_trace_count"] == 0
+        assert report["successful_database_traces_complete"] is None
         assert not report["production_acceptance"] and not report["sla_proven"]
     assert "PRIVATE" not in (output/"observations.json").read_text()
 
@@ -232,7 +236,10 @@ def test_real_synthetic_package_tcp_trace_is_correlated_and_drained(isolated_dat
             "database_admission_database_execute_session_snapshot_lock",
             "actual_catalog_read_and_capture_database_execute_actual_catalog_rows",
             "actual_catalog_read_and_capture_database_fetchall_decode",
-            "result_write_database_commit", "result_write_database_close"}
+            "result_write_database_execute_request_row_lock",
+            "result_write_database_transaction_block_exit", "execution_lease_close_database_close"}
+        assert sum(s["stage"].endswith("_database_connect") for s in request["stages"]) == 3
+        assert "result_write_database_connect" not in {s["stage"] for s in request["stages"]}
     assert report["database_driver_version"]
     assert not lab.created and lab.stopped[-1]["normal_cpu_drain"]
     assert not report["production_acceptance"] and session["access_token"] not in json.dumps(report)
@@ -294,23 +301,26 @@ def test_database_timer_retains_results_errors_phase_and_bypasses_untraced_calls
 
 
 @pytest.mark.parametrize("fail", [False, True])
-def test_real_database_trace_preserves_commit_rollback_close_and_restores_patches(isolated_database, fail):
+@pytest.mark.parametrize("transaction_block", [False, True])
+def test_real_database_trace_preserves_commit_rollback_close_and_restores_patches(isolated_database, fail, transaction_block):
     import psycopg
     from psycopg.rows import namedtuple_row
     originals = (psycopg.connect, psycopg.Cursor.execute, psycopg.Cursor.fetchall,
-                 psycopg.Connection.__exit__, psycopg.Connection.commit, psycopg.Connection.rollback)
+                 psycopg.Connection.__exit__, psycopg.Connection.commit, psycopg.Connection.rollback,
+                 psycopg.Transaction.__exit__)
     timing = ConcurrentTimings(1)
     failure = RuntimeError("PRIVATE-ERROR")
     rows = []
     async def app(*args):
         def work():
-            with psycopg.connect(isolated_database) as connection:
-                with connection.cursor(row_factory=namedtuple_row, binary=True) as cursor:
-                    cursor.execute("SELECT 17::integer AS count, '中文'::text AS title")
-                    rows.extend(cursor.fetchall())
-                connection.execute("CREATE TABLE traced_commit (value integer)")
-                connection.execute("INSERT INTO traced_commit VALUES (17)")
-                if fail: raise failure
+            with psycopg.connect(isolated_database, autocommit=transaction_block) as connection:
+                with connection.transaction() if transaction_block else nullcontext():
+                    with connection.cursor(row_factory=namedtuple_row, binary=True) as cursor:
+                        cursor.execute("SELECT 17::integer AS count, '中文'::text AS title")
+                        rows.extend(cursor.fetchall())
+                    connection.execute("CREATE TABLE traced_commit (value integer)")
+                    connection.execute("INSERT INTO traced_commit VALUES (17)")
+                    if fail: raise failure
         return await asyncio.to_thread(timing.sync("database_admission", work))
     with trace_api(timing):
         if fail:
@@ -320,7 +330,8 @@ def test_real_database_trace_preserves_commit_rollback_close_and_restores_patche
         else:
             asyncio.run(timing.wrap(app)(scope(), None, None))
     assert originals == (psycopg.connect, psycopg.Cursor.execute, psycopg.Cursor.fetchall,
-                         psycopg.Connection.__exit__, psycopg.Connection.commit, psycopg.Connection.rollback)
+                         psycopg.Connection.__exit__, psycopg.Connection.commit, psycopg.Connection.rollback,
+                         psycopg.Transaction.__exit__)
     assert rows[0].count == 17 and rows[0].title == "中文"
     with psycopg.connect(isolated_database) as connection:
         exists = connection.execute("SELECT to_regclass('traced_commit')").fetchone()[0]
@@ -330,7 +341,10 @@ def test_real_database_trace_preserves_commit_rollback_close_and_restores_patche
     assert stages >= {"database_admission_database_connect", "database_admission_database_execute_other",
                       "database_admission_database_fetchall_decode", "database_admission_database_cursor_close",
                       "database_admission_database_transaction_exit", "database_admission_database_close"}
-    assert "database_admission_database_" + ("rollback" if fail else "commit") in stages
+    if transaction_block:
+        assert "database_admission_database_transaction_block_exit" in stages
+    else:
+        assert "database_admission_database_" + ("rollback" if fail else "commit") in stages
     assert "PRIVATE" not in json.dumps(timing.report())
 
 
@@ -368,12 +382,28 @@ def test_concurrent_database_phases_are_request_local_and_clear_after_errors():
     assert "PRIVATE" not in json.dumps(timing.report())
 
 
-@pytest.mark.parametrize("database_complete", [False, True])
-def test_cli_refuses_incomplete_successful_database_trace(monkeypatch, tmp_path, database_complete):
+@pytest.mark.parametrize("count,complete,complete_present,identities_valid,identity_present,expected", [
+    (0, None, True, None, True, 0),       # All-failed diagnostics are collected, not accepted.
+    (2, True, True, True, True, 0),       # Successful requests have complete traces and identities.
+    (2, False, True, True, True, 1),      # At least one successful request is missing required stages.
+    (2, None, True, True, True, 1),       # Positive count with unknown completeness fails closed.
+    (0, True, True, None, True, 1),       # Zero count cannot claim completeness.
+    (0, None, True, True, True, 1),       # Zero count cannot claim successful identity validation.
+    (2, True, True, None, True, 1),       # Positive count with unknown identity validation fails closed.
+    (2, True, True, True, False, 1),      # Missing positive-count identity summary fails closed.
+    (0, None, False, None, True, 1),      # Missing zero-count database summary fails closed.
+    (0, None, True, None, False, 1),      # Missing zero-count identity summary fails closed.
+    (None, None, True, None, True, 1),    # Older or malformed results missing the count fail closed.
+])
+def test_cli_requires_consistent_successful_trace_summaries(
+        monkeypatch, tmp_path, count, complete, complete_present, identities_valid, identity_present, expected):
     monkeypatch.setenv("EVOREC_DATABASE_URL", "PRIVATE")
-    monkeypatch.setattr(profiler, "profile", lambda *args, **kwargs: dict(
-        status="instrumented_diagnostic_completed_not_performance_acceptance", trace_complete=True,
-        client_status_matches_server=True, successful_identities_valid=True,
-        successful_database_traces_complete=database_complete))
+    result_data = dict(status="instrumented_diagnostic_completed_not_performance_acceptance", trace_complete=True,
+                       client_status_matches_server=True, successful_database_trace_count=count)
+    if complete_present:
+        result_data["successful_database_traces_complete"] = complete
+    if identity_present:
+        result_data["successful_identities_valid"] = identities_valid
+    monkeypatch.setattr(profiler, "profile", lambda *args, **kwargs: result_data)
     result = profiler.main([str(tmp_path), str(tmp_path), str(uuid4()), "--expected-manifest-sha256", "b" * 64])
-    assert result == (0 if database_complete else 1)
+    assert result == expected
