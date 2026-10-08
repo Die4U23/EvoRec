@@ -1,0 +1,119 @@
+{
+  "date": "2026-10-08",
+  "status": "read_only_connection_trials_complete_no_configuration_fix_adopted",
+  "measurement_source_commit": "9c13d75812cd6e6b06c184d08c0e86884c0442bb",
+  "production_source_changed": false,
+  "driver_version": "3.3.6",
+  "libpq_version": 180004,
+  "server_version": 180006,
+  "platform": "Windows",
+  "mechanism": {
+    "entry": "python -m scripts.profile_database_handshake",
+    "arms": ["baseline", "gss_disabled", "hostaddr_explicit"],
+    "rounds_allowed": [6, 12, 18, 24],
+    "warmup": "one physical connection per arm, excluded from measured summaries",
+    "schedule": "all six arm permutations in repeated cycles; each arm equally often in each position",
+    "parameters": "only one factor per candidate, with identical diagnostic read-only and timeout options in all arms",
+    "connect_timeout_cap_seconds": 5,
+    "metadata_statement_timeout_ms": 2000,
+    "scheduling_budget_seconds": 60,
+    "budget_not_absolute_wall_deadline_inflight_call_can_outlive_it": true,
+    "automatic_retries": 0,
+    "fresh_connection_per_observation_and_actual_close_verified": true,
+    "connect_time_includes_driver_setup_and_establishment_not_pure_authentication": true,
+    "metadata_query_and_close_excluded_from_connect_time": true,
+    "thread_cpu_only_client_thread_and_windows_resolution_not_server_cpu": true,
+    "only_literal_loopback_host_accepted": true,
+    "hostnames_remote_multiple_hosts_service_replication_and_inherited_pg_parameters_refused": true,
+    "gss_required_authenticated_or_encrypted_sessions_refused": true,
+    "ssl_policy_retained_and_actual_ssl_identity_checked": true,
+    "internal_endpoint_database_user_server_identity_compared_not_exported_or_hashed": true,
+    "metadata_uses_qualified_pg_catalog_current_backend_view": true,
+    "sql_business_data_credentials_and_error_messages_not_exported": true,
+    "failed_and_missing_observations_not_hidden": true,
+    "missing_pairs_are_null_not_zero": true,
+    "dirty_or_changed_source_refuses_completion": true,
+    "reference": "https://www.postgresql.org/docs/18/libpq-connect.html"
+  },
+  "trials": [
+    {
+      "report": "artifacts/diagnostics/database-handshake-20261008-a/profile.json",
+      "sha256": "dab6b59b8b765b56bf239bc228d823868df855e63145224f2a51315be59fb2a5",
+      "rounds": 24, "warmup_connections": 3, "measured_connections": 72,
+      "successful_measured_connections": 72, "failed_measured_connections": 0,
+      "connect_median_ms": {"baseline": 98.9477499970235, "gss_disabled": 99.73360001458786, "hostaddr_explicit": 100.75209999922663},
+      "paired_candidate_minus_baseline_median_ms": {"gss_disabled": -0.5139500135555863, "hostaddr_explicit": 2.2594999754801393},
+      "pairs_per_candidate": 24,
+      "all_75_connections_closed_readonly_and_security_consistent": true
+    },
+    {
+      "report": "artifacts/diagnostics/database-handshake-20261008-b/profile.json",
+      "sha256": "cda6b1d034444070a6c38e16595ec51a4b451bc69a8caa67df6d1fc1a91de97f",
+      "rounds": 24, "warmup_connections": 3, "measured_connections": 72,
+      "successful_measured_connections": 72, "failed_measured_connections": 0,
+      "connect_median_ms": {"baseline": 102.21705000731163, "gss_disabled": 99.2139499867335, "hostaddr_explicit": 100.32779999892227},
+      "paired_candidate_minus_baseline_median_ms": {"gss_disabled": -2.8748500044457614, "hostaddr_explicit": 1.7053000046871603},
+      "pairs_per_candidate": 24,
+      "all_75_connections_closed_readonly_and_security_consistent": true
+    }
+  ],
+  "interpretation": {
+    "current_host_already_numeric_no_dns_comparison": true,
+    "actual_original_and_trial_ssl_gss_encryption": false,
+    "about_100_ms_per_connection_cost_not_removed_by_these_trials": true,
+    "large_or_statistically_significant_improvement_proven": false,
+    "connection_root_cause_or_authentication_cpu_cost_proven": false,
+    "simultaneous_cpu_jobs_or_db_tests_intentionally_run": false,
+    "fully_idle_machine_or_background_workload_isolation_proven": false,
+    "production_configuration_or_tls_policy_changed": false,
+    "concurrent_http_load_retested": false,
+    "previous_uninstrumented_seven_timeouts_overridden_or_resolved": false,
+    "sla_proven": false,
+    "previous_http_evidence": "docs/validation/r06-concurrent-admission-20261007.json",
+    "next": "evaluate narrowly scoped connection reuse/lifecycle alternatives with real advisory-lease, explicit orphan commit, transaction, cancellation/drain and shutdown counterexamples before implementation"
+  },
+  "development_negative_evidence": {
+    "report": "artifacts/test-handshake-probe-20261008-a.xml",
+    "sha256": "ec83c274be2cfd889c613953493a12a8bfaace7e24310ec785ec5de8bb183ad9",
+    "tests": 141, "failures": 1, "errors": 0, "skipped": 0,
+    "failure": "real inet-to-text conversion includes netmask; initial probe incorrectly parsed it as a bare IP",
+    "source_state": "uncommitted development; original full source snapshot not archived, not claimed reproducible solely from base commit",
+    "fix": "use pg_catalog.host(inet_server_addr()) and qualify metadata objects",
+    "committed_real_database_old_cast_counterexample": true,
+    "reference": "https://www.postgresql.org/docs/18/functions-net.html"
+  },
+  "local_tests": [
+    {"report": "artifacts/test-handshake-probe-20261008-d.xml", "sha256": "2f09cada185a5f247894617911b93af2d3e78f5295aca24dcee11773bdec6cbb", "tests": 143, "failures": 0, "errors": 0, "skipped": 0, "scope": "final probe before measurement; guards, real backend PID separation/read-only enforcement, completeness/privacy, TCP and repository/contracts/architecture; later cast regression checked separately"},
+    {"report": "artifacts/test-handshake-delivery-20261008-a.xml", "sha256": "26e265cb6ef50fc21f49e1631038284a0f8135dff2a6de6b6783f2cf887f33ce", "tests": 144, "failures": 0, "errors": 0, "skipped": 0, "scope": "native Windows delivery before portability repair, including real old-cast counterexample; not proof of initial Linux CI success"},
+    {"report": "artifacts/test-handshake-portable-20261008-a.xml", "sha256": "834700a4addd606769e6a18d565065820d92c458667908e28c0b987e9988fc88", "tests": 144, "failures": 0, "errors": 0, "skipped": 0, "scope": "portable test repair; explicit owned existing directory and actual server-address acceptance/refusal; overlaps prior selection"}
+  ],
+  "initial_ci_negative_evidence": {
+    "run": "https://github.com/Die4U23/EvoRec/actions/runs/37755335006",
+    "head_sha": "229b7b140d1e4cef701457212f920861099f95e2",
+    "event": "push",
+    "conclusion": "failure",
+    "observed_failed_tests": ["test_real_database_connections_are_fresh_readonly_and_preserve_session_security", "test_output_boundary_checked_before_source_and_connections[existing]"],
+    "total_tests_not_inferred_from_log": true,
+    "cause": "tests assumed server loopback behind Docker forwarding and existence of an ignored local delivery directory",
+    "repair": "use a fresh owned existing directory; assert acceptance for actual server loopback or the exact nonlocal refusal, with real distinct backend PIDs, readonly enforcement and closure in either case",
+    "production_guard_weakened_or_test_skipped": false,
+    "does_not_override_latest_head_ci_gate": true
+  },
+  "review": {
+    "main_thread_quality_performance_reuse_review": true,
+    "independent_agent_review": false,
+    "agent_type_dispatch_not_available": true,
+    "new_tests_explicitly_selected_once_in_service_ci": true,
+    "overlapping_test_reports_not_added": true,
+    "latest_pr_head_and_merged_main_ci_checked_separately": "delivery verification, not inferred from local tests"
+  },
+  "cleanup": {
+    "probe_creates_no_schema_or_listener_and_writes_no_business_data": true,
+    "all_trial_connections_closed": true,
+    "post_test_namespace_count": 0,
+    "isolated_test_schema_data_removed_not_recoverable": true,
+    "business_env_sha256_unchanged": "32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267",
+    "business_schema_model_and_8000_not_operated": true,
+    "ignored_original_reports_retained": true
+  }
+}

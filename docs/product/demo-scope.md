@@ -158,6 +158,10 @@ R06 的 `adaptive` 当前是固定 dense 别名；其他演示路径可能明确
 
 ## 并发阶段诊断与当前性能边界
 
+连接建立可另行只读对照：`python -m scripts.profile_database_handshake artifacts/diagnostics/handshake-first-run --rounds 24`，从环境读取 `EVOREC_DATABASE_URL`，不修改 `.env`。要求干净提交、全新输出目录和字面量回环 IP；域名/多主机/service/GSS 必需配置或继承的 PG 参数直接拒绝，不应为了运行此探针降低业务安全策略。原参数/GSS 协商禁用/显式同一 hostaddr 三组按六种排列交错，每组预热一笔后测 6/12/18/24 轮；统一添加仅本轮连接的只读与诊断超时，保留 SSL 策略，状态查询限定当前 backend 和 `pg_catalog`。调度预算 60 秒不是硬总期限，进行中的调用可超出；失败、缺失和 null 配对保留，不自动重试。
+
+2026-10-08 两轮各 72 笔连接实测均成功，三组中位数均约 99–102 毫秒；当前原 host 已是数值 IP，不是 DNS 对照。没有采用配置改动，未证明握手根因或推荐超时改善；客户端线程 CPU 不等于数据库 CPU，串行连接试验不等于双并发 HTTP 或 SLA。见[连接交错对照](../validation/database-handshake-20261008.json)。
+
 并发诊断使用独立入口 `python -m scripts.profile_r06_tcp`，参数沿用上面的 `output managed_root bundle_id --expected-manifest-sha256`，可加 `--samples 24 --concurrency 2`。要求干净提交及全新输出目录；先运行两笔顺序请求，再运行 2–120 笔新键负载，最多 8 并发，只操作本轮临时 schema/loopback 服务，默认业务和恢复入口不启用插桩。退出 0 只代表记录完整、状态关联及成功响应身份正确，**即使出现 504 也不是性能通过**；必须阅读 `profile.json` 的成功/失败分母。阶段存在嵌套、GC 不排他归属、CPU 等待含派发，不相加或扣除插桩开销。正常退出删除本轮临时数据，不可恢复；原报告保留忽略目录。
 
 2026-10-07 推荐入场改为会话共享读锁，反馈/重置和同键执行仍排他，实库同步测试确认旧快照和后续隐藏过滤。未插桩完整包闭环通过，但 120 笔双并发仍 **113 成功、7 个 504**；另行插桩 24/24 不覆盖这些失败，不证明稳定提速或 SLA。最新边界见[并发入场核验](../validation/r06-concurrent-admission-20261007.json)。
