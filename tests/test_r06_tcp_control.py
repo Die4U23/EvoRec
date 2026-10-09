@@ -1,6 +1,7 @@
 """Explicit no-server-trace control for the bounded R06 TCP diagnostic."""
 
 import json
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import httpx
@@ -325,7 +326,11 @@ def test_untraced_profile_rejects_source_change_without_final_report(monkeypatch
 
 def test_real_untraced_synthetic_tcp_uses_zero_samples_without_child_trace(isolated_database, tmp_path):
     root, target, digest = _build(tmp_path)
-    output = tmp_path / "real-untraced"
+    project_root = Path(__file__).resolve().parents[1]
+    project_artifacts = project_root / "artifacts"
+    output = project_artifacts / "test-tcp-untraced" / uuid4().hex
+    assert output.is_relative_to(project_artifacts) and output != project_artifacts
+    assert project_root in output.parents
     lab = R06ServiceLab(output, isolated_database, root, UUID(target.name), digest, "stdlib",
                         profile_samples=0, gc_events=False, phase_gate=False)
     with lab:
