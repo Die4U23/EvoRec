@@ -1,0 +1,81 @@
+{
+  "date": "2026-10-09",
+  "status": "targeted_readiness_cancellation_drain_verification_only",
+  "checkpoint": "local and initial failed CI evidence; final latest-head CI and merge state recorded in the PR",
+  "source": {
+    "red_commit": "9ac9177554d278ef0bd7d0a46c00fe72cd6e9589",
+    "green_commit": "79e0a5f11776037f209a3ccb7da10f069107fe21",
+    "changed_file": "src/evorec/infrastructure/postgres.py",
+    "changed_function": "acquire",
+    "inserted_lines": 7,
+    "removed_lines": 1,
+    "source_sha256": "b7b400230dc3539484a36344894350e235e98292af77be6d3160d687234651ac",
+    "test_file_sha256": "439a4d6a28510bfca5212241d651bf4f8e8b8e5717958c1b949318f642b6eca3"
+  },
+  "behavior": {
+    "scope": "recommendation.acquire path only; sample and comparison paths unchanged",
+    "cancellation_cases": "three repeated cancellations across two real-worker cases (worker failure false/true)",
+    "deadline_cases": "actual asyncio timeout across worker success/failure, before execution allocation",
+    "deadline_seconds": 2,
+    "deadline_changed": false,
+    "connection_lock": "request remains pending while the real PostgreSQL connection lock is held; after release the worker drains before return",
+    "execution_allocated": false,
+    "accepted_row_created": false,
+    "worker_error_consumed": true,
+    "uncancelled_original_exception_identity_preserved": true,
+    "drain_helper_reused": true,
+    "result_connection_sql_capture_and_ranking_changed": false,
+    "drain_is_hard_realtime": false
+  },
+  "test_reports": {
+    "red": {"report": "artifacts/readiness-red-20261009-a.xml", "commit": "9ac9177554d278ef0bd7d0a46c00fe72cd6e9589", "sha256": "403a90f8bc341d83421f6fb4911026a4a89c96d9279e5eda11b0e268180427a6", "tests": 5, "failures": 4, "passes": 1, "errors": 0, "skipped": 0},
+    "green": {"report": "artifacts/readiness-green-20261009-a.xml", "commit": "79e0a5f11776037f209a3ccb7da10f069107fe21", "sha256": "1603738308e700f60cbe1ed3cb93d97d7b7750613dfc504198fc9b3c2eef6fef", "modules": 4, "tests": 123, "failures": 0, "errors": 0, "skipped": 0},
+    "guards": {"report": "artifacts/readiness-guards-20261009-a.xml", "sha256": "a00aa9f6dfab72bffd186fc1b35df08904b3099fd4c13f94c1716ed3566a26b0", "tests": 47, "failures": 0, "errors": 0, "skipped": 0},
+    "final_fixture": {"report": "artifacts/readiness-final-20261009-a.xml", "commit": "652889506c7ac94fc8a295aa831ffe54b8218f27", "sha256": "fed569784e259dabc9f17d491a5a246e1d5d8635447b1c423d8532ef717a3d30", "tests": 23, "failures": 0, "errors": 0, "skipped": 0, "test_file_sha256": "821a7edcb2748249134b44eebd9be1a3d89710a0317392c443de9d7fd287a94e", "production_source_unchanged": true},
+    "web": {"report": "artifacts/readiness-web-20261009-a.xml", "sha256": "fcff9a2a09e0d6c2eb42e1e0333832244d0d7e6ed31cac2397d830fa34780e82", "direct_testcase_count": 112, "passes": 112, "failures": 0, "errors": 0, "skipped": 0, "count_basis": "direct testcase count, not testsuite attributes"},
+    "counts_overlap": true,
+    "web_rerun_count_added": false
+  },
+  "initial_ci_failures": {
+    "head": "7f15e11dab25ce8ba37639c7b4e7c243126b0097",
+    "push_run": 37874853632,
+    "pull_request_run": 37874867090,
+    "service_jobs": "both failed; accelerated numerical jobs passed",
+    "failing_cases": ["deadline-False in push", "repeated_cancel-True in pull_request"],
+    "assertion": "final pg_try_advisory_xact_lock false after worker exited and client connection closed",
+    "fixture_difference": "test worker relied only on connection close; actual recover explicitly unlocks in finally",
+    "correction": "test worker now explicitly unlocks and checks server acknowledgement, preserving all pending/closed/no-row and final lock probes",
+    "unique_server_lock_holder_or_close_delay_root_cause_proven": false,
+    "production_changed_to_fix_ci": false
+  },
+  "cleanup_and_environment": {
+    "pytest_schema_count_before": 0,
+    "pytest_schema_count_after": 0,
+    "pytest_schema_count_after_final_fixture_tests": 0,
+    "owned_listeners_started": false,
+    "port_8000_touched_or_probed": false,
+    "primary_project_head": "6e44594f55dd180ec4bacce1ed8d19e7bf4aee61",
+    "primary_project_tracked_worktree_clean": true,
+    "env_sha256": "32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267",
+    "synthetic_temporary_database": "removed and not recoverable"
+  },
+  "acceptance_boundary": {
+    "service_environment_pip_check": "passed",
+    "accelerated_or_research_environment_pip_check": null,
+    "full_local_suite": null,
+    "full_bundle_http_or_browser_replay": null,
+    "independent_120_request_load_rerun": null,
+    "ci": "initial head failed; final latest-head checks tracked in PR",
+    "new_pr_created": true,
+    "pr_url": "https://github.com/Die4U23/EvoRec/pull/47",
+    "pr44": "existing draft retained and not modified",
+    "previous_110_of_120_with_10_timeouts": "retained; not superseded",
+    "performance_improvement_claimed": false,
+    "sla_proven": false
+  },
+  "review": {
+    "main": "quality, performance, and reuse checks",
+    "Luna": "targeted test authoring and documentation; main executed validation",
+    "custom_reviewer_acceptance": false
+  }
+}
