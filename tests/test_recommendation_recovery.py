@@ -5,7 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 import subprocess
 import sys
-from threading import Event
+from threading import Event, Lock
 import time
 from uuid import uuid4
 
@@ -14,7 +14,7 @@ import pytest
 
 from evorec.api.app import create_app
 from evorec.bootstrap import build_demo_application
-from evorec.domain.errors import ManagementError, SnapshotMismatch
+from evorec.domain.errors import IdempotencyInProgress, ManagementError, SnapshotMismatch
 from evorec.domain.models import RecommendationCommand, RecommendationResult, Strategy
 from evorec.domain.recommendation import select_results
 from evorec.infrastructure.postgres import PostgresDemoBackend
@@ -510,7 +510,7 @@ def test_fresh_admission_without_execution_lease_is_rejected_before_insert(recov
     assert state(application.backend, command) is None
 
 
-def test_concurrent_orphan_retries_share_one_terminal_outcome_without_execution(recovery):
+def test_concurrent_orphan_retries_share_one_terminal_outcome_without_execution(recovery, monkeypatch):
     application, command = recovery
     execution = RecommendationExecution(application.backend, command)
     execution.admit()
@@ -518,16 +518,165 @@ def test_concurrent_orphan_retries_share_one_terminal_outcome_without_execution(
     original_owner = state(application.backend, command)["execution_owner"]
     apps = [build_demo_application(PostgresDemoBackend(application.backend.database_url, r06_enabled=False))
             for _ in range(4)]
+    # Passive observer overhead is included; these times are not benchmark evidence.
+    # Record fixed labels/codes only, never SQL, exception messages or connection data.
+    stages, replies = [], []
+    stage_lock = Lock()
+    indices = {id(app.backend): index for index, app in enumerate(apps)}
+    diagnostic_codes = frozenset({"recommendation_interrupted", "recommendation_in_progress",
+                                 "recommendation_timeout", "database_unavailable", "catalog_unavailable",
+                                 "recommendation_execution_lost", "recommendation_recovery_unavailable",
+                                 "recommendation_idempotency_conflict", "session_not_found",
+                                 "session_access_denied", "history_conflict"})
+
+    def safe_code(code):
+        return code if type(code) is str and code in diagnostic_codes else None
+
+    def record(index, stage, event, error=None):
+        entry = (index, stage, event, time.monotonic(),
+                 type(error).__name__ if error is not None else None,
+                 safe_code(getattr(error, "code", None)))
+        with stage_lock:
+            stages.append(entry)
+
+    def observed(index, stage, work, *args, **kwargs):
+        record(index, stage, "enter")
+        try:
+            result = work(*args, **kwargs)
+        except BaseException as error:
+            record(index, stage, "exit", error)
+            raise
+        record(index, stage, "exit")
+        return result
+
+    def wrap_execution(stage, original):
+        def wrapped(execution, *args, **kwargs):
+            index = indices.get(id(execution.backend))
+            if index is None:
+                return original(execution, *args, **kwargs)
+            return observed(index, stage, original, execution, *args, **kwargs)
+        return wrapped
+
+    monkeypatch.setattr(RecommendationExecution, "admit",
+                        wrap_execution("lease_admission", RecommendationExecution.admit))
+    monkeypatch.setattr(RecommendationExecution, "close",
+                        wrap_execution("lease_close", RecommendationExecution.close))
+
+    def wrap_work(index, stage, original):
+        def wrapped(*args, **kwargs):
+            return observed(index, stage, original, *args, **kwargs)
+        return wrapped
+
+    for index, app in enumerate(apps):
+        monkeypatch.setattr(app.manager, "ensure_ready", wrap_work(index, "readiness", app.manager.ensure_ready))
+        monkeypatch.setattr(app.backend, "_admit", wrap_work(index, "terminal_admission", app.backend._admit))
+
+    async def observed_post(index, app):
+        record(index, "http_request", "enter")
+        try:
+            reply = await post(app, command)
+        except BaseException as error:
+            record(index, "http_request", "exit", error)
+            raise
+        # HTTP errors are returned responses; worker records retain their exception.
+        record(index, "http_request", "exit")
+        return reply
+
     async def run():
-        replies = await asyncio.gather(*(post(app, command) for app in apps))
-        codes = {reply.json()["error"]["code"] for reply in replies}
-        assert all(reply.status_code == 409 for reply in replies), [
-            (reply.status_code, reply.json()["error"]["code"]) for reply in replies]
-        assert "recommendation_interrupted" in codes
-        assert codes <= {"recommendation_interrupted", "recommendation_in_progress"}
-        for app in apps:
-            assert (await post(app, command)).json()["error"]["code"] == "recommendation_interrupted"
-            assert not app.backend._executions
+        try:
+            replies.extend(await asyncio.gather(*(observed_post(index, app) for index, app in enumerate(apps))))
+            codes = {reply.json()["error"]["code"] for reply in replies}
+            assert all(reply.status_code == 409 for reply in replies), [
+                (reply.status_code, reply.json()["error"]["code"]) for reply in replies]
+            assert "recommendation_interrupted" in codes
+            assert codes <= {"recommendation_interrupted", "recommendation_in_progress"}
+            for app in apps:
+                assert (await post(app, command)).json()["error"]["code"] == "recommendation_interrupted"
+                assert not app.backend._executions
+        finally:
+            await asyncio.gather(*(app.backend.aclose() for app in apps))
+    try:
+        asyncio.run(run())
+        assert state(application.backend, command) == dict(status="failed", failure_code="execution_interrupted",
+                                                          execution_owner=original_owner)
+        with application.backend._connect() as c:
+            assert c.execute("SELECT count(*) AS n FROM request_items").fetchone()["n"] == 0
+        assert_unlocked(application.backend, command)
+    except AssertionError as failure:
+        failure.add_note(repr({"replies": [(reply.status_code, safe_code(reply.json().get("error", {}).get("code")))
+                                         for reply in replies], "stages": stages,
+                               "observer_overhead_included": True}))
+        raise
+
+
+def test_orphan_retry_with_held_lease_serializes_competitors_before_terminal_reconciliation(recovery, monkeypatch):
+    """Controlled service/lease ordering; not a reproduction of the HTTP 2s deadline."""
+    application, command = recovery
+    execution = RecommendationExecution(application.backend, command)
+    execution.admit()
+    execution.close()
+    original_owner = state(application.backend, command)["execution_owner"]
+    apps = [build_demo_application(PostgresDemoBackend(application.backend.database_url, r06_enabled=False))
+            for _ in range(4)]
+    winner = apps[0].backend
+    entered, release = Event(), Event()
+    original_admit = winner._admit
+
+    def gated_admit(*args, **kwargs):
+        winner._execution(command.request_id).assert_held()
+        entered.set()
+        assert release.wait(10), "orphan retry admission was not released"
+        return original_admit(*args, **kwargs)
+
+    async def unexpected_execution(*args, **kwargs):
+        pytest.fail("orphan retry reached ranking or result persistence")
+
+    monkeypatch.setattr(winner, "_admit", gated_admit)
+    for app in apps:
+        monkeypatch.setattr(app.backend, "rank", unexpected_execution)
+        monkeypatch.setattr(app.backend, "save", unexpected_execution)
+
+    async def competitor(app):
+        with pytest.raises(IdempotencyInProgress):
+            await app.recommend.execute(command)
+        assert not app.backend._executions
+
+    async def run():
+        task = asyncio.create_task(apps[0].recommend.execute(command))
+        tasks = [task]
+        try:
+            await started(entered)
+            assert not task.done()
+            assert winner._execution(command.request_id) is not None
+            assert state(application.backend, command) == dict(status="accepted", failure_code=None,
+                                                              execution_owner=original_owner)
+            tasks.extend(asyncio.create_task(competitor(app)) for app in apps[1:])
+            async with asyncio.timeout(5):
+                await asyncio.gather(*tasks[1:])
+            assert not task.done()
+            assert state(application.backend, command)["status"] == "accepted"
+            release.set()
+            async with asyncio.timeout(5):
+                with pytest.raises(ManagementError) as failure:
+                    await task
+            assert failure.value.status_code == 409
+            assert failure.value.code == "recommendation_interrupted"
+            # Remove only the test gate before terminal reads.
+            monkeypatch.setattr(winner, "_admit", original_admit)
+            for app in apps:
+                with pytest.raises(ManagementError) as terminal:
+                    await app.recommend.execute(command)
+                assert terminal.value.status_code == 409
+                assert terminal.value.code == "recommendation_interrupted"
+                assert not app.backend._executions
+        finally:
+            release.set()
+            try:
+                async with asyncio.timeout(5):
+                    await asyncio.gather(*tasks, return_exceptions=True)
+            finally:
+                await asyncio.gather(*(app.backend.aclose() for app in apps))
+
     asyncio.run(run())
     assert state(application.backend, command) == dict(status="failed", failure_code="execution_interrupted",
                                                       execution_owner=original_owner)
