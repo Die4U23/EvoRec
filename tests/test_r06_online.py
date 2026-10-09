@@ -7,6 +7,7 @@ import json
 import hashlib
 import struct
 from threading import Event
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import httpx
@@ -118,7 +119,8 @@ def test_capture_uses_compact_actual_rows_without_dropping_inactive_members(onli
     assert observed == [True]
 
 
-@pytest.mark.parametrize("damage", ["missing", "order", "index", "unknown", "duplicate"])
+@pytest.mark.parametrize("damage", ["missing", "order", "index", "unknown", "duplicate", "extra",
+                                    "inactive-index"])
 def test_capture_checks_all_ordered_members_before_content_or_admission(online, monkeypatch, damage):
     from evorec.infrastructure import postgres
     app, _, _ = online
@@ -134,6 +136,10 @@ def test_capture_checks_all_ordered_members_before_content_or_admission(online, 
             rows[-2], rows[-1] = rows[-1], rows[-2]
         elif damage == "index":
             rows[-1] = rows[-1]._replace(internal_item_id=99)
+        elif damage == "extra":
+            rows.append(rows[-1])
+        elif damage == "inactive-index":
+            rows[0] = rows[0]._replace(is_active=False, internal_item_id=99)
         else:
             item_id = "unapproved" if damage == "unknown" else rows[0].item_id
             rows[-1] = rows[-1]._replace(item_id=item_id)
@@ -147,6 +153,33 @@ def test_capture_checks_all_ordered_members_before_content_or_admission(online, 
         with app.backend._connect() as connection:
             assert connection.execute("SELECT count(*) AS n FROM recommendation_requests").fetchone()["n"] == 0
     asyncio.run(run())
+
+
+@pytest.mark.parametrize(("expected_ids", "row_data", "matches"), [
+    pytest.param(("a", "b", "c"), (("a", 0, True), ("b", 1, True), ("c", 2, True)), True,
+                 id="valid-full"),
+    pytest.param(("b", "d"), (("b", 0, True), ("d", 1, True)), True, id="valid-subset"),
+    pytest.param((), (), True, id="empty"),
+    pytest.param(("a", "b", "c"), (("a", 0, True), ("b", 1, True)), False, id="missing"),
+    pytest.param(("a", "b", "c"), (("b", 0, True), ("a", 1, True), ("c", 2, True)), False,
+                 id="order"),
+    pytest.param(("a", "b", "c"), (("a", 0, True), ("a", 1, True), ("c", 2, True)), False,
+                 id="duplicate"),
+    pytest.param(("a", "b", "c"), (("a", 0, True), ("unknown", 1, True), ("c", 2, True)),
+                 False, id="unknown"),
+    pytest.param(("a", "b"), (("a", 0, True), ("b", 9, True)), False, id="bad-index"),
+    pytest.param(("a", "b"), (("a", 0, True), ("b", 9, False)), False, id="inactive-bad-index"),
+    pytest.param(("a", "b"), (("a", 0, True), ("b", 1, True), ("c", 2, True)), False,
+                 id="extra"),
+])
+def test_ordered_membership_helper_matches_legacy_predicate(expected_ids, row_data, matches):
+    rows = [SimpleNamespace(item_id=item_id, internal_item_id=internal_id, is_active=is_active)
+            for item_id, internal_id, is_active in row_data]
+    legacy_matches = (tuple(row.item_id for row in rows) == expected_ids
+                      and all(row.internal_item_id == index for index, row in enumerate(rows)))
+
+    assert r06_admission._ordered_membership_matches(rows, expected_ids) is matches
+    assert r06_admission._ordered_membership_matches(rows, expected_ids) is legacy_matches
 
 
 @pytest.mark.parametrize("replacement", [frozenset(), frozenset({"b", "c", "d", "e", "zero"}),
