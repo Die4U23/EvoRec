@@ -69,6 +69,14 @@ def _seal(bundle, identities):
     return catalog_seal(bundle.manifest_sha256, identities)
 
 
+def _ordered_membership_matches(rows, expected_ids):
+    """Check trusted materialized row/ID sequences; inactive members still count."""
+    if len(rows) != len(expected_ids):
+        return False
+    return all(row.item_id == expected_ids[index] and row.internal_item_id == index
+               for index, row in enumerate(rows))
+
+
 def restore_request(bundle, context):
     """Only for server-owned persisted snapshots; not a client authorization API."""
     model = context.model
@@ -119,8 +127,7 @@ def capture_model(connection, runtime, session, catalog, rows):
     if (row is None or row["runtime_kind"] != KIND
             or (row["manifest_sha256"] or "").strip() != bundle.manifest_sha256):
         raise ManagementError("r06_snapshot_changed", "registered model identity differs", 503)
-    if (tuple(row.item_id for row in rows) != bundle.adapter.features.item_ids
-            or any(row.internal_item_id != index for index, row in enumerate(rows))):
+    if not _ordered_membership_matches(rows, bundle.adapter.features.item_ids):
         raise ManagementError("bundle_members_changed", "approved ordered membership changed", 409)
     active_count = 0
     for row in rows:
