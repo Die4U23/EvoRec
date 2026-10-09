@@ -173,6 +173,9 @@ def trace_api(timings, *, gc_events=True):
             (psycopg.Cursor, "fetchone", "fetchone_decode"),
             (psycopg.Cursor, "close", "cursor_close"),
             (psycopg.Connection, "__exit__", "transaction_exit"),
+            # Explicit transaction() commits/rolls back without closing the
+            # lease connection; Connection.__exit__ alone cannot observe it.
+            (psycopg.Transaction, "__exit__", "transaction_context_exit"),
             (psycopg.Connection, "commit", "commit"),
             (psycopg.Connection, "rollback", "rollback"),
             (psycopg.Connection, "close", "close"),

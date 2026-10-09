@@ -51,7 +51,7 @@ from evorec.infrastructure.r06_admission import (
     validate_captured_context,
 )
 from evorec.infrastructure.r06_async import R06CPUQueue, R06RankingPort, _drain
-from evorec.infrastructure.recommendation_execution import RecommendationExecution
+from evorec.infrastructure.recommendation_execution import RecommendationExecution, _AdmissionRequestAppeared
 
 if TYPE_CHECKING:
     from evorec.infrastructure.management import CatalogManager
@@ -341,8 +341,20 @@ class PostgresDemoBackend:
         with self._execution_lock:
             return self._executions.get(request_id)
 
-    def _admit(self, command: RecommendationCommand) -> RequestContext:
-        with self._connect() as connection:
+    def _admit(self, command: RecommendationCommand, *, execution=None) -> RequestContext:
+        if execution is not None and (execution.backend is not self or execution.command != command):
+            raise ManagementError("recommendation_execution_lost", "admission lease belongs to another request", 503)
+        try:
+            return self._admit_transaction(command, execution=execution)
+        except _AdmissionRequestAppeared:
+            # A writer outside the lease protocol may insert after our probe.
+            # The borrowed transaction has rolled back; reconcile on the old
+            # independently owned connection, never commit inside transaction().
+            return self._admit_transaction(command)
+
+    def _admit_transaction(self, command: RecommendationCommand, *, execution=None) -> RequestContext:
+        admission = execution.admission_connection() if execution is not None else self._connect()
+        with admission as connection:
             # Admission only reads session state. Shared readers may capture
             # distinct keys concurrently, but feedback/reset retain FOR UPDATE
             # and cannot change this snapshot until admission commits. The
@@ -370,12 +382,14 @@ class PostgresDemoBackend:
                 (command.request_id,),
             ).fetchone()
             if previous is not None:
+                if execution is not None and connection is execution.connection:
+                    raise _AdmissionRequestAppeared()
                 self._matching_request(previous, command)
                 if previous["status"] == "accepted":
-                    execution = self._execution(command.request_id)
-                    if (previous["execution_owner"] is not None and execution is not None
-                            and previous["execution_owner"] != execution.owner):
-                        execution.assert_held()
+                    registered = self._execution(command.request_id)
+                    if (previous["execution_owner"] is not None and registered is not None
+                            and previous["execution_owner"] != registered.owner):
+                        registered.assert_held()
                         connection.execute(
                             "UPDATE recommendation_requests SET status = 'failed', "
                             "failure_code = 'execution_interrupted', updated_at = clock_timestamp() "
@@ -412,6 +426,8 @@ class PostgresDemoBackend:
                     previous["fallback_reason"],
                     model.model_version if model else None, model.timestamp_ms if model else None,
                 ))
+            if execution is None or self._execution(command.request_id) is not execution:
+                raise ManagementError("recommendation_execution_lost", "fresh admission requires its explicit execution lease", 503)
             if session.history_version != command.expected_history_version:
                 raise HistoryConflict("history changed before admission")
 
@@ -427,17 +443,17 @@ class PostgresDemoBackend:
                 raise RuntimeError("catalog admission is not ready")
             context = self._capture_context(connection, command.request_id, session, control)
             catalog = context.catalog
-            execution = self._execution(command.request_id)
-            if execution is None:
-                raise ManagementError("recommendation_execution_lost", "fresh admission requires an execution lease", 503)
+            if self._execution(command.request_id) is not execution:
+                raise ManagementError("recommendation_execution_lost", "fresh admission execution owner changed", 503)
             execution.assert_held()
-            connection.execute(
+            inserted = connection.execute(
                 """
                 INSERT INTO recommendation_requests (
                     request_id, session_id, session_epoch, history_version,
                     history_snapshot, hidden_snapshot, bundle_id, exclusion_version,
                     requested_strategy, requested_k, model_snapshot, execution_owner, status
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'accepted')
+                ON CONFLICT (request_id) DO NOTHING RETURNING request_id
                 """,
                 (
                     command.request_id, command.session_id, session.epoch,
@@ -447,7 +463,9 @@ class PostgresDemoBackend:
                     Jsonb(encode_model(context.model)) if context.model else None,
                     execution.owner,
                 ),
-            )
+            ).fetchone()
+            if inserted is None:
+                raise _AdmissionRequestAppeared()
         return context
 
     def _mark_failed(self, request_id: UUID) -> None:
