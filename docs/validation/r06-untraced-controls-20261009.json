@@ -1,0 +1,63 @@
+{
+  "kind": "diagnostic_mechanism_validation_not_release_acceptance",
+  "date": "2026-10-09",
+  "implementation_commit": "c31bcdc5230c57b9a4353c764925aabd8d8f5885",
+  "reviewed_code_commit": "e2c9309786b72660e390e1bcc63b110059616beb",
+  "team": {
+    "routing": "user_approved_native_explicit_model_parameters_not_custom_profiles",
+    "recovery": "gpt-6.1-sol",
+    "diagnostic_implementation": "gpt-6-sol",
+    "independent_tests_and_delivery_plan": "gpt-6-luna",
+    "read_only_integration_review": "gpt-6.1-sol",
+    "fresh_read_only_final_review": "gpt-5.6-sol",
+    "excluded": "gpt-6-astra",
+    "main_thread_owns_serial_tests_and_publishing": true,
+    "personal_codex_configuration_changed": false
+  },
+  "changes": {
+    "explicit_untraced_flag": "--untraced --no-gc-events; incompatible with --phase-gate",
+    "server_profile_samples": 0,
+    "missing_server_observations": "null, never successful or zero trace coverage",
+    "client_observation_overhead_remains": true,
+    "cli_checks_raw_client_indices_status_types_and_actual_200_identity": true,
+    "cold_orphan_http_contract": "four requests, original API 2-second deadline and all-409 assertions retained",
+    "controlled_lease_test": "actual PostgreSQL advisory lease, held winner, three in-progress competitors, terminal reconciliation; service fixture 20 seconds, not HTTP regression reproduction",
+    "owned_backends_explicitly_closed": true,
+    "production_src_sql_web_contracts_changed": false
+  },
+  "local_runs": [
+    {"report": "artifacts/tcp-control-first-20261009.xml", "tests": 33, "passed": 28, "failures": 5, "errors": 0, "skipped": 0, "sha256": "f41ce874fdf8926807ad84b2b81ffade036505d125fbdf17de25ccf39d173513", "meaning": "initial dirty development run; legitimate fixture missed required null fields and CLI preguard was absent; not claimed as test-first baseline"},
+    {"report": "artifacts/recovery-controls-20261009.xml", "tests": 24, "passed": 24, "failures": 0, "errors": 0, "skipped": 0, "sha256": "9e0daec7c3327d7ffb668ea098d45d12c4385ea457fadb44dbb4ba734144730f", "meaning": "development recovery module only; cannot explain prior intermittent failure"},
+    {"report": "artifacts/untraced-target-20261009.xml", "tests": 214, "passed": 213, "failures": 1, "errors": 0, "skipped": 0, "sha256": "7ea51b48b6c8d9144e3c55afbcf2cbdd9cf9c38eed4226f9386952b90c2290be", "meaning": "test incorrectly required an optional profile_samples key; corrected to existing default-zero contract, no production child metadata change"},
+    {"report": "artifacts/untraced-control-green-20261009.xml", "tests": 105, "passed": 105, "failures": 0, "errors": 0, "skipped": 0, "sha256": "de002efc7e23dbfcb1857d79c8db37be8ccc29c1156ac01b58eff8d4ba9348fe", "meaning": "bounded controls including real synthetic PostgreSQL/TCP, not full-catalog performance"},
+    {"report": "artifacts/untraced-final-20261009.xml", "tests": 0, "passed": 0, "failures": 0, "errors": 0, "skipped": 0, "sha256": "23e873bd1557e9a60286a5704122397a61f05c07177017ffd26ea59d48e9dd3f", "meaning": "command failed before collection due to misspelled module; exit 1, NOT a passing run"},
+    {"report": "artifacts/untraced-final-corrected-20261009.xml", "source_commit": "c31bcdc5230c57b9a4353c764925aabd8d8f5885", "source_clean_before_and_after": true, "tests": 282, "passed": 282, "failures": 0, "errors": 0, "skipped": 0, "sha256": "36fd4a473584158679d0871650de8450a8dfde2001b8ac01eaf8575957c6f2a5"},
+    {"report": "artifacts/untraced-reviewed-20261009.xml", "source_commit": "e2c9309786b72660e390e1bcc63b110059616beb", "source_clean_before_and_after": true, "tests": 282, "passed": 282, "failures": 0, "errors": 0, "skipped": 0, "sha256": "13839cf27c9f00956df585fb410acd2830de0f621e56547a19996e812bab6f76"}
+  ],
+  "final_local_scope": ["tests/test_r06_tcp_control.py", "tests/test_r06_tcp_profile.py", "tests/test_r06_phase_gate.py", "tests/test_r06_profile.py", "tests/test_r06_reliability.py", "tests/test_recommendation_recovery.py", "tests/test_architecture.py", "tests/test_repository_hygiene.py"],
+  "overlapping_runs_must_not_be_added": true,
+  "review_disposition": [
+    "Fixed missing-field KeyError, duplicate test definitions and missing owned-backend close; each negative report mutation now has a passing positive control.",
+    "Untraced gate validates raw client records. Existing traced gate retains internal profile summary trust; CLI does not accept an external report. It is not claimed as an arbitrary external report verifier. Additional traced defensive validation is deferred, not claimed fixed."
+  ],
+  "cleanup": {
+    "helper": "artifacts/delivery/check-untraced-cleanup-20261009.py",
+    "helper_sha256": "2b9c826276e77468624ed7bfbd1aa5d779ba09d56a13b4affa1eb595e7739723",
+    "exact_owned_schemas_checked": 6,
+    "exact_owned_schemas_remaining": 0,
+    "test_namespace_count": 0,
+    "exact_owned_ports_checked": 7,
+    "owned_listeners_remaining": 0,
+    "protected_port_not_probed": true,
+    "temporary_schema_data_recoverable": false
+  },
+  "preserved": {
+    "primary_checkout_head": "6e44594f55dd180ec4bacce1ed8d19e7bf4aee61",
+    "primary_checkout_clean": true,
+    "env_sha256": "32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267",
+    "business_schema_model_and_port_8000_untouched": true,
+    "pr44_and_pr50_drafts_not_changed": true
+  },
+  "not_done": ["original intermittent orphan failure root cause", "new full-catalog traced/untraced controlled experiment", "full-catalog stable concurrency or SLA", "current-version browser acceptance", "research retraining", "human demo and contribution explanation"],
+  "ci": "New dependent draft PR and exact latest-head push/PR CI are checked after the documentation commit; see the PR record. This local JSON does not predict CI results."
+}
