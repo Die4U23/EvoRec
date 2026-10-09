@@ -583,15 +583,18 @@ def test_concurrent_orphan_retries_share_one_terminal_outcome_without_execution(
         return reply
 
     async def run():
-        replies.extend(await asyncio.gather(*(observed_post(index, app) for index, app in enumerate(apps))))
-        codes = {reply.json()["error"]["code"] for reply in replies}
-        assert all(reply.status_code == 409 for reply in replies), [
-            (reply.status_code, reply.json()["error"]["code"]) for reply in replies]
-        assert "recommendation_interrupted" in codes
-        assert codes <= {"recommendation_interrupted", "recommendation_in_progress"}
-        for app in apps:
-            assert (await post(app, command)).json()["error"]["code"] == "recommendation_interrupted"
-            assert not app.backend._executions
+        try:
+            replies.extend(await asyncio.gather(*(observed_post(index, app) for index, app in enumerate(apps))))
+            codes = {reply.json()["error"]["code"] for reply in replies}
+            assert all(reply.status_code == 409 for reply in replies), [
+                (reply.status_code, reply.json()["error"]["code"]) for reply in replies]
+            assert "recommendation_interrupted" in codes
+            assert codes <= {"recommendation_interrupted", "recommendation_in_progress"}
+            for app in apps:
+                assert (await post(app, command)).json()["error"]["code"] == "recommendation_interrupted"
+                assert not app.backend._executions
+        finally:
+            await asyncio.gather(*(app.backend.aclose() for app in apps))
     try:
         asyncio.run(run())
         assert state(application.backend, command) == dict(status="failed", failure_code="execution_interrupted",
@@ -668,8 +671,11 @@ def test_orphan_retry_with_held_lease_serializes_competitors_before_terminal_rec
                 assert not app.backend._executions
         finally:
             release.set()
-            async with asyncio.timeout(5):
-                await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                async with asyncio.timeout(5):
+                    await asyncio.gather(*tasks, return_exceptions=True)
+            finally:
+                await asyncio.gather(*(app.backend.aclose() for app in apps))
 
     asyncio.run(run())
     assert state(application.backend, command) == dict(status="failed", failure_code="execution_interrupted",
