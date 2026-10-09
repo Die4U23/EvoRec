@@ -3,6 +3,8 @@
 import asyncio
 import gc
 import json
+import math
+from contextvars import ContextVar
 from pathlib import Path
 from threading import Event
 from uuid import UUID, uuid4
@@ -11,6 +13,7 @@ import httpx
 import pytest
 
 from scripts import profile_r06_tcp as profiler
+from scripts import r06_process_trace
 from scripts.r06_process_trace import ConcurrentTimings, query_kind, trace_api
 from scripts.r06_service_lab import R06ServiceLab
 from evorec.infrastructure.r06_async import R06CPUQueue
@@ -54,6 +57,59 @@ def test_concurrent_async_and_to_thread_records_do_not_cross_contaminate():
         assert request["sample"] == index and request["status_code"] == 200+index
         assert [s["stage"] for s in request["stages"]] == [f"worker_{index}"]
     assert "PRIVATE" not in json.dumps(timing.report())
+
+
+def test_staggered_asgi_requests_share_timeline_origin_and_report_by_sample(monkeypatch):
+    clock = ContextVar("diagnostic_test_clock", default=100.0)
+    monkeypatch.setattr(r06_process_trace, "perf_counter", lambda: clock.get())
+    timing = ConcurrentTimings(2)
+
+    async def run():
+        first_entered, release_first = asyncio.Event(), asyncio.Event()
+
+        async def app(request_scope, receive, send):
+            index = int(request_scope["headers"][0][1])
+            if index == 0:
+                first_entered.set()
+                await release_first.wait()
+                clock.set(110.0)
+            else:
+                await first_entered.wait()
+                clock.set(106.0)
+            await send(dict(type="http.response.start", status=200))
+
+        async def send(message):
+            pass
+
+        traced = timing.wrap(app)
+
+        async def invoke(index, now):
+            token = clock.set(now)
+            try:
+                await traced(scope(index), None, send)
+            finally:
+                clock.reset(token)
+
+        first = asyncio.create_task(invoke(0, 101.25))
+        await first_entered.wait()
+        second = asyncio.create_task(invoke(1, 104.5))
+        await second
+        assert not first.done()  # The first and second request overlapped; second completed first.
+        release_first.set()
+        await first
+
+    asyncio.run(run())
+    assert [request["sample"] for request in timing.requests] == [1, 0]
+    report = timing.report()
+    assert [request["sample"] for request in report] == [0, 1]
+    assert [request["asgi_start_offset_seconds"] for request in report] == [1.25, 4.5]
+    assert [request["wall_seconds"] for request in report] == [8.75, 1.5]
+    intervals = [(request["asgi_start_offset_seconds"],
+                  request["asgi_start_offset_seconds"] + request["wall_seconds"])
+                 for request in report]
+    assert intervals == [(1.25, 10.0), (4.5, 6.0)]
+    assert min(intervals[0][1], intervals[1][1]) - max(intervals[0][0], intervals[1][0]) == 1.5
+    assert all("started" not in request for request in report)
 
 
 def test_real_cpu_pool_inherits_trace_and_clears_reused_thread():
@@ -242,7 +298,9 @@ def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(
                               gc_events_enabled=gc_events)
         def __enter__(self):
             self.child_output.mkdir(parents=True)
-            marker(self.child_output, "profile", dict(requests=[dict(sample=i,status_code=504) for i in range(4)],
+            marker(self.child_output, "profile", dict(requests=[dict(sample=i,status_code=504,
+                                                                      asgi_start_offset_seconds=i * .25)
+                                                                 for i in range(4)],
                                                         gc_events_enabled=True))
             return self
         def __exit__(self, *_): self.created = False
@@ -263,6 +321,7 @@ def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(
     else:
         report = profiler.profile(output,"PRIVATE-DB",tmp_path,uuid4(),"b"*64,samples=2)
         assert report["trace_complete"] and report["client_status_matches_server"]
+        assert report["shared_server_timeline_complete"] is True
         assert report["load"]["successful"] == 0 and report["load"]["failures"] == 2
         assert report["load"]["successful_latency"]["p95_ms"] is None
         assert report["gc_events_enabled"] is True
@@ -271,6 +330,57 @@ def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(
         assert report["successful_database_traces_complete"] is None
         assert not report["production_acceptance"] and not report["sla_proven"]
     assert "PRIVATE" not in (output/"observations.json").read_text()
+
+
+@pytest.mark.parametrize("bad_offset", ["missing", "nan", "negative", "bool"])
+def test_profile_marks_incomplete_shared_server_timeline(tmp_path, monkeypatch, bad_offset):
+    monkeypatch.setattr(profiler, "__file__", str(tmp_path / "scripts" / "profile_r06_tcp.py"))
+    monkeypatch.setattr(profiler, "_source", lambda _: "a" * 40)
+    monkeypatch.setattr(profiler, "subprocess_sources", lambda _: {})
+
+    offsets = [0.25, 0.5, 0.75, 1.0]
+    requests = [dict(sample=i, status_code=504, asgi_start_offset_seconds=value)
+                for i, value in enumerate(offsets)]
+    if bad_offset == "missing":
+        requests[1].pop("asgi_start_offset_seconds")
+    elif bad_offset == "nan":
+        requests[1]["asgi_start_offset_seconds"] = float("nan")
+    elif bad_offset == "negative":
+        requests[1]["asgi_start_offset_seconds"] = -0.01
+    else:
+        requests[1]["asgi_start_offset_seconds"] = True
+
+    class Lab:
+        def __init__(self, output, *args, profile_samples, gc_events):
+            assert profile_samples == 4 and gc_events is True
+            self.output, self.child_output, self.created = output, output / "child", True
+            self.ready = dict(url="http://127.0.0.1:1", model_version="approved", item_count=6,
+                              gc_events_enabled=True)
+
+        def __enter__(self):
+            self.child_output.mkdir(parents=True)
+            (self.child_output / "profile.json").write_text(
+                json.dumps(dict(requests=requests, gc_events_enabled=True), allow_nan=True),
+                encoding="utf-8")
+            return self
+
+        def __exit__(self, *_):
+            self.created = False
+
+    class Client:
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *_): pass
+        def post(self, *args, **kwargs): return httpx.Response(201, json={})
+
+    monkeypatch.setattr(profiler, "R06ServiceLab", Lab)
+    monkeypatch.setattr(profiler.httpx, "Client", Client)
+    monkeypatch.setattr(profiler, "sample", lambda url, ready, session, index, phase:
+                        dict(sample=index, phase=phase, status_code=504, elapsed_ms=2000))
+    report = profiler.profile(tmp_path / "artifacts" / "profile", "PRIVATE-DB", tmp_path,
+                              uuid4(), "b" * 64, samples=2)
+    assert report["trace_complete"]
+    assert report["shared_server_timeline_complete"] is False
 
 
 @pytest.mark.parametrize("gc_events", [True, False])
@@ -293,6 +403,9 @@ def test_real_synthetic_package_tcp_trace_is_correlated_and_drained(isolated_dat
     report = json.loads((lab.child_output/"profile.json").read_bytes())
     assert [r["sample"] for r in report["requests"]] == [0,1]
     assert all(r["status_code"] == 200 for r in report["requests"])
+    offsets = [request["asgi_start_offset_seconds"] for request in report["requests"]]
+    assert all(type(value) in (int, float) and math.isfinite(value) and value >= 0 for value in offsets)
+    assert offsets[0] < offsets[1]
     for request in report["requests"]:
         assert {s["stage"] for s in request["stages"]} >= {
             "actual_catalog_read_and_capture", "cpu_queue_wait", "retrieval_and_ranking", "result_write",
@@ -462,13 +575,32 @@ def test_cli_requires_consistent_successful_trace_summaries(
         monkeypatch, tmp_path, count, coverage, identity, coverage_present, identity_present, expected):
     monkeypatch.setenv("EVOREC_DATABASE_URL", "PRIVATE")
     result_data = dict(status="instrumented_diagnostic_completed_not_performance_acceptance", trace_complete=True,
-                       client_status_matches_server=True, successful_database_trace_count=count)
+                       client_status_matches_server=True, successful_database_trace_count=count,
+                       shared_server_timeline_complete=True)
     if coverage_present:
         result_data["successful_database_traces_complete"] = coverage
     if identity_present:
         result_data["successful_identities_valid"] = identity
     monkeypatch.setattr(profiler, "profile", lambda *args, **kwargs: result_data)
     result = profiler.main([str(tmp_path), str(tmp_path), str(uuid4()), "--expected-manifest-sha256", "b" * 64])
+    assert result == expected
+
+
+@pytest.mark.parametrize("timeline_present,timeline,expected", [
+    (True, True, 0), (True, False, 1), (False, None, 1),
+])
+def test_cli_requires_shared_server_timeline_complete(
+        monkeypatch, tmp_path, timeline_present, timeline, expected):
+    monkeypatch.setenv("EVOREC_DATABASE_URL", "PRIVATE")
+    result_data = dict(status="instrumented_diagnostic_completed_not_performance_acceptance",
+                       trace_complete=True, client_status_matches_server=True,
+                       successful_database_trace_count=0,
+                       successful_database_traces_complete=None, successful_identities_valid=None)
+    if timeline_present:
+        result_data["shared_server_timeline_complete"] = timeline
+    monkeypatch.setattr(profiler, "profile", lambda *args, **kwargs: result_data)
+    result = profiler.main([str(tmp_path), str(tmp_path), str(uuid4()),
+                            "--expected-manifest-sha256", "b" * 64])
     assert result == expected
 
 
@@ -480,6 +612,7 @@ def test_cli_defaults_to_gc_events_and_accepts_no_gc_events_flag(monkeypatch, tm
         seen.append(kwargs["gc_events"])
         return dict(status="instrumented_diagnostic_completed_not_performance_acceptance", trace_complete=True,
                     client_status_matches_server=True, gc_events_enabled=kwargs["gc_events"],
+                    shared_server_timeline_complete=True,
                     successful_identities_valid=None, successful_database_trace_count=0,
                     successful_database_traces_complete=None)
 
