@@ -332,7 +332,7 @@ def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(
     assert "PRIVATE" not in (output/"observations.json").read_text()
 
 
-@pytest.mark.parametrize("bad_offset", ["missing", "nan", "negative", "bool"])
+@pytest.mark.parametrize("bad_offset", ["missing", "nan", "infinity", "negative", "bool", "string"])
 def test_profile_marks_incomplete_shared_server_timeline(tmp_path, monkeypatch, bad_offset):
     monkeypatch.setattr(profiler, "__file__", str(tmp_path / "scripts" / "profile_r06_tcp.py"))
     monkeypatch.setattr(profiler, "_source", lambda _: "a" * 40)
@@ -345,8 +345,12 @@ def test_profile_marks_incomplete_shared_server_timeline(tmp_path, monkeypatch, 
         requests[1].pop("asgi_start_offset_seconds")
     elif bad_offset == "nan":
         requests[1]["asgi_start_offset_seconds"] = float("nan")
+    elif bad_offset == "infinity":
+        requests[1]["asgi_start_offset_seconds"] = float("inf")
     elif bad_offset == "negative":
         requests[1]["asgi_start_offset_seconds"] = -0.01
+    elif bad_offset == "string":
+        requests[1]["asgi_start_offset_seconds"] = "0.5"
     else:
         requests[1]["asgi_start_offset_seconds"] = True
 
@@ -377,6 +381,13 @@ def test_profile_marks_incomplete_shared_server_timeline(tmp_path, monkeypatch, 
     monkeypatch.setattr(profiler.httpx, "Client", Client)
     monkeypatch.setattr(profiler, "sample", lambda url, ready, session, index, phase:
                         dict(sample=index, phase=phase, status_code=504, elapsed_ms=2000))
+    if bad_offset in {"nan", "infinity"}:
+        # Preserve the existing archive's strict JSON rejection; do not coerce
+        # or discard a non-finite observation to make the report look valid.
+        with pytest.raises(ValueError, match="JSON compliant"):
+            profiler.profile(tmp_path / "artifacts" / "profile", "PRIVATE-DB", tmp_path,
+                             uuid4(), "b" * 64, samples=2)
+        return
     report = profiler.profile(tmp_path / "artifacts" / "profile", "PRIVATE-DB", tmp_path,
                               uuid4(), "b" * 64, samples=2)
     assert report["trace_complete"]
@@ -588,6 +599,7 @@ def test_cli_requires_consistent_successful_trace_summaries(
 
 @pytest.mark.parametrize("timeline_present,timeline,expected", [
     (True, True, 0), (True, False, 1), (False, None, 1),
+    (True, 1, 1), (True, "true", 1),
 ])
 def test_cli_requires_shared_server_timeline_complete(
         monkeypatch, tmp_path, timeline_present, timeline, expected):
