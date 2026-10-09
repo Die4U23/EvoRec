@@ -432,11 +432,17 @@ def test_real_synthetic_package_tcp_trace_is_correlated_and_drained(isolated_dat
     for request in report["requests"]:
         assert {s["stage"] for s in request["stages"]} >= {
             "actual_catalog_read_and_capture", "cpu_queue_wait", "retrieval_and_ranking", "result_write",
-            "publication_recovery_database_connect", "database_admission_database_connect",
+            "publication_recovery_database_connect", "execution_lease_and_admission_database_connect",
+            "execution_lease_and_admission_database_execute_execution_lock",
             "database_admission_database_execute_session_snapshot_lock",
+            "database_admission_database_execute_accepted_insert",
+            "database_admission_database_transaction_context_exit",
             "actual_catalog_read_and_capture_database_execute_actual_catalog_rows",
             "actual_catalog_read_and_capture_database_fetchall_decode",
-            "result_write_database_commit", "result_write_database_close"}
+            "result_write_database_connect", "result_write_database_commit", "result_write_database_close",
+            "execution_lease_close_database_close"}
+        assert "database_admission_database_connect" not in {s["stage"] for s in request["stages"]}
+        assert profiler._fresh_database_trace_complete(request)
     assert report["database_driver_version"]
     assert report["gc_events_enabled"] is gc_events
     assert report["phase_gate_enabled"] is phase_gate

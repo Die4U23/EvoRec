@@ -62,6 +62,7 @@ def valid_untraced_report(statuses=(504, 504, 504, 504), identities=None):
         database_execute_includes_driver_lock_wait_network_and_result_receive=None,
         database_fetch_includes_driver_decode_row_factory_and_python_materialization=None,
         database_transaction_exit_overlaps_commit_and_close=None,
+        database_borrowed_transaction_context_exit_without_close=None,
         pure_sql_execution_or_exact_database_lock_wait_measured=None,
         timings_overlap_do_not_sum=None, instrumentation_overhead_not_subtracted=True,
         gc_attribution_not_exclusive=None,
@@ -444,6 +445,7 @@ UNTRACED_SERVER_UNKNOWN_FIELDS = (
     "database_execute_includes_driver_lock_wait_network_and_result_receive",
     "database_fetch_includes_driver_decode_row_factory_and_python_materialization",
     "database_transaction_exit_overlaps_commit_and_close",
+    "database_borrowed_transaction_context_exit_without_close",
     "pure_sql_execution_or_exact_database_lock_wait_measured",
     "timings_overlap_do_not_sum", "gc_attribution_not_exclusive",
 )

@@ -59,6 +59,34 @@ def _valid_server_start_offset(request):
             and (type(offset) is int or math.isfinite(offset)))
 
 
+def _fresh_database_trace_complete(request):
+    """Required observed driver boundaries for this probe's unique fresh keys.
+
+    transaction_exit denotes owned Connection.__exit__ (commit and close).
+    transaction_context_exit is the borrowed transaction's commit/rollback
+    boundary and does not close its lease; neither is pure SQL timing.
+    """
+    if (type(request) is not dict or "error_type" not in request or request["error_type"] is not None
+            or type(request.get("stages")) is not list):
+        return False
+    required = {
+        "publication_recovery_database_connect",
+        "execution_lease_and_admission_database_connect",
+        "execution_lease_and_admission_database_execute_execution_lock",
+        "database_admission_database_execute_session_snapshot_lock",
+        "database_admission_database_execute_accepted_insert",
+        "database_admission_database_transaction_context_exit",
+        "actual_catalog_read_and_capture_database_execute_actual_catalog_rows",
+        "actual_catalog_read_and_capture_database_fetchall_decode",
+        "result_write_database_connect", "result_write_database_commit", "result_write_database_close",
+        "execution_lease_close_database_close",
+    }
+    observed = {stage.get("stage") for stage in request["stages"]
+                if type(stage) is dict and "error_type" in stage and stage["error_type"] is None
+                and type(stage.get("stage")) is str}
+    return required <= observed
+
+
 def profile(output, database_url, root, identity, digest, *, samples=24, concurrency=2, gc_events=True,
             phase_gate=False, trace=True):
     if (type(samples) is not int or not 2 <= samples <= 120
@@ -128,6 +156,7 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
                       database_execute_includes_driver_lock_wait_network_and_result_receive=None,
                       database_fetch_includes_driver_decode_row_factory_and_python_materialization=None,
                       database_transaction_exit_overlaps_commit_and_close=None,
+                      database_borrowed_transaction_context_exit_without_close=None,
                       pure_sql_execution_or_exact_database_lock_wait_measured=None,
                       api_deadline_seconds=2.0, owned_schema_removed=True, automatic_retries=0,
                       timings_overlap_do_not_sum=None, instrumentation_overhead_not_subtracted=True,
@@ -146,13 +175,6 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
         _valid_server_start_offset(request) for request in server)
     indices = {record["sample"] for record in server}
     successful_server_requests = [r for r in server if r.get("status_code") == 200]
-    required_database_stages = {
-        "publication_recovery_database_connect", "database_admission_database_connect",
-        "database_admission_database_execute_session_snapshot_lock",
-        "actual_catalog_read_and_capture_database_execute_actual_catalog_rows",
-        "actual_catalog_read_and_capture_database_fetchall_decode",
-        "result_write_database_commit", "result_write_database_close",
-    }
     result.update(status="instrumented_diagnostic_completed_not_performance_acceptance",
                   source_commit=commit, source_sha256=hashes, requests=records, server_requests=server,
                   client_observations_complete=client_observations_complete,
@@ -172,12 +194,13 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
     result.update(database_driver_version=server_trace.get("database_driver_version"),
                   successful_database_trace_count=len(successful_server_requests),
                   successful_database_traces_complete=(
-                      all(required_database_stages <= {s["stage"] for s in r.get("stages", [])}
-                          for r in successful_server_requests) if successful_server_requests else None),
+                      all(_fresh_database_trace_complete(r) for r in successful_server_requests)
+                      if successful_server_requests else None),
                   database_driver_operations_traced=True,
                   database_execute_includes_driver_lock_wait_network_and_result_receive=True,
                   database_fetch_includes_driver_decode_row_factory_and_python_materialization=True,
                   database_transaction_exit_overlaps_commit_and_close=True,
+                  database_borrowed_transaction_context_exit_without_close=True,
                   pure_sql_execution_or_exact_database_lock_wait_measured=False)
     marker(lab.output, "profile", result)
     return result
@@ -240,6 +263,7 @@ def main(argv=None):
             "database_execute_includes_driver_lock_wait_network_and_result_receive",
             "database_fetch_includes_driver_decode_row_factory_and_python_materialization",
             "database_transaction_exit_overlaps_commit_and_close",
+            "database_borrowed_transaction_context_exit_without_close",
             "pure_sql_execution_or_exact_database_lock_wait_measured",
             "timings_overlap_do_not_sum", "gc_attribution_not_exclusive",
         )

@@ -47,5 +47,19 @@
   "cleanup": {"exact_owned_schema_checked": 1, "exact_owned_schema_remaining": 0, "test_namespace_count_after_regression_and_smoke": 0, "exact_owned_port_checked": 1, "owned_listeners_remaining": 0, "temporary_schema_data_recoverable": false, "protected_8000_not_probed": true},
   "preserved": {"primary_checkout_clean": true, "primary_head": "6e44594f55dd180ec4bacce1ed8d19e7bf4aee61", "env_sha256": "32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267", "business_database_and_model_not_published_or_migrated": true},
   "unresolved": ["prior 3/32 full-catalog timeouts", "original intermittent orphan failure cause", "stable concurrency and SLA", "current browser acceptance", "draft PR dependency-chain merge"],
-  "delivery_checks": "After documentation commit, verify contracts/index and latest-head push/pull_request CI separately in the PR record; previous green checks are not substituted. No merge performed."
+  "ci_repair": {
+    "failed_head": "7d26220dd749f6fd738d40fa64172a2dd36c2ec0",
+    "failed_runs": [
+      {"run_id": 37940875337, "event": "push", "service": "failure", "accelerated": "success", "log": "artifacts/delivery/fresh-admission-ci-failed-37940875337.log", "sha256": "b8cefff0a9b205fb3b567b05e7d47b9616d6889a56e7c5837745496e2e33be79"},
+      {"run_id": 37940882943, "event": "pull_request", "service": "failure", "accelerated": "success", "log": "artifacts/delivery/fresh-admission-ci-failed-37940882943.log", "sha256": "c70b942c21fecda7d4c72f5c43631dea98a90bef764b9c449c7258c5239e461c"}
+    ],
+    "each_service_failed_cases": "Four GC/phase-gate combinations of test_real_synthetic_package_tcp_trace_is_correlated_and_drained; HTTP replies were 200, but the required old database_admission_database_connect event no longer occurs.",
+    "repair": "Observe actual psycopg.Transaction.__exit__ under a distinct transaction_context_exit label (commit or rollback, without closing lease); replace obsolete admission-connect requirement with real lease connect/lock, accepted insert, borrowed exit, independent result connect/commit/close, and final lease close. Require explicit known error-free stage/request metadata. New untraced field stays null and forged values fail CLI.",
+    "does_not_fake_a_connect_or_commit_event": true,
+    "initial_repair_run": {"report": "artifacts/fresh-admission-trace-fix-20261009.xml", "tests": 217, "passed": 217, "failures": 0, "errors": 0, "skipped": 0, "sha256": "c4dd5b86e7714356c7f810c31b2424fb27ae32d878ae2efcf9b93e47ba7322a4", "source": "dirty diagnostic repair, before two owned-lookalike negative cases added"},
+    "independent_review": "GPT-6 Sol read-only diagnosis; GPT-6 Luna independent tests; GPT-6.1 Sol fresh repaired-trace quality/performance/reuse review, no actionable findings; main implements and serially validates.",
+    "all_81_production_source_hashes_match_original_full_smoke": true,
+    "approved_full_smoke_not_rerun": "Original e692a2b report retained with its exact source; no second full-catalog run or new API speedup claim."
+  },
+  "delivery_checks": "After CI diagnostic repair, verify clean targeted regression, contracts/index and latest-head push/pull_request CI separately in the PR record; old failed runs are preserved and previous green checks are not substituted. No merge performed."
 }
