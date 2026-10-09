@@ -1,4 +1,4 @@
-"""Bounded instrumented real TCP diagnostic. Never a performance acceptance/SLA."""
+"""Bounded real TCP diagnostic. Never a performance acceptance/SLA."""
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -60,7 +60,7 @@ def _valid_server_start_offset(request):
 
 
 def profile(output, database_url, root, identity, digest, *, samples=24, concurrency=2, gc_events=True,
-            phase_gate=False):
+            phase_gate=False, trace=True):
     if (type(samples) is not int or not 2 <= samples <= 120
             or type(concurrency) is not int or not 1 <= concurrency <= 8):
         raise ValueError("samples 2..120 and concurrency 1..8 required")
@@ -68,13 +68,22 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
         raise ValueError("gc_events must be a bool")
     if type(phase_gate) is not bool:
         raise ValueError("phase_gate must be a bool")
+    if type(trace) is not bool:
+        raise ValueError("trace must be a bool")
+    if not trace and (gc_events or phase_gate):
+        raise ValueError("untraced diagnostics require gc_events=False and phase_gate=False")
     project = Path(__file__).resolve().parents[1]
     commit, hashes = _source(project), subprocess_sources(project)
-    lab = R06ServiceLab(output, database_url, root, identity, digest, profile_samples=samples+2,
+    lab = R06ServiceLab(output, database_url, root, identity, digest, profile_samples=samples+2 if trace else 0,
                         gc_events=gc_events, phase_gate=phase_gate)
     records, result = [], None
     try:
         with lab:
+            if not trace and (lab.ready.get("gc_events_enabled") is not False
+                              or lab.ready.get("phase_gate_enabled") is not False
+                              or type(lab.ready.get("profile_samples", 0)) is not int
+                              or lab.ready.get("profile_samples", 0) != 0):
+                raise ValueError("owned API untraced settings changed")
             with httpx.Client(base_url=lab.ready["url"], timeout=10, trust_env=False) as client:
                 response = client.post("/api/v1/sessions", json={"profile_id": "sample"})
                 if response.status_code != 201:
@@ -94,19 +103,48 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
     finally:
         if lab.output.exists():
             marker(lab.output, "observations", dict(source_commit=commit, requests=records,
-                   status="instrumented_observations_only", owned_schema_removed=not lab.created))
+                   status="instrumented_observations_only" if trace else "uninstrumented_observations_only",
+                   owned_schema_removed=not lab.created))
     if _source(project) != commit or subprocess_sources(project) != hashes:
         raise ValueError("source changed during diagnostic")
-    trace = json.loads((lab.child_output / "profile.json").read_bytes())
-    if trace.get("gc_events_enabled") is not gc_events:
+    client_indices = [record.get("sample") for record in records]
+    client_observations_complete = (len(records) == samples+2
+                                    and all(type(index) is int for index in client_indices)
+                                    and set(client_indices) == set(range(samples+2)))
+    successful_client_requests = [record for record in records if record.get("status_code") == 200]
+    identities_valid = (all(record["response_identity_valid"] is True
+                            for record in successful_client_requests) if successful_client_requests else None)
+    if not trace:
+        result.update(status="uninstrumented_diagnostic_completed_not_performance_acceptance",
+                      source_commit=commit, source_sha256=hashes, requests=records,
+                      client_observations_complete=client_observations_complete,
+                      successful_identities_valid=identities_valid,
+                      trace_enabled=False, server_instrumentation_enabled=False,
+                      client_phase_timing_enabled=True, client_observation_overhead_not_subtracted=True,
+                      server_requests=None, trace_complete=None, shared_server_timeline_complete=None,
+                      client_status_matches_server=None, successful_database_trace_count=None,
+                      successful_database_traces_complete=None, database_driver_version=None,
+                      database_driver_operations_traced=False,
+                      database_execute_includes_driver_lock_wait_network_and_result_receive=None,
+                      database_fetch_includes_driver_decode_row_factory_and_python_materialization=None,
+                      database_transaction_exit_overlaps_commit_and_close=None,
+                      pure_sql_execution_or_exact_database_lock_wait_measured=None,
+                      api_deadline_seconds=2.0, owned_schema_removed=True, automatic_retries=0,
+                      timings_overlap_do_not_sum=None, instrumentation_overhead_not_subtracted=True,
+                      gc_events_enabled=False, gc_attribution_not_exclusive=None,
+                      phase_gate_enabled=False, diagnostic_intervention_changes_scheduling=False,
+                      production_acceptance=False, sla_proven=False)
+        marker(lab.output, "profile", result)
+        return result
+    server_trace = json.loads((lab.child_output / "profile.json").read_bytes())
+    if server_trace.get("gc_events_enabled") is not gc_events:
         raise ValueError("owned API GC event setting changed")
-    if trace.get("phase_gate_enabled") is not phase_gate:
+    if server_trace.get("phase_gate_enabled") is not phase_gate:
         raise ValueError("owned API phase_gate setting changed")
-    server = trace["requests"]
+    server = server_trace["requests"]
     shared_server_timeline_complete = bool(server) and all(
         _valid_server_start_offset(request) for request in server)
     indices = {record["sample"] for record in server}
-    successful_client_requests = [r for r in records if r.get("status_code") == 200]
     successful_server_requests = [r for r in server if r.get("status_code") == 200]
     required_database_stages = {
         "publication_recovery_database_connect", "database_admission_database_connect",
@@ -117,19 +155,21 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
     }
     result.update(status="instrumented_diagnostic_completed_not_performance_acceptance",
                   source_commit=commit, source_sha256=hashes, requests=records, server_requests=server,
+                  client_observations_complete=client_observations_complete,
+                  trace_enabled=True, server_instrumentation_enabled=True,
+                  client_phase_timing_enabled=True, client_observation_overhead_not_subtracted=True,
                   trace_complete=len(server) == samples+2 and indices == set(range(samples+2)),
                   shared_server_timeline_complete=shared_server_timeline_complete,
                   client_status_matches_server=all(next((s["status_code"] for s in server
                         if s["sample"] == c["sample"]), None) == c["status_code"] for c in records),
-                  successful_identities_valid=(all(c["response_identity_valid"] is True
-                        for c in successful_client_requests) if successful_client_requests else None),
+                  successful_identities_valid=identities_valid,
                   api_deadline_seconds=2.0, owned_schema_removed=True, automatic_retries=0,
                   timings_overlap_do_not_sum=True, instrumentation_overhead_not_subtracted=True,
                   gc_events_enabled=gc_events, gc_attribution_not_exclusive=True,
                   phase_gate_enabled=phase_gate,
                   diagnostic_intervention_changes_scheduling=phase_gate,
                   production_acceptance=False, sla_proven=False)
-    result.update(database_driver_version=trace.get("database_driver_version"),
+    result.update(database_driver_version=server_trace.get("database_driver_version"),
                   successful_database_trace_count=len(successful_server_requests),
                   successful_database_traces_complete=(
                       all(required_database_stages <= {s["stage"] for s in r.get("stages", [])}
@@ -155,20 +195,71 @@ def main(argv=None):
                         help="omit garbage-collection callback observations")
     parser.add_argument("--phase-gate", action="store_true",
                         help="diagnostic intervention, not a production optimization or SLA test")
+    parser.add_argument("--untraced", dest="trace", action="store_false",
+                        help="disable server tracing; requires --no-gc-events and no --phase-gate")
     parser.set_defaults(gc_events=True)
     args = parser.parse_args(argv)
+    if args.trace is False and (args.gc_events is not False or args.phase_gate is not False):
+        print(json.dumps(dict(status="failed", error_type="ValueError")))
+        return 1
     try:
         result = profile(args.output, os.environ["EVOREC_DATABASE_URL"], args.managed_root, args.bundle_id,
-                         args.expected_manifest_sha256, samples=args.samples, concurrency=args.concurrency,
-                         gc_events=args.gc_events, phase_gate=args.phase_gate)
+                          args.expected_manifest_sha256, samples=args.samples, concurrency=args.concurrency,
+                          gc_events=args.gc_events, phase_gate=args.phase_gate, trace=args.trace)
     except Exception as error:
         print(json.dumps(dict(status="failed", error_type=type(error).__name__)))
         return 1
     success_count = result.get("successful_database_trace_count")
     coverage = result.get("successful_database_traces_complete")
     identities_valid = result.get("successful_identities_valid")
-    print(json.dumps(dict(status=result["status"], output=str(args.output), trace_complete=result["trace_complete"],
-                          successful_database_trace_count=success_count)))
+    print(json.dumps(dict(status=result.get("status"), output=str(args.output), trace_complete=result.get("trace_complete"),
+                           successful_database_trace_count=success_count)))
+    if not args.trace:
+        client_records = result.get("requests")
+        expected_indices = set(range(args.samples+2))
+        client_rows_valid = (type(client_records) is list
+                             and len(client_records) == args.samples+2
+                             and all(type(record) is dict and type(record.get("sample")) is int
+                                     and "status_code" in record
+                                     and ((type(record["status_code"]) is int
+                                           and 100 <= record["status_code"] <= 599
+                                           and record.get("transport_error") is not True)
+                                          or (record["status_code"] is None
+                                              and record.get("transport_error") is True))
+                                     for record in client_records)
+                             and {record["sample"] for record in client_records} == expected_indices)
+        client_successes = (sum(record["status_code"] == 200 for record in client_records)
+                            if client_rows_valid else None)
+        successful_rows_valid = (client_rows_valid and all(
+            record.get("response_identity_valid") is True
+            for record in client_records if record["status_code"] == 200))
+        unknown_server_fields = (
+            "server_requests", "trace_complete", "shared_server_timeline_complete",
+            "client_status_matches_server", "successful_database_trace_count",
+            "successful_database_traces_complete", "database_driver_version",
+            "database_execute_includes_driver_lock_wait_network_and_result_receive",
+            "database_fetch_includes_driver_decode_row_factory_and_python_materialization",
+            "database_transaction_exit_overlaps_commit_and_close",
+            "pure_sql_execution_or_exact_database_lock_wait_measured",
+            "timings_overlap_do_not_sum", "gc_attribution_not_exclusive",
+        )
+        untraced_gate = (result.get("status") == "uninstrumented_diagnostic_completed_not_performance_acceptance"
+                         and result.get("trace_enabled") is False
+                         and result.get("server_instrumentation_enabled") is False
+                         and result.get("client_phase_timing_enabled") is True
+                         and result.get("client_observations_complete") is True
+                         and client_rows_valid and successful_rows_valid
+                         and result.get("owned_schema_removed") is True
+                         and result.get("gc_events_enabled") is False
+                         and result.get("phase_gate_enabled") is False
+                         and result.get("database_driver_operations_traced") is False
+                         and all(field in result and result[field] is None for field in unknown_server_fields)
+                         and ((client_successes == 0 and identities_valid is None)
+                              or (client_successes is not None and client_successes > 0
+                                  and identities_valid is True))
+                         and result.get("production_acceptance") is False
+                         and result.get("sla_proven") is False)
+        return 0 if untraced_gate else 1
     database_trace_gate = ("successful_database_traces_complete" in result
                            and type(success_count) is int and success_count >= 0
                            and ((success_count == 0 and coverage is None)
@@ -176,7 +267,8 @@ def main(argv=None):
     identity_gate = ("successful_identities_valid" in result
                      and ((success_count == 0 and identities_valid is None)
                           or (type(success_count) is int and success_count > 0 and identities_valid is True)))
-    return 0 if (result["trace_complete"] and result["client_status_matches_server"]
+    return 0 if (result.get("status") == "instrumented_diagnostic_completed_not_performance_acceptance"
+                  and result.get("trace_complete") and result.get("client_status_matches_server")
                  and result.get("shared_server_timeline_complete") is True
                  and identity_gate and database_trace_gate) else 1
 
