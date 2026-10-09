@@ -244,6 +244,27 @@ def test_ineligible_row_arithmetic_failure_still_fails_closed(tmp_path):
     assert error.value.code == "backend_arithmetic"
 
 
+@pytest.mark.parametrize("count", [199, 200, 201, 450])
+@pytest.mark.parametrize("cutoff", [1., 2**-149])
+def test_exact_cutoff_neighbours_and_199_strictly_better_items(tmp_path, count, cutoff):
+    _, _, f = _fixture(tmp_path)
+    ids = tuple(f"cutoff{i:05}" for i in range(count))
+    values = np.full(count, cutoff, dtype="<f4")
+    values[:199] = np.nextafter(np.float32(cutoff), np.float32(float("inf")))
+    vectors = values.tobytes()
+    f = replace(f, dimension=1, item_ids=ids,
+                _metadata=tuple(replace(f._metadata[0], first_seen_ms=0) for _ in ids),
+                _vectors=vectors, _present=bytes([1] * count))
+    stream = list(kernel.numpy_scanner()(f, (1.,), set(), 11))
+    expected = heapq.nsmallest(200, [(-_content_score((1.,), (float(v),)), i)
+                                   for i, v in enumerate(values)])
+    assert len(stream) == min(count, 200)
+    actual = sorted(stream)
+    assert actual == expected
+    assert [struct.pack("<f", -score) for score, _ in actual] == [
+        struct.pack("<f", -score) for score, _ in expected]
+
+
 def test_version_and_arithmetic_drift_fail_closed(tmp_path, monkeypatch):
     root, _, f = _fixture(tmp_path)
     with monkeypatch.context() as patch:
