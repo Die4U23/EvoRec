@@ -33,15 +33,18 @@ def test_small_report_preserves_order_scope_and_separate_allocation_pass(monkeyp
     assert all(record["elapsed_seconds"] >= 0 for record in report["timings"])
     assert report["kind"] == "synthetic_membership_predicate_not_database_or_api"
     assert report["source_commit"] == "synthetic-source"
+    assert report["source_sha256"] == {"synthetic": "hash"}
     assert report["automatic_retries"] == 0 and report["gc_policy_changed"] is False
     assert not probe.tracemalloc.is_tracing()
     json.dumps(report)
 
 
-def test_source_change_rejects_report(monkeypatch):
-    commits = iter(["before", "after"])
+@pytest.mark.parametrize("change", ["commit", "hashes"])
+def test_source_change_rejects_report(monkeypatch, change):
+    commits = iter(["before", "after" if change == "commit" else "before"])
+    hashes = iter([{"source": "before"}, {"source": "after"}])
     monkeypatch.setattr(probe, "_source", lambda *_: next(commits))
-    monkeypatch.setattr(probe, "subprocess_sources", lambda *_: {})
+    monkeypatch.setattr(probe, "subprocess_sources", lambda *_: next(hashes))
     with pytest.raises(ValueError, match="source changed"):
         probe.profile(items=3, blocks=1)
 

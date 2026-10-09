@@ -70,6 +70,7 @@ def _seal(bundle, identities):
 
 
 def _ordered_membership_matches(rows, expected_ids):
+    """Check trusted materialized row/ID sequences; inactive members still count."""
     if len(rows) != len(expected_ids):
         return False
     return all(row.item_id == expected_ids[index] and row.internal_item_id == index
