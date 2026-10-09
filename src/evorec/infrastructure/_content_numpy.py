@@ -60,6 +60,16 @@ def numpy_scanner():
                 if not eligible:
                     continue
                 scores = _scores(np, vectors[start:stop], context)
+                if len(eligible) > 200:
+                    indices = np.asarray(eligible, dtype=np.intp)
+                    keys = -scores[indices - start]
+                    cutoff = np.partition(keys, 199)[199]
+                    better = np.flatnonzero(keys < cutoff)
+                    # Eligible indices are ascending, so cutoff ties take the first global indices, as heap ordering does.
+                    ties = np.flatnonzero(keys == cutoff)[:200 - len(better)]
+                    selected = np.concatenate((better, ties))
+                    eligible = indices[selected].tolist()
+                    del indices, keys, cutoff, better, ties, selected
                 for index in eligible:
                     yield -float(scores[index - start]), index
                 # Release the block before allocating the next product matrix.

@@ -118,6 +118,153 @@ def test_chunk_boundary_filters_ties_and_readonly_feature_views(tmp_path, monkey
     assert f._vectors == vectors
 
 
+@pytest.mark.parametrize("tie_bulk", [True, False], ids=["tie-cutoff", "random-cutoff"])
+def test_each_block_emits_exact_top200_and_global_order_matches_scalar(tmp_path, tie_bulk):
+    _, _, f = _fixture(tmp_path)
+    dimension = 4
+    count = kernel.BLOCK_ITEMS * 3 + 19
+    ids = tuple(f"item{i:05}" for i in range(count))
+    metadata = [replace(f._metadata[0], first_seen_ms=0) for _ in range(count)]
+    present = bytearray([1] * count)
+    rng = np.random.default_rng(2806)
+    bounds = (-.05, .05) if tie_bulk else (-1., 1.)
+    matrix = rng.uniform(*bounds, (count, dimension)).astype("<f4")
+    tiny = np.float32(2**-149)
+    for block_start in range(0, count, kernel.BLOCK_ITEMS):
+        block_stop = min(block_start + kernel.BLOCK_ITEMS, count)
+        if tie_bulk:
+            tied_stop = min(block_start + 240, block_stop)
+            matrix[block_start:tied_stop] = np.asarray([1., 0., 0., 0.], dtype="<f4")
+            # These remain tied at score 1 while retaining signed-zero/subnormal inputs.
+            matrix[block_start] = np.asarray([1., -0., tiny, 0.], dtype="<f4")
+            matrix[block_start + 1] = np.asarray([1., 0., -0., tiny], dtype="<f4")
+        if block_start + 303 < block_stop:
+            matrix[block_start + 300] = (tiny, 0., 0., 0.)
+            matrix[block_start + 301] = (-0., -0., -0., -0.)
+            matrix[block_start + 302] = (-tiny, 0., 0., 0.)
+            matrix[block_start + 303] = (np.float32(2**-126), -np.float32(2**-126), 0., 0.)
+    equality_index, missing_index, seen_index, subset_index = 4, 5, 6, 7
+    metadata[equality_index] = replace(metadata[equality_index], first_seen_ms=11)
+    present[missing_index] = 0
+    vectors = matrix.tobytes()
+    f = replace(f, dimension=dimension, item_ids=ids, _metadata=tuple(metadata),
+                _vectors=vectors, _present=bytes(present))
+    context = (1., 1., 1., 1.)
+    seen = {ids[seen_index]}
+    eligible = frozenset(ids[i] for i in range(count) if i % 113 != 0 and i != subset_index)
+    scanner = kernel.numpy_scanner()
+    stream = list(scanner(f, context, seen, 11, eligible_items=eligible))
+
+    emitted_per_block = {}
+    for negative_score, index in stream:
+        block = index // kernel.BLOCK_ITEMS
+        emitted_per_block[block] = emitted_per_block.get(block, 0) + 1
+        row = struct.unpack_from(f"<{dimension}f", vectors, index * dimension * 4)
+        scalar_score = _content_score(context, row)
+        assert struct.pack("<f", -negative_score) == struct.pack("<f", scalar_score)
+    assert emitted_per_block
+    assert all(emitted <= 200 for emitted in emitted_per_block.values())
+
+    candidates = []
+    for index in range(count):
+        if (not present[index] or metadata[index].first_seen_ms >= 11 or ids[index] in seen
+                or ids[index] not in eligible):
+            continue
+        row = struct.unpack_from(f"<{dimension}f", vectors, index * dimension * 4)
+        candidates.append((-_content_score(context, row), index))
+    from scripts.benchmark_r06_retrieval import _full_numpy_scan
+    reference_stream = list(_full_numpy_scan(f, context, seen, 11, eligible_items=eligible))
+    assert reference_stream == candidates
+    assert [struct.pack("<f", -score) for score, _ in reference_stream] == [
+        struct.pack("<f", -score) for score, _ in candidates]
+    expected = heapq.nsmallest(200, candidates)
+    actual = heapq.nsmallest(200, stream)
+    assert [index for _, index in actual] == [index for _, index in expected]
+    assert [struct.pack("<f", -score) for score, _ in actual] == [
+        struct.pack("<f", -score) for score, _ in expected]
+    if tie_bulk:
+        # More than 200 eligible equal-score items in each full block exercise
+        # deterministic index ordering at both local and global cutoffs.
+        for block in range(3):
+            assert sum(1 for score, index in candidates
+                       if score == -1. and index // kernel.BLOCK_ITEMS == block) > 200
+
+    special = {ids[kernel.BLOCK_ITEMS + offset]
+               for offset in (300, 301, 302, 303)}
+    selective = list(scanner(f, context, set(), 11, eligible_items=special))
+    assert {index for _, index in selective} == {kernel.BLOCK_ITEMS + offset for offset in (300, 301, 302, 303)}
+    for negative_score, index in selective:
+        row = struct.unpack_from(f"<{dimension}f", vectors, index * dimension * 4)
+        assert struct.pack("<f", -negative_score) == struct.pack("<f", _content_score(context, row))
+    assert list(scanner(f, context, set(), 11, eligible_items=frozenset())) == []
+    assert isinstance(f._vectors, bytes) and f._vectors == vectors
+
+
+@pytest.mark.parametrize("sparse", [False, True], ids=["pruned", "sparse"])
+def test_cross_block_zero_ties_keep_stable_index_order(tmp_path, sparse):
+    _, _, f = _fixture(tmp_path)
+    dimension = 3
+    count = kernel.BLOCK_ITEMS * 2 + 17
+    ids = tuple(f"zero{i:05}" for i in range(count))
+    metadata = tuple(replace(f._metadata[0], first_seen_ms=0) for _ in range(count))
+    matrix = np.zeros((count, dimension), dtype="<f4")
+    matrix[1::2] = np.asarray([-0., 0., -0.], dtype="<f4")
+    matrix[::2] = np.asarray([0., -0., 0.], dtype="<f4")
+    vectors = matrix.tobytes()
+    f = replace(f, dimension=dimension, item_ids=ids, _metadata=metadata,
+                _vectors=vectors, _present=bytes([1] * count))
+    selected_indices = ((*range(150), *range(kernel.BLOCK_ITEMS, kernel.BLOCK_ITEMS + 100))
+                        if sparse else tuple(range(count)))
+    eligible = frozenset(ids[index] for index in selected_indices)
+    stream = list(kernel.numpy_scanner()(f, (1., 1., 1.), set(), 11, eligible_items=eligible))
+    per_block = {}
+    for negative_score, index in stream:
+        per_block[index // kernel.BLOCK_ITEMS] = per_block.get(index // kernel.BLOCK_ITEMS, 0) + 1
+        assert struct.pack("<f", -negative_score) == struct.pack("<f", 0.)
+    assert all(size <= 200 for size in per_block.values())
+    actual = heapq.nsmallest(200, stream)
+    assert [index for _, index in actual] == list(selected_indices)[:200]
+    assert isinstance(f._vectors, bytes) and f._vectors == vectors
+
+
+def test_ineligible_row_arithmetic_failure_still_fails_closed(tmp_path):
+    _, _, f = _fixture(tmp_path)
+    count = kernel.BLOCK_ITEMS
+    ids = tuple(f"overflow{i:05}" for i in range(count))
+    metadata = tuple(replace(f._metadata[0], first_seen_ms=0) for _ in range(count))
+    values = [0.] * count
+    values[1] = float(np.finfo(np.float32).max)
+    vectors = struct.pack(f"<{count}f", *values)
+    f = replace(f, dimension=1, item_ids=ids, _metadata=metadata,
+                _vectors=vectors, _present=bytes([1] * count))
+    maximum = float(np.finfo(np.float32).max)
+    scanner = kernel.numpy_scanner()
+    with pytest.raises(ControlledLoadError) as error:
+        list(scanner(f, (maximum,), set(), 11, eligible_items={ids[0]}))
+    assert error.value.code == "backend_arithmetic"
+
+
+@pytest.mark.parametrize("count", [199, 200, 201, 450])
+@pytest.mark.parametrize("cutoff", [1., 2**-149])
+def test_exact_cutoff_neighbours_and_199_strictly_better_items(tmp_path, count, cutoff):
+    _, _, f = _fixture(tmp_path)
+    ids = tuple(f"cutoff{i:05}" for i in range(count))
+    values = np.full(count, cutoff, dtype="<f4")
+    values[:199] = np.nextafter(np.float32(cutoff), np.float32(float("inf")))
+    vectors = values.tobytes()
+    f = replace(f, dimension=1, item_ids=ids,
+                _metadata=tuple(replace(f._metadata[0], first_seen_ms=0) for _ in ids),
+                _vectors=vectors, _present=bytes([1] * count))
+    stream = list(kernel.numpy_scanner()(f, (1.,), set(), 11))
+    expected = heapq.nsmallest(200, [(-_content_score((1.,), (float(v),)), i)
+                                   for i, v in enumerate(values)])
+    assert len(stream) == min(count, 200)
+    actual = sorted(stream)
+    assert actual == expected
+    assert [struct.pack("<f", -score) for score, _ in actual] == [
+        struct.pack("<f", -score) for score, _ in expected]
+
+
 def test_version_and_arithmetic_drift_fail_closed(tmp_path, monkeypatch):
     root, _, f = _fixture(tmp_path)
     with monkeypatch.context() as patch:

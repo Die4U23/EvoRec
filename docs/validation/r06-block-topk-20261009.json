@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-09",
+  "status": "experimental_block_top200_optimization_not_sla_acceptance",
+  "source": {
+    "partition_measurement_commit": "27dab491544fed9448bc2ca04ae024a3838a24cb",
+    "earlier_lexsort_measurement_commit": "d034f0beab13ed97736da384b82036ce7a1ce1d9",
+    "branch_context": "isolated branch from main; does not contain PR44 production connection reuse or drain changes",
+    "original_project_head": "6e44594f55dd180ec4bacce1ed8d19e7bf4aee61",
+    "original_project_worktree_dirty": false
+  },
+  "scope": {
+    "candidate_block_items": 4096,
+    "global_top_k": 200,
+    "eligibility_and_source_scores_changed": false,
+    "whole_block_errors_and_sparse_path_preserved": true,
+    "ties": "threshold ties use global item index; merge uses global top-200 heap",
+    "epsilon_dot_blas_fitting_or_model_activation_changed": false,
+    "deadline_changed": false,
+    "assumption": "normal admitted finite inputs",
+    "reference": "same-score full stream reconstructed in the benchmark process; not a historical running-process baseline",
+    "component_only_benchmark": true,
+    "benchmark_scope": "same-process warm retrieval only; excludes load time, full recommendation latency, and SLA"
+  },
+  "bundle": {
+    "id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "items": 137249,
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "provider_orders_and_ranker_top20_exact": true,
+    "test_queries_evaluated": false,
+    "retrained_or_activated": false
+  },
+  "warm_retrieval_comparisons": [
+    {"method": "earlier lexsort candidate; rejected", "source_commit": "d034f0beab13ed97736da384b82036ce7a1ce1d9", "full_stream_median_seconds": 0.09241945, "block_top200_median_seconds": 0.0931279, "speedup": 0.99239272, "interpretation": "no benefit; block selection was slightly slower"},
+    {"method": "partition, run a", "source_commit": "27dab491544fed9448bc2ca04ae024a3838a24cb", "full_stream_median_seconds": 0.0812795, "block_top200_median_seconds": 0.0722025, "speedup": 1.12571587},
+    {"method": "partition, run b", "source_commit": "27dab491544fed9448bc2ca04ae024a3838a24cb", "full_stream_median_seconds": 0.08408785, "block_top200_median_seconds": 0.0729289, "speedup": 1.15301136}
+  ],
+  "benchmark_design": {"full_package_items": 137249, "reference_rows": 4, "timings_per_run": 48, "abba_rounds": 3, "order": "alternating ABBA/BAAB", "partition_result_scope": "effective-history warm-retrieval median latency only; about 11-13% lower in these measurements, no cold-path benefit claim"},
+  "test_reports": [
+    {"report": "artifacts/block-topk-red-20261009-a.xml", "sha256": "6194817c8906a74de35d3453b7f7d439b9a06001e019c4b6aad6a7e1c3e33c0c", "source_commit": "b62aaef440dceadee50ed5b42b82207d4b22ee1f", "tests": 42, "failures": 2, "errors": 0, "skipped": 0, "scope": "initial expected cutoff-cap failures; 40 passed, failures did not show functionally wrong final output"},
+    {"report": "artifacts/block-topk-green-20261009-a.xml", "sha256": "0b12f2cf38753e9510957770ad55c9dad8ac1f67fdd72a573b6bcea684cc51bd", "source_commit": "e4ed0019fe7b8332dd13bcd6b16d481413239036", "tests": 287, "failures": 0, "errors": 0, "skipped": 0, "scope": "overlaps later test runs; do not add counts"},
+    {"report": "artifacts/block-topk-final-20261009-a.xml", "sha256": "c3004974a2f65724bf70a42d1b6e4937d577433e7c00641ea76980361c69ab14", "source_commit": "d034f0beab13ed97736da384b82036ce7a1ce1d9", "tests": 162, "failures": 0, "errors": 0, "skipped": 0, "scope": "overlaps other test runs; do not add counts"},
+    {"report": "artifacts/block-topk-partition-20261009-a.xml", "sha256": "b1332dd3384cb6bca1897c2be0f128cfbd603fe9aef9bc6f3fb91a68005aaa8b", "source_commit": "27dab491544fed9448bc2ca04ae024a3838a24cb", "tests": 170, "failures": 0, "errors": 0, "skipped": 0, "scope": "partition checkpoint; overlaps other test runs; do not add counts"}
+  ],
+  "evidence_reports": [
+    {"report": "artifacts/benchmarks/r06-block-topk-20261009-a/verification.json", "sha256": "aa2aa7e4bd4b29b226f83a9a01c735f81f698510a0e300e5ff4b7e9e5ee910ba"},
+    {"report": "artifacts/benchmarks/r06-block-topk-partition-20261009-a/verification.json", "sha256": "c61c00588181b0ab4ba497ad715789ccf77c682789d3cff35dad6ddc3f6770fe"},
+    {"report": "artifacts/benchmarks/r06-block-topk-partition-20261009-b/verification.json", "sha256": "a9d34ed982036e9c1f34ba8dd2255902d139d0c4876001a17c42d00faefed363"},
+    {"report": "artifacts/replays/r06-block-topk-bundle-20261009-a/verification.json", "sha256": "366aa4614ee43557ebe812b88564c5fc8df4de5aa413c5642aab8b8efd25b6b0"},
+    {"report": "artifacts/replays/r06-block-topk-http-20261009-a/verification.json", "sha256": "05a602efacd2321f5d3eac6d4f3d180c823616205f78fa9c6c50d2429be7e8ca"},
+    {"report": "artifacts/replays/r06-block-topk-http-20261009-a/request-observations.json", "sha256": "40b9a02640cf0b625e6e47f3347ba7ad81b8308712409e98a70a86e60fcbf533"},
+    {"report": "artifacts/replays/r06-block-topk-load-20261009-a/verification.json", "sha256": "124b0e9b4d69f0221d45200a65d9fa8deaeb81c042cdfb6c10966c85d7ed68c8"},
+    {"report": "artifacts/replays/r06-block-topk-load-20261009-a/observations.json", "sha256": "9ec3a243171c9a2875c5772ab7e52ae1467a6cc3b46d48a577a50e2abbf70221"}
+  ],
+  "http_functional_replay": {
+    "source_commit": "27dab491544fed9448bc2ca04ae024a3838a24cb",
+    "status": "passed",
+    "un-instrumented_tcp_http": true,
+    "first_dense_seconds": 1.2609,
+    "post_reset_three_fresh_dense_seconds": [1.3913, 1.2214, 1.2589],
+    "feedback_reset_and_three_post_reset_new_computations_verified": true,
+    "browser_tested": false,
+    "process_restart_tested": false,
+    "sla_proven": false
+  },
+  "load_and_recovery": {
+    "source_commit": "27dab491544fed9448bc2ca04ae024a3838a24cb",
+    "requests": 120,
+    "concurrency": 2,
+    "successful": 110,
+    "timeouts_504": 10,
+    "failure_code": "recommendation_timeout",
+    "automatic_retries": 0,
+    "wall_seconds": 125.192,
+    "successful_requests_per_second": 0.87865028,
+    "all_request_latency_ms": {"p50": 2023.889, "p95": 2551.691, "p99": 2695.764},
+    "duplicate_key_single_result": true,
+    "disconnect_observed": true,
+    "disconnect_server_admission_observed": true,
+    "hard_crash_admission_observed": true,
+    "restart_exact_replay": true,
+    "explicit_new_key_after_crash_succeeded": true,
+    "sla_proven": false
+  },
+  "limitations": {
+    "controlled_api_before_after_comparison": false,
+    "cause_of_load_failures_established": false,
+    "api_performance_or_failure_rate_improvement_claimed": false,
+    "prior_pr44_evidence": "retained; PR44 remains draft and is not modified here"
+  },
+  "cleanup": {
+    "owned_schemas_absent": 2,
+    "test_namespace_count": 0,
+    "owned_ports_without_listeners": 4,
+    "port_8000_probed": false,
+    "env_sha256": "32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267",
+    "synthetic_temporary_data": "irrecoverably removed; raw reports and approved bundle remain in ignored artifacts"
+  },
+  "environment_checks": {".venv_service_pip_check": "passed", ".venv-accelerated_pip_check": "passed"},
+  "review_and_pending_validation": {
+    "main": "quality, performance, and reuse inspection",
+    "Sol": "read-only algorithm analysis",
+    "Luna": "implementation and bounded test execution",
+    "custom_reviewer_acceptance": false,
+    "local_tests": {"tests": 170, "failures": 0, "errors": 0, "skipped": 0, "report": "artifacts/block-topk-partition-20261009-a.xml", "source_commit": "27dab491544fed9448bc2ca04ae024a3838a24cb"},
+    "ci": null,
+    "ci_state": "pending; no result claimed",
+    "new_pr_created_at_checkpoint": false,
+    "pr44_state": "OPEN draft; not modified"
+  }
+}
