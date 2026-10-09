@@ -4,7 +4,9 @@
 
 取消清退修正限于 `recommendation.acquire`：复用既有 drain helper，固定 2 秒 deadline、不改 SQL/结果连接/捕获/排序，也未改变 sample 或 comparison 路径。实测重复取消时请求保持 pending，直至真实 PostgreSQL 连接锁释放、worker 清退；该路径不分配 execution、不创建 accepted row，并消费 worker 错误；未取消时原异常身份仍传播。清退可能晚于 deadline，不是硬实时保证。
 
-红测 5 项中 4 项失败、1 项通过；干净提交 `79e0a5f` 的四模块 123 项、guard 47 项及 Web 112 个直接 testcase 均通过，报告各自范围保留且不相加。`.venv` 的 `pip check` 通过；accelerated/research 环境未检查。未运行完整包 HTTP、浏览器或独立 120 负载复验；本文是 PR 前检查点，最新 CI 与合并状态另在 PR 记录核对。旧 PR44 draft 不变，先前 110/120 成功、10 个超时记录保留。本文不声称性能改善或 SLA。pytest schema 清理前后均为 0，没有启动自有 listener，8000 未触碰或探测，主目录 `6e44594` 及 `.env` 摘要保持不变。主线程完成质量/性能/复用检查并执行测试，Luna 编写目标测试和文档；不称自定义 Reviewer 验收。详情见[取消清退验证记录](validation/readiness-cancellation-drain-20261009.json)。
+红测 5 项中 4 项失败、1 项通过；干净提交 `79e0a5f` 的四模块 123 项、guard 47 项及 Web 112 个直接 testcase 均通过，报告各自范围保留且不相加。首次 PR head `7f15e11` 的两个服务 CI 均在返回后锁探针失败，分别为 deadline-False 与 repeated_cancel-True；数值 CI 通过。替身仅关闭连接，而真实恢复在 finally 显式解锁，修正替身后增加服务端解锁确认，保留清退前后全部断言，不改变生产实现，也不推定唯一持锁者/断连时差根因。干净 `6528895` 的恢复模块 23 项通过，0 失败/错误/跳过；旧失败保留，最新 head CI 与合并状态另在 [PR #47](https://github.com/Die4U23/EvoRec/pull/47) 记录核对。
+
+`.venv` 的 `pip check` 通过；本机 accelerated/research 环境未检查。未运行完整包 HTTP、浏览器或独立 120 负载复验；旧 PR44 draft 不变，先前 110/120 成功、10 个超时记录保留。本文不声称性能改善或 SLA。pytest schema 清理前后及最终复测后均为 0，没有启动自有 listener，8000 未触碰或探测，主目录 `6e44594` 及 `.env` 摘要保持不变。主线程完成质量/性能/复用检查并执行测试，Sol 只读复查替身协议，Luna 编写目标测试和文档；不称自定义 Reviewer 验收。详情见[取消清退验证记录](validation/readiness-cancellation-drain-20261009.json)。
 
 ## 2026-10-09 R06 block-top200 候选筛选试验
 
