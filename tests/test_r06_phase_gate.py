@@ -1,5 +1,6 @@
 """Diagnostic-only gate: actual work excludes waiting and unmarked calls bypass it."""
 
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import json
 from threading import Event, Lock
@@ -10,6 +11,7 @@ import pytest
 from scripts import profile_r06_tcp, r06_service_lab
 from scripts.r06_process_trace import ConcurrentTimings, trace_api
 from evorec.infrastructure.postgres import PostgresDemoBackend
+from evorec.infrastructure.r06_async import R06CPUQueue
 from evorec.infrastructure.r06_serving import R06SnapshotRanker
 
 
@@ -129,3 +131,56 @@ def test_gate_releases_after_original_exception_and_restores_real_patches(monkey
     assert calls == [(("PRIVATE-ARG",), dict(value=sentinel))] * 2
     assert "PRIVATE" not in json.dumps(request["stages"])
     assert next(s for s in request["stages"] if s["stage"] == "actual_catalog_read_and_capture")["error_type"] == "RuntimeError"
+
+
+def test_cancellation_while_gate_waiting_still_drains_real_cpu_work():
+    timing = ConcurrentTimings(2, phase_gate=True)
+    capture_started, release, attempted, scored = Event(), Event(), Event(), Event()
+    real_lock = Lock()
+
+    class ObservedLock:
+        def __enter__(self):
+            if capture_started.is_set():
+                attempted.set()
+            real_lock.acquire()
+
+        def __exit__(self, *args):
+            real_lock.release()
+
+    timing._phase_gate_lock = ObservedLock()
+
+    def capture():
+        capture_started.set()
+        assert release.wait(5)
+
+    async def run():
+        queue = R06CPUQueue()
+        token = timing.active.set(dict(sample=0, started=perf_counter(), stages=[]))
+        first = asyncio.create_task(asyncio.to_thread(timing.sync("actual_catalog_read_and_capture", capture)))
+        timing.active.reset(token)
+        try:
+            assert await asyncio.to_thread(capture_started.wait, 5)
+
+            def worker():
+                token = timing.active.set(dict(sample=1, started=perf_counter(), stages=[]))
+                try:
+                    timing.sync("retrieval_and_ranking", scored.set)()
+                finally:
+                    timing.active.reset(token)
+
+            task = asyncio.create_task(queue.run(worker))
+            assert await asyncio.to_thread(attempted.wait, 5)
+            task.cancel()
+            await asyncio.sleep(0)
+            assert not task.done() and not scored.is_set()
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert scored.is_set() and queue.outstanding == 0
+            assert await queue.run(lambda: timing.current) is None
+        finally:
+            release.set()
+            await first
+            await queue.aclose()
+
+    asyncio.run(run())

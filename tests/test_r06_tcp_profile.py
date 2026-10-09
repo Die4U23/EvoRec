@@ -247,8 +247,9 @@ def test_lab_gc_events_flag_requires_bool_before_validation(monkeypatch):
 
 @pytest.mark.parametrize("profile_samples,gc_events,ready_gc_events,should_raise", [
     (2, False, False, False), (2, False, True, True), (0, True, False, False)])
+@pytest.mark.parametrize("ready_phase_gate", [False, True, 0, None])
 def test_lab_propagates_gc_events_and_checks_ready(
-        tmp_path, monkeypatch, profile_samples, gc_events, ready_gc_events, should_raise):
+        tmp_path, monkeypatch, profile_samples, gc_events, ready_gc_events, should_raise, ready_phase_gate):
     from scripts import r06_service_lab as lab_module
     bundle_id = uuid4()
     monkeypatch.setattr(lab_module, "validate", lambda output, database_url, root, *_: (output, root, {}))
@@ -266,6 +267,7 @@ def test_lab_propagates_gc_events_and_checks_ready(
                          manifest_sha256=lab.digest, admin_enabled=False, pid=17, backend=lab.backend,
                          api_deadline_seconds=2.0, profile_samples=lab.profile_samples,
                          gc_events_enabled=ready_gc_events,
+                         phase_gate_enabled=ready_phase_gate,
                          url="http://127.0.0.1:43210")
             (child_output / "ready.json").write_text(json.dumps(ready))
 
@@ -273,7 +275,7 @@ def test_lab_propagates_gc_events_and_checks_ready(
             return None
 
     monkeypatch.setattr(lab_module.subprocess, "Popen", Process)
-    if should_raise:
+    if should_raise or ready_phase_gate is not False:
         with pytest.raises(ValueError, match="identity changed"):
             lab.start()
     else:
@@ -283,16 +285,19 @@ def test_lab_propagates_gc_events_and_checks_ready(
 
 
 @pytest.mark.parametrize("source_changes", [False, True])
-def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(tmp_path, monkeypatch, source_changes):
+@pytest.mark.parametrize("trace_phase_gate", [False, True, 0, None])
+def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(
+        tmp_path, monkeypatch, source_changes, trace_phase_gate):
     from scripts.run_r06_demo import marker
     monkeypatch.setattr(profiler, "__file__", str(tmp_path/"scripts"/"profile_r06_tcp.py"))
     commits = iter(("a"*40, ("b" if source_changes else "a")*40))
     monkeypatch.setattr(profiler, "_source", lambda _: next(commits))
     monkeypatch.setattr(profiler, "subprocess_sources", lambda _: {})
     class Lab:
-        def __init__(self, output, *args, profile_samples, gc_events):
+        def __init__(self, output, *args, profile_samples, gc_events, phase_gate):
             assert profile_samples == 4
             assert gc_events is True
+            assert phase_gate is False
             self.output, self.child_output, self.created = output, output/"child", True
             self.ready = dict(url="http://127.0.0.1:1", model_version="approved", item_count=6,
                               gc_events_enabled=gc_events)
@@ -301,7 +306,7 @@ def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(
             marker(self.child_output, "profile", dict(requests=[dict(sample=i,status_code=504,
                                                                       asgi_start_offset_seconds=i * .25)
                                                                  for i in range(4)],
-                                                        gc_events_enabled=True))
+                                                        gc_events_enabled=True, phase_gate_enabled=trace_phase_gate))
             return self
         def __exit__(self, *_): self.created = False
     class Client:
@@ -316,6 +321,10 @@ def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(
     output = tmp_path/"artifacts"/"profile"
     if source_changes:
         with pytest.raises(ValueError,match="source changed"):
+            profiler.profile(output,"PRIVATE-DB",tmp_path,uuid4(),"b"*64,samples=2)
+        assert not (output/"profile.json").exists()
+    elif trace_phase_gate is not False:
+        with pytest.raises(ValueError, match="phase_gate setting changed"):
             profiler.profile(output,"PRIVATE-DB",tmp_path,uuid4(),"b"*64,samples=2)
         assert not (output/"profile.json").exists()
     else:
@@ -355,8 +364,9 @@ def test_profile_marks_incomplete_shared_server_timeline(tmp_path, monkeypatch, 
         requests[1]["asgi_start_offset_seconds"] = True
 
     class Lab:
-        def __init__(self, output, *args, profile_samples, gc_events):
+        def __init__(self, output, *args, profile_samples, gc_events, phase_gate):
             assert profile_samples == 4 and gc_events is True
+            assert phase_gate is False
             self.output, self.child_output, self.created = output, output / "child", True
             self.ready = dict(url="http://127.0.0.1:1", model_version="approved", item_count=6,
                               gc_events_enabled=True)
@@ -364,7 +374,7 @@ def test_profile_marks_incomplete_shared_server_timeline(tmp_path, monkeypatch, 
         def __enter__(self):
             self.child_output.mkdir(parents=True)
             (self.child_output / "profile.json").write_text(
-                json.dumps(dict(requests=requests, gc_events_enabled=True), allow_nan=True),
+                json.dumps(dict(requests=requests, gc_events_enabled=True, phase_gate_enabled=False), allow_nan=True),
                 encoding="utf-8")
             return self
 
@@ -395,14 +405,16 @@ def test_profile_marks_incomplete_shared_server_timeline(tmp_path, monkeypatch, 
 
 
 @pytest.mark.parametrize("gc_events", [True, False])
-def test_real_synthetic_package_tcp_trace_is_correlated_and_drained(isolated_database, tmp_path, gc_events):
+@pytest.mark.parametrize("phase_gate", [True, False])
+def test_real_synthetic_package_tcp_trace_is_correlated_and_drained(isolated_database, tmp_path, gc_events, phase_gate):
     root, target, digest = _build(tmp_path)
     output = Path(__file__).resolve().parents[1]/"artifacts"/"test-tcp-profile"/uuid4().hex
     lab = R06ServiceLab(output, isolated_database, root, UUID(target.name), digest, "stdlib",
-                        profile_samples=2, gc_events=gc_events)
+                        profile_samples=2, gc_events=gc_events, phase_gate=phase_gate)
     with lab:
         assert lab.ready["profile_samples"] == 2
         assert lab.ready["gc_events_enabled"] is gc_events
+        assert lab.ready["phase_gate_enabled"] is phase_gate
         with httpx.Client(base_url=lab.ready["url"], timeout=10, trust_env=False) as client:
             session = client.post("/api/v1/sessions", json={"profile_id":"sample"}).json()
             for index in range(2):
@@ -427,6 +439,10 @@ def test_real_synthetic_package_tcp_trace_is_correlated_and_drained(isolated_dat
             "result_write_database_commit", "result_write_database_close"}
     assert report["database_driver_version"]
     assert report["gc_events_enabled"] is gc_events
+    assert report["phase_gate_enabled"] is phase_gate
+    for request in report["requests"]:
+        waits = [stage for stage in request["stages"] if stage["stage"].endswith("_diagnostic_gate_wait")]
+        assert len(waits) == (2 if phase_gate else 0)
     if not gc_events:
         assert all(not stage["stage"].startswith("gc_generation_")
                    for request in report["requests"] for stage in request["stages"])
@@ -621,7 +637,7 @@ def test_cli_defaults_to_gc_events_and_accepts_no_gc_events_flag(monkeypatch, tm
     seen = []
 
     def fake_profile(*args, **kwargs):
-        seen.append(kwargs["gc_events"])
+        seen.append((kwargs["gc_events"], kwargs["phase_gate"]))
         return dict(status="instrumented_diagnostic_completed_not_performance_acceptance", trace_complete=True,
                     client_status_matches_server=True, gc_events_enabled=kwargs["gc_events"],
                     shared_server_timeline_complete=True,
@@ -632,4 +648,5 @@ def test_cli_defaults_to_gc_events_and_accepts_no_gc_events_flag(monkeypatch, tm
     args = [str(tmp_path), str(tmp_path), str(uuid4()), "--expected-manifest-sha256", "b" * 64]
     assert profiler.main(args) == 0
     assert profiler.main([*args, "--no-gc-events"]) == 0
-    assert seen == [True, False]
+    assert profiler.main([*args, "--no-gc-events", "--phase-gate"]) == 0
+    assert seen == [(True, False), (False, False), (False, True)]

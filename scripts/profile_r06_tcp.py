@@ -59,16 +59,19 @@ def _valid_server_start_offset(request):
             and (type(offset) is int or math.isfinite(offset)))
 
 
-def profile(output, database_url, root, identity, digest, *, samples=24, concurrency=2, gc_events=True):
+def profile(output, database_url, root, identity, digest, *, samples=24, concurrency=2, gc_events=True,
+            phase_gate=False):
     if (type(samples) is not int or not 2 <= samples <= 120
             or type(concurrency) is not int or not 1 <= concurrency <= 8):
         raise ValueError("samples 2..120 and concurrency 1..8 required")
     if type(gc_events) is not bool:
         raise ValueError("gc_events must be a bool")
+    if type(phase_gate) is not bool:
+        raise ValueError("phase_gate must be a bool")
     project = Path(__file__).resolve().parents[1]
     commit, hashes = _source(project), subprocess_sources(project)
     lab = R06ServiceLab(output, database_url, root, identity, digest, profile_samples=samples+2,
-                        gc_events=gc_events)
+                        gc_events=gc_events, phase_gate=phase_gate)
     records, result = [], None
     try:
         with lab:
@@ -97,6 +100,8 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
     trace = json.loads((lab.child_output / "profile.json").read_bytes())
     if trace.get("gc_events_enabled") is not gc_events:
         raise ValueError("owned API GC event setting changed")
+    if trace.get("phase_gate_enabled") is not phase_gate:
+        raise ValueError("owned API phase_gate setting changed")
     server = trace["requests"]
     shared_server_timeline_complete = bool(server) and all(
         _valid_server_start_offset(request) for request in server)
@@ -121,6 +126,8 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
                   api_deadline_seconds=2.0, owned_schema_removed=True, automatic_retries=0,
                   timings_overlap_do_not_sum=True, instrumentation_overhead_not_subtracted=True,
                   gc_events_enabled=gc_events, gc_attribution_not_exclusive=True,
+                  phase_gate_enabled=phase_gate,
+                  diagnostic_intervention_changes_scheduling=phase_gate,
                   production_acceptance=False, sla_proven=False)
     result.update(database_driver_version=trace.get("database_driver_version"),
                   successful_database_trace_count=len(successful_server_requests),
@@ -146,12 +153,14 @@ def main(argv=None):
     parser.add_argument("--concurrency", type=int, default=2)
     parser.add_argument("--no-gc-events", dest="gc_events", action="store_false",
                         help="omit garbage-collection callback observations")
+    parser.add_argument("--phase-gate", action="store_true",
+                        help="diagnostic intervention, not a production optimization or SLA test")
     parser.set_defaults(gc_events=True)
     args = parser.parse_args(argv)
     try:
         result = profile(args.output, os.environ["EVOREC_DATABASE_URL"], args.managed_root, args.bundle_id,
                          args.expected_manifest_sha256, samples=args.samples, concurrency=args.concurrency,
-                         gc_events=args.gc_events)
+                         gc_events=args.gc_events, phase_gate=args.phase_gate)
     except Exception as error:
         print(json.dumps(dict(status="failed", error_type=type(error).__name__)))
         return 1

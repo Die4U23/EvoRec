@@ -521,7 +521,8 @@ def test_concurrent_orphan_retries_share_one_terminal_outcome_without_execution(
     async def run():
         replies = await asyncio.gather(*(post(app, command) for app in apps))
         codes = {reply.json()["error"]["code"] for reply in replies}
-        assert all(reply.status_code == 409 for reply in replies)
+        assert all(reply.status_code == 409 for reply in replies), [
+            (reply.status_code, reply.json()["error"]["code"]) for reply in replies]
         assert "recommendation_interrupted" in codes
         assert codes <= {"recommendation_interrupted", "recommendation_in_progress"}
         for app in apps:
