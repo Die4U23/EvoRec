@@ -178,6 +178,90 @@ def test_popular_reuses_legal_input_guards(tmp_path, kwargs):
     with pytest.raises(ControlledLoadError): load_r06_retrieval(root, features).popular(**args)
 
 
+def test_exact_frozenset_subset_is_reused_and_mutable_input_is_copied(tmp_path):
+    root, _, features = _fixture(tmp_path)
+    runtime = load_r06_retrieval(root, features)
+    full = frozenset(features.item_ids)
+    empty = frozenset()
+    assert runtime._eligible(full) is full
+    assert runtime._eligible(empty) is empty
+    assert runtime._eligible(None) is None
+    assert runtime._eligible(set()) == frozenset()
+    assert runtime._eligible([]) == frozenset()
+    mutable = {"a"}
+    frozen = runtime._eligible(mutable)
+    mutable.add("b")
+    assert frozen == frozenset({"a"}) and frozen is not mutable
+
+
+@pytest.mark.parametrize("item", ["", "   ", "x" * 129, None, 7])
+def test_exact_frozenset_subset_rejects_invalid_ids(tmp_path, item):
+    root, _, features = _fixture(tmp_path)
+    runtime = load_r06_retrieval(root, features)
+    with pytest.raises(ControlledLoadError) as error:
+        runtime._eligible(frozenset({item}))
+    assert error.value.code == "input_shape"
+
+
+def test_exact_frozenset_subset_reuses_valid_string_subclasses_after_validation(tmp_path):
+    root, _, features = _fixture(tmp_path)
+    runtime = load_r06_retrieval(root, features)
+    visited = []
+
+    class TrackedID(str):
+        def strip(self, chars=None):
+            visited.append(self)
+            return super().strip(chars)
+
+    eligible = frozenset(TrackedID(item) for item in features.item_ids)
+    assert runtime._eligible(eligible) is eligible
+    assert set(visited) == set(eligible)
+
+
+@pytest.mark.parametrize("eligible", [["a", "a"], ("a", "a")])
+def test_retrieval_subset_rejects_duplicate_list_and_tuple(tmp_path, eligible):
+    root, _, features = _fixture(tmp_path)
+    runtime = load_r06_retrieval(root, features)
+    with pytest.raises(ControlledLoadError) as error:
+        runtime._eligible(eligible)
+    assert error.value.code == "input_shape"
+
+
+def test_retrieval_subset_keeps_unknown_id_error(tmp_path):
+    root, _, features = _fixture(tmp_path)
+    runtime = load_r06_retrieval(root, features)
+    with pytest.raises(ControlledLoadError) as error:
+        runtime._eligible(frozenset({"unknown"}))
+    assert error.value.code == "catalog_changed"
+
+
+def test_frozenset_subset_limit_keeps_resource_limit_code(tmp_path, monkeypatch):
+    root, _, features = _fixture(tmp_path)
+    runtime = load_r06_retrieval(root, features)
+    monkeypatch.setattr(module, "MAX_ITEMS", 5)
+    with pytest.raises(ControlledLoadError) as error:
+        runtime._eligible(frozenset(features.item_ids))
+    assert error.value.code == "resource_limit"
+
+
+def test_frozenset_subclass_uses_duplicate_validation_fallback(tmp_path):
+    root, _, features = _fixture(tmp_path)
+    runtime = load_r06_retrieval(root, features)
+
+    class DuplicateSet(set):
+        def __iter__(self):
+            return iter(("a", "a"))
+
+    class DuplicateFrozenset(frozenset):
+        def __iter__(self):
+            return iter(("a", "a"))
+
+    for eligible in (DuplicateSet({"a", "b"}), DuplicateFrozenset({"a", "b"})):
+        with pytest.raises(ControlledLoadError) as error:
+            runtime._eligible(eligible)
+        assert error.value.code == "input_shape"
+
+
 def test_full_seen_and_strict_availability_and_unknown_distance(tmp_path):
     root, _, f = _fixture(tmp_path)
     r = load_r06_retrieval(root, f)

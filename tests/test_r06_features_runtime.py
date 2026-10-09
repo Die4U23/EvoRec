@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from evorec.infrastructure.r06_features import PROVENANCE_HASHES, load_r06_features
+from evorec.infrastructure.r06_features import PROVENANCE_HASHES, _ids, load_r06_features
 from evorec.infrastructure.residual_ranker import SCALAR_NAMES, ControlledLoadError
 
 
@@ -114,6 +114,57 @@ def test_provider_overlap_is_unique_sorted_but_rank_positions_are_kept(tmp_path)
     assert pool.scalars[0][1:3] == (_f32(61/62), 1.)
     assert pool.scalars[1][1:3] == (1., 0.)
     assert runtime.build_pool([], [], 2, [], []).item_ids == ()
+
+
+def test_shared_id_validator_preserves_sequence_tuple_and_duplicate_contract():
+    values = ["a", "b"]
+    result = _ids(values, 2)
+    assert type(result) is tuple and result == ("a", "b")
+    duplicate = ("a", "a")
+    assert _ids(duplicate, 2) is duplicate  # Non-unique validation preserves tuple inputs.
+    assert _ids(duplicate, 2, unique=False) == ("a", "a")
+    with pytest.raises(ControlledLoadError) as error:
+        _ids(("a", "a"), 2, unique=True)
+    assert error.value.code == "input_shape"
+
+
+@pytest.mark.parametrize("factory", [
+    pytest.param(lambda: None, id="none"),
+    pytest.param(lambda: "a", id="string"),
+    pytest.param(lambda: b"a", id="bytes"),
+    pytest.param(lambda: {"a"}, id="set"),
+    pytest.param(lambda: (item for item in ("a",)), id="generator"),
+])
+def test_shared_id_validator_requires_bounded_sequence_shape(factory):
+    with pytest.raises(ControlledLoadError) as error:
+        _ids(factory(), 1)
+    assert error.value.code == "input_shape"
+
+
+def test_shared_id_validator_rejects_oversized_sequence():
+    with pytest.raises(ControlledLoadError) as error:
+        _ids(["a", "b"], 1)
+    assert error.value.code == "input_shape"
+
+
+@pytest.mark.parametrize("value", ["", "   ", "x" * 129, None, 7])
+def test_shared_id_validator_rejects_invalid_ids(value):
+    with pytest.raises(ControlledLoadError) as error:
+        _ids([value], 1)
+    assert error.value.code == "input_shape"
+
+
+def test_shared_id_validator_visits_every_valid_string_subclass():
+    visited = []
+
+    class TrackedID(str):
+        def strip(self, chars=None):
+            visited.append(self)
+            return super().strip(chars)
+
+    values = (TrackedID("a"), TrackedID("b"), TrackedID("c"))
+    assert _ids(values, len(values)) == values
+    assert tuple(visited) == values
 
 
 @pytest.mark.parametrize("history,seen,time,cf,content", [
