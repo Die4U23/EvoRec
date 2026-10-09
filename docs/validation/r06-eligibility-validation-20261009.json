@@ -1,0 +1,143 @@
+{
+  "date": "2026-10-09",
+  "status": "immutable_eligibility_validated_recovery_passed_load_measured_not_sla",
+  "checkpoint": "local evidence; latest-head CI and merge state to be checked and recorded in the PR",
+  "source": {
+    "base": "93001424f58f859c87c1e4295cbc0a38497ae864",
+    "tests_first": "913d9e153ff5d70fdf77047bbf13bcd3880415db",
+    "measured_clean_commit": "2795302a79bde22ce1985bc54d68695ce84f3987",
+    "sha256": {
+      "src/evorec/infrastructure/r06_features.py": "0e5daec751688ab08f9a21d4076df51029528a135f3e2de2d0ffa154516ac524",
+      "src/evorec/infrastructure/r06_retrieval.py": "54ba44248a2987bbf906c6829fb2360bf7713007816636194530fefdfa0fe76e",
+      "src/evorec/infrastructure/r06_serving.py": "06b6b523082eb5e5fb01a14f8d3c81503c6be72998338ed9781c56593c52e531",
+      "scripts/benchmark_r06_retrieval.py": "08cc7e62c50b0366e33f345516626f1dd2f32ce3abbb0c940e431caca15abfb3"
+    }
+  },
+  "behavior": {
+    "reused_type": "exact builtin frozenset only, after resource, individual ID and frozen catalog subset checks",
+    "mutable_and_collection_subclasses": "original normalization and duplicate checks preserved",
+    "helper_contract": "individual values only; caller must bound container and count first",
+    "request_eligible_tuple_removed": true,
+    "full_seen_time_content_seal_sql_deadline_and_arithmetic_changed": false,
+    "api_deadline_seconds": 2.0
+  },
+  "bundle": {
+    "id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+    "items": 137249,
+    "dimension": 128,
+    "approved_reference_rows": 4,
+    "retrained": false,
+    "test_targets_evaluated": false
+  },
+  "tests": {
+    "red": {"report": "artifacts/eligibility-red-20261009-a.xml", "sha256": "63196e729650a76885764310f0c17dd85ea9b63db5aa0eb8ce5d0ace0d18a8ce", "tests": 223, "passes": 220, "failures": 3, "errors": 0, "skipped": 0, "interpretation": "expected immutable identity and allocation guard failures, not wrong final recommendations"},
+    "green": {"report": "artifacts/eligibility-green-20261009-a.xml", "sha256": "f395207156e2489a991840e69412a5aec288f4dc06e1b9c6e3c7e058c46091c4", "tests": 304, "modules": 6, "failures": 0, "errors": 0, "skipped": 0},
+    "postgres": {"report": "artifacts/eligibility-db-20261009-a.xml", "sha256": "abc978c4a077dbf9c44a5bb3c76871cf1be81627c272331fd329f419beb7a92c", "tests": 102, "modules": 3, "failures": 0, "errors": 0, "skipped": 0},
+    "web": {"report": "artifacts/eligibility-web-20261009-a.xml", "sha256": "7e6cfe55895337bb28268e5e5007f10f1587b599d76181093020dadaa2c19db3", "direct_testcase_count": 112, "failures": 0, "errors": 0, "skipped": 0, "browser_tested": false},
+    "contract_export_diff": "none",
+    "architecture_and_hygiene": {"report": "artifacts/eligibility-final-20261009-a.xml", "sha256": "6c38a9b05fd71591cc79ff7c1c678118a1072f18fe08c5fc274b50d2b1128cc7", "tests": 17, "failures": 0, "errors": 0, "skipped": 0},
+    "index_hygiene": {"report": "artifacts/eligibility-hygiene-20261009-a.json", "sha256": "992e8be1e2314a89f879842f2265a81c92d9212ed2905b577d79631aa047a687", "status": "passed", "scope": "Git index only; common credential signatures, not exhaustive secret audit"},
+    "counts_overlap": true,
+    "benchmark_harness_unit_tests": "control-flow stubs, not a numerical oracle; real approved component runs separately verify parity"
+  },
+  "component_comparison": {
+    "cli": "--compare-eligible-validation --rounds 3",
+    "reference": "same-process reconstructed previous conversion path, not historical process execution",
+    "cases": {"full": 137249, "sparse": 8074, "empty": 0},
+    "stages": ["retrieval_eligibility", "capture_id_validation"],
+    "order": "alternating ABBA/BAAB",
+    "rounds_per_run": 3,
+    "timings_per_run": 72,
+    "source_files_snapshotted": 16,
+    "source_revision_clean_and_hashes_rechecked": true,
+    "all_provider_orders_and_top20_exact": true,
+    "full_retrieval_wall_ms": {"a": {"converted": 61.01204999140464, "immutable": 37.12189994985238}, "b": {"converted": 61.1809499678202, "immutable": 37.220750004053116}},
+    "full_id_validation_wall_ms": {"a": {"converted": 28.887949971249327, "immutable": 25.112850009463727}, "b": {"converted": 27.06245001172647, "immutable": 23.745249985950068}},
+    "full_retrieval_traced_peak_bytes_both_runs": {"converted": 10486264, "immutable": 6291744},
+    "full_id_validation_traced_peak_bytes_both_runs": {"converted": 1098456, "immutable": 440},
+    "allocation_scope": "separate untimed tracemalloc Python peak, not RSS or total model memory; empty ID-validation peak did not improve",
+    "thread_cpu_scope": "Windows short-call quantization can report zero, not zero CPU work",
+    "excluded_claims": ["full request capture", "SQL", "retrieval scoring speed", "API causal improvement", "SLA"],
+    "reports": [
+      {"path": "artifacts/benchmarks/r06-eligibility-20261009-a/verification.json", "sha256": "92a8219f003065bdac51d992204ab65181e777c14e78f6ed5f73e5647c41b7c9"},
+      {"path": "artifacts/benchmarks/r06-eligibility-20261009-b/verification.json", "sha256": "b00e896324d8e14df16b6c7bc2ee44dcc5389e04424622b53d8149715d120e87"}
+    ]
+  },
+  "full_bundle_replay": {
+    "report": "artifacts/replays/r06-eligibility-bundle-20261009-a/verification.json",
+    "sha256": "c5461cf70b20adf00cbd15f078e63ed05d34cc81ad686d260ad0b024764b2e70",
+    "status": "passed",
+    "actual_catalog_items_checked": 137249,
+    "full_provider_orders_request_bindings_and_legal_top20_exact": true,
+    "max_context_error": 5.960464477539063e-8,
+    "max_scalar_error": 1.7881393432617188e-7,
+    "max_score_error": 7.152557373046875e-7
+  },
+  "http": {
+    "report": "artifacts/replays/r06-eligibility-http-20261009-a/verification.json",
+    "sha256": "bbbdf1552e7e3548a643d716c6d780c2fb0cfc3ec0f8fd24424e830908533b0b",
+    "observations": "artifacts/replays/r06-eligibility-http-20261009-a/request-observations.json",
+    "observations_sha256": "40a9b217847d5c435f8a2add033fb37e69a5d3e121cbd70e0a24361267a29757",
+    "actual_tcp": true,
+    "instrumented": false,
+    "status": "passed",
+    "first_dense_seconds": 1.468014000041876,
+    "post_reset_fresh_dense_seconds": [1.1996770999976434, 1.2319721999811009, 1.3482800999772735],
+    "feedback_full_seen_reset_owner_changed_key_and_exact_replay": true,
+    "browser_tested": false
+  },
+  "recovery_load": {
+    "report": "artifacts/replays/r06-eligibility-load-20261009-a/verification.json",
+    "sha256": "bef0b18fdabac86b28037732fafa5db121a82560c28aebe70f6e9aa8981463f0",
+    "observations": "artifacts/replays/r06-eligibility-load-20261009-a/observations.json",
+    "observations_sha256": "8748712283c3966e2f46678c16e81294d5a37125bf46246f3289ff0b8d4305e4",
+    "status": "passed_recovery_load_measured_not_sla",
+    "requests": 120,
+    "concurrency": 2,
+    "automatic_retries": 0,
+    "successful": 118,
+    "status_counts": {"200": 118, "504": 2},
+    "failure_codes": {"recommendation_timeout": 2},
+    "success_rate": 0.9833333333333333,
+    "all_client_latency_ms": {"p50": 1877.6016000192612, "p95": 2168.4770999709144, "p99": 2567.741200036835},
+    "successful_client_latency_ms": {"p50": 1876.7688999651, "p95": 2141.702599998098, "p99": 2262.190399982501},
+    "successful_requests_per_second": 1.0272987313057371,
+    "wall_seconds": 114.86434900003951,
+    "latency_scope": "bounded closed-loop, fresh httpx client per sample; not pure server execution time or open sustained workload",
+    "restart_exact_replay": true,
+    "duplicate_key_single_result": true,
+    "disconnect_server_admission_observed": true,
+    "disconnect_terminal_status": 200,
+    "hard_crash_admission_observed": true,
+    "crash_outcome": "interrupted_without_partial_result",
+    "explicit_new_key_after_crash_succeeded": true,
+    "sla_proven": false,
+    "api_before_after_causal_comparison": false,
+    "prior_110_of_120_with_10_timeouts_retained": true
+  },
+  "cleanup_and_environment": {
+    "exact_owned_schemas_checked": 2,
+    "exact_owned_schemas_remaining": 0,
+    "current_test_namespace_count": 0,
+    "exact_owned_ports_checked": 4,
+    "owned_listeners_remaining": 0,
+    "port_8000_touched_or_probed": false,
+    "temporary_synthetic_data": "removed and not recoverable",
+    "raw_reports_and_bundle": "retained in ignored directories, not tracked",
+    "primary_project_head": "6e44594f55dd180ec4bacce1ed8d19e7bf4aee61",
+    "primary_tracked_worktree_clean": true,
+    "env_sha256": "32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267",
+    "business_schema_and_model_touched": false,
+    "pip_check": {"service": "passed", "accelerated": "passed", "research": "not checked"},
+    "pr44": "OPEN draft at unchanged 6e44594f55dd180ec4bacce1ed8d19e7bf4aee61"
+  },
+  "review": {
+    "main": "measurement design, actual artifacts, code quality, performance and reuse acceptance",
+    "sol": "read-only guard and evidence-boundary inspection; no repeated execution",
+    "luna": "bounded tests-first and three-file production implementation",
+    "custom_reviewer_acceptance_claimed": false
+  },
+  "remaining": ["two observed load timeouts", "stable concurrent availability and SLA", "controlled end-to-end causal comparison before API speedup claims"]
+}
