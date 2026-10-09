@@ -98,6 +98,24 @@ def test_comparison_mode_rejects_non_boolean_before_output(harness, mode):
     assert not harness.output.exists() and not harness.calls
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_cli_block_topk_mode_requires_explicit_flag(monkeypatch, capsys, enabled):
+    calls = []
+    def benchmark(*args, **kwargs):
+        calls.append(kwargs)
+        return dict(status="passed", effective_history_median_seconds=None,
+                    effective_history_speedup=None)
+    monkeypatch.setattr(script, "benchmark", benchmark)
+    argv = ["output", "--features-component", "features", "--expected-features-manifest-sha256", "f"*64,
+            "--retrieval-component", "retrieval", "--expected-retrieval-manifest-sha256", "r"*64,
+            "--ranker-component", "ranker", "--expected-ranker-manifest-sha256", "k"*64]
+    if enabled:
+        argv.append("--compare-block-topk")
+    assert script.main(argv) == 0
+    assert calls == [dict(rounds=1, compare_block_topk=enabled)]
+    assert json.loads(capsys.readouterr().out)["activated"] is False
+
+
 @pytest.mark.parametrize("rounds", [True, 0, 4, 1.5])
 def test_invalid_rounds_do_not_create_output(harness, rounds):
     with pytest.raises(ValueError, match="rounds"):

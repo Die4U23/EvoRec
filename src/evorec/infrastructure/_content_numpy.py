@@ -60,6 +60,12 @@ def numpy_scanner():
                 if not eligible:
                     continue
                 scores = _scores(np, vectors[start:stop], context)
+                if len(eligible) > 200:
+                    indices = np.asarray(eligible, dtype=np.intp)
+                    offsets = indices - start
+                    # Checked float32 scores are finite, so (-score, global index) is a total order matching heap ties.
+                    order = np.lexsort((indices, -scores[offsets]))[:200]
+                    eligible = (int(index) for index in indices[order])
                 for index in eligible:
                     yield -float(scores[index - start]), index
                 # Release the block before allocating the next product matrix.
