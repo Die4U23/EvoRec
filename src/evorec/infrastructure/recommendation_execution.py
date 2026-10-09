@@ -1,12 +1,20 @@
 """Request-scoped PostgreSQL execution leases, not timed crash detection.
 
 A lost session lock permits terminal reconciliation, never reranking old input.
-An extra connection remains owned until admission, CPU and result writes drain.
+The lease connection remains owned until admission, CPU and result writes drain.
 """
 
+from contextlib import contextmanager
+from threading import RLock
 from uuid import uuid4
 
+from psycopg.pq import TransactionStatus
+
 from evorec.domain.errors import IdempotencyInProgress, ManagementError, ResourceNotFound
+
+
+class _AdmissionRequestAppeared(Exception):
+    """Rollback a borrowed transaction before reconciling an existing request."""
 
 
 class RecommendationExecution:
@@ -16,6 +24,7 @@ class RecommendationExecution:
         self.connection = None
         self.lock_key = None
         self.admitted = False
+        self._connection_lock = RLock()
 
     def admit(self):
         connection = self.connection = self.backend._connect()
@@ -43,11 +52,15 @@ class RecommendationExecution:
             raise IdempotencyInProgress("recommendation is still executing")
         with self.backend._execution_lock:
             self.backend._executions[self.command.request_id] = self
-        context = self.backend._admit(self.command)
+        context = self.backend._admit(self.command, execution=self)
         self.admitted = True
         return context
 
     def assert_held(self):
+        with self._connection_lock:
+            self._assert_held()
+
+    def _assert_held(self):
         # Query on the owning connection: a disconnected or explicitly unlocked
         # executor cannot write output merely because its process is still alive.
         held = self.connection.execute(
@@ -59,9 +72,36 @@ class RecommendationExecution:
         if not held:
             raise ManagementError("recommendation_execution_lost", "execution lease is no longer held", 503)
 
+    @contextmanager
+    def admission_connection(self):
+        # Borrow only an idle, autocommit lease. Never enter Connection's own
+        # context manager: it closes the socket and releases the session lock.
+        with self._connection_lock:
+            with self.backend._execution_lock:
+                registered = self.backend._executions.get(self.command.request_id) is self
+            connection = self.connection
+            if (not registered or connection is None or connection.closed
+                    or not connection.autocommit
+                    or connection.info.transaction_status != TransactionStatus.IDLE):
+                raise ManagementError("recommendation_execution_lost", "execution lease is not idle and owned", 503)
+            self._assert_held()
+            exists = connection.execute(
+                "SELECT EXISTS (SELECT 1 FROM recommendation_requests WHERE request_id = %s) AS present",
+                (self.command.request_id,),
+            ).fetchone()["present"]
+            if exists:
+                # Reconciliation explicitly commits a terminal failure before
+                # returning 409, so it must retain its independent transaction.
+                with self.backend._connect() as owned:
+                    yield owned
+            else:
+                with connection.transaction():
+                    yield connection
+
     def close(self):
-        with self.backend._execution_lock:
-            if self.backend._executions.get(self.command.request_id) is self:
-                del self.backend._executions[self.command.request_id]
-        if self.connection is not None:
-            self.connection.close()
+        with self._connection_lock:
+            with self.backend._execution_lock:
+                if self.backend._executions.get(self.command.request_id) is self:
+                    del self.backend._executions[self.command.request_id]
+            if self.connection is not None:
+                self.connection.close()

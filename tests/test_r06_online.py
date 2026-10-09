@@ -551,9 +551,9 @@ def test_cancelled_admission_thread_does_not_leave_accepted_orphan(online, monke
     app, _, _ = online
     entered, release = Event(), Event()
     original = app.backend._admit
-    def block(command):
+    def block(command, **kwargs):
         entered.set(); assert release.wait(5)
-        return original(command)
+        return original(command, **kwargs)
     monkeypatch.setattr(app.backend, "_admit", block)
     async def run():
         command = await _command(app)
