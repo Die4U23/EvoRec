@@ -1,0 +1,45 @@
+{
+  "date": "2026-10-09",
+  "kind": "bounded_descriptive_full_catalog_diagnostic_not_performance_acceptance",
+  "plan": "docs/validation/r06-trace-overhead-plan-20261009.json",
+  "measured_source_commit": "85bfdceb37b104e0145dccdc45743795e8ff5022",
+  "clean_source_before_and_after_each_arm": true,
+  "tracked_source_set_sha256": "183adddc171ce5b49a1f6f2fcca676b7be6914cba96ea308aba018bf13149d30",
+  "source_set_hash_encoding": "sha256(json.dumps(profile.source_sha256, sort_keys=True).encode())",
+  "guard": "artifacts/diagnostics/check-trace-overhead-20261009.py",
+  "guard_sha256": "9a1dd13563bb14dee34a91c85a258328fca4f7be4401f5f7cae96e1208d501de",
+  "same_bundle_and_model_all_arms": true,
+  "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+  "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+  "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+  "item_count": 137249,
+  "settings": {"load_requests_per_arm": 8, "sequential_requests_per_arm": 2, "concurrency": 2, "backend": "numpy", "api_deadline_seconds": 2.0, "gc_events": false, "gc_policy_changed": false, "phase_gate": false, "automatic_retries": 0},
+  "arms": [
+    {"run": "T1", "trace": true, "report": "artifacts/diagnostics/r06-trace-overhead-20261009-t1/profile.json", "sha256": "949a6f3d8cd7a37212e374d099218778fdc10d0e30ebdf610ee7a37b09aef88d", "sequential_status_codes": [200, 200], "load_successful": 8, "load_504": 0, "load_all_client_p50_ms": 1957.2959, "load_all_client_p95_ms": 2313.064, "load_client_create_median_ms": 330.62735, "load_exchange_median_ms": 1661.6895, "successful_identities_valid": true, "successful_database_trace_count": 10, "successful_database_traces_complete": true, "observed_load_rank_spans": 8, "observed_load_rank_wall_median_seconds": 0.21442735},
+    {"run": "U1", "trace": false, "report": "artifacts/diagnostics/r06-trace-overhead-20261009-u1/profile.json", "sha256": "15d40f03f3ae8016ee2b4061dfda8c3f163fc56684eda58b653898783205112b", "sequential_status_codes": [200, 200], "load_successful": 5, "load_504": 3, "load_all_client_p50_ms": 2394.8026, "load_all_client_p95_ms": 2933.3565, "load_client_create_median_ms": 379.26755, "load_exchange_median_ms": 2031.4312, "successful_identities_valid": true, "successful_database_trace_count": null, "successful_database_traces_complete": null, "observed_load_rank_spans": null, "observed_load_rank_wall_median_seconds": null},
+    {"run": "U2", "trace": false, "report": "artifacts/diagnostics/r06-trace-overhead-20261009-u2/profile.json", "sha256": "4b53c05fdf94587ac35a5a6a4b916959ffa29f6059e73f5688948236680a2a13", "sequential_status_codes": [200, 200], "load_successful": 8, "load_504": 0, "load_all_client_p50_ms": 2052.5255, "load_all_client_p95_ms": 2217.9219, "load_client_create_median_ms": 314.3889, "load_exchange_median_ms": 1727.89575, "successful_identities_valid": true, "successful_database_trace_count": null, "successful_database_traces_complete": null, "observed_load_rank_spans": null, "observed_load_rank_wall_median_seconds": null},
+    {"run": "T2", "trace": true, "report": "artifacts/diagnostics/r06-trace-overhead-20261009-t2/profile.json", "sha256": "efdbc80d2eeb42335d564965b0edb7ed6d57f7c6c966b566dcbfa9b278a5edad", "sequential_status_codes": [200, 200], "load_successful": 8, "load_504": 0, "load_all_client_p50_ms": 2038.0137, "load_all_client_p95_ms": 2183.3725, "load_client_create_median_ms": 320.4855, "load_exchange_median_ms": 1735.4017, "successful_identities_valid": true, "successful_database_trace_count": 10, "successful_database_traces_complete": true, "observed_load_rank_spans": 8, "observed_load_rank_wall_median_seconds": 0.274062}
+  ],
+  "totals": {"load_requests": 32, "load_successful": 29, "load_504": 3, "sequential_requests": 8, "sequential_successful": 8, "all_requests": 40, "all_successful": 37, "transport_errors": 0},
+  "integrity": {"actual_200_identity_verified": 37, "traced_requests_correlated": 20, "traced_successes_with_required_database_stages": 20, "untraced_server_coverage_observed": false, "normal_cpu_drain_all_arms": true, "no_auto_rerun_or_sample_expansion": true},
+  "interpretation": [
+    "Timeouts occurred with server tracing disabled. The observed failure is not exclusively an artifact of enabled server tracing in this experiment.",
+    "U1 and U2 differ despite the same mode. This small chronological ABBA experiment does not establish that tracing improves performance or quantify a pure tracing cost.",
+    "Client timings include a fresh HTTP client per request, connection work and scheduling. They are not exact API wall time or pure SQL; no overhead is subtracted and nested stages must not be added.",
+    "U stages and database coverage are unknown, not recovered from T. All old negative evidence remains; changed host state, request times and code checkpoints prevent causal comparison to historical all-504 runs.",
+    "29/32 load success is not stable concurrency acceptance or SLA. No unique timeout cause, production repair, restart/reset/browser acceptance or retraining is claimed."
+  ],
+  "cleanup": {"exact_owned_schemas_checked": 4, "exact_owned_schemas_remaining": 0, "test_namespace_count": 0, "exact_owned_ports_checked": 4, "owned_listeners_remaining": 0, "protected_port_8000_not_probed": true, "temporary_schema_data_recoverable": false},
+  "preserved": {"primary_checkout_head": "6e44594f55dd180ec4bacce1ed8d19e7bf4aee61", "env_sha256": "32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267", "business_schema_model_and_8000_unchanged": true, "production_source_sql_model_deadline_changed": false},
+  "recovery_followup": {"code_commit": "17056ff0d4de4719fb4a3d2fff54963e3ffca4f6", "transport": "actual HTTP route via ASGITransport, not a TCP listener", "api_deadline_seconds": 2.0, "real_manager_recovery_and_publication_lock": true, "observed_cancellation_before_unlock": true, "response_after_drain": "504 recommendation_timeout; unchanged accepted owner, no new lease or result; explicit same-key request then 409 recommendation_interrupted", "meaning": "Controlled mechanism coverage, not an explanation or reproduction of the original intermittent four-request failure"},
+  "local_runs": [
+    {"report": "artifacts/http-readiness-20261009.xml", "tests": 1, "passed": 0, "failures": 1, "errors": 0, "skipped": 0, "sha256": "6e6501a8eef5e51d14cabf1dc007d74c1a1c8383092d2f113bb6926e0fb15c83", "meaning": "dirty development test used unsupported autocommit argument on backend observation connection; no production failure claimed"},
+    {"report": "artifacts/http-readiness-fixed-20261009.xml", "tests": 1, "passed": 1, "failures": 0, "errors": 0, "skipped": 0, "sha256": "cc5bb1261e64cdf72657c1e29c1da6b8969940ae7e05b270802df16d7c812fa2", "meaning": "dirty development target test, corrected only observer invocation; production deadline, lock and drain unchanged"},
+    {"report": "artifacts/trace-overhead-final-20261009.xml", "source_commit": "f316d816fd035c95eed9d7c11797186af09e6bf4", "source_clean_before_and_after": true, "tests": 288, "passed": 288, "failures": 0, "errors": 0, "skipped": 0, "sha256": "b902744edf61fd7153fc7cf326449421c02805a08d319deeed05a2a475f4cd57", "meaning": "nine-module local service regression, not full-catalog performance or browser acceptance"}
+  ],
+  "final_local_scope": ["tests/test_r06_tcp_control.py", "tests/test_r06_tcp_profile.py", "tests/test_r06_phase_gate.py", "tests/test_r06_profile.py", "tests/test_r06_reliability.py", "tests/test_recommendation_recovery.py", "tests/test_catalog_lock.py", "tests/test_architecture.py", "tests/test_repository_hygiene.py"],
+  "regression_cleanup": {"exact_owned_schemas_checked": 6, "exact_owned_schemas_remaining": 0, "test_namespace_count": 0, "exact_owned_ports_checked": 7, "owned_listeners_remaining": 0, "protected_port_not_probed": true, "temporary_schema_data_recoverable": false},
+  "review": {"design_and_raw_result_audit": "GPT-6 Sol read-only; all four small reports and 141 tracked hash entries checked, no blocking issue found", "test_writer": "GPT-6 Luna, main fixed observer interface and failure-path cleanup", "fresh_read_only_test_risk_review": "GPT-5.6 Sol; no deterministic defect found; ASGI rather than TCP boundary retained", "main_quality_performance_reuse_checks": "existing HTTP and lock helpers reused; owned connections closed on failure, completed request task consumed; fixed 2-second route deadline and no production changes", "main_owns_serial_tests_and_acceptance": true, "routing": "user-approved native explicit model parameters, no custom profile or 6Astra"},
+  "overlapping_test_runs_must_not_be_added": true,
+  "ci": "New dependent PR and exact latest-head push/PR CI are verified after implementation and documentation commits; see the PR record."
+}
