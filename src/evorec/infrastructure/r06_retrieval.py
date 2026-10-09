@@ -19,6 +19,7 @@ from typing import Mapping
 
 from evorec.infrastructure.r06_features import (
     PROVENANCE_HASHES, MAX_ITEMS, MAX_JSON_BYTES, R06Features, _ids, _json, _timestamp,
+    _validate_id_values,
     validate_request,
 )
 from evorec.infrastructure.residual_ranker import ControlledLoadError, _digest, _f32, _integer, _object, _read, _verified
@@ -76,11 +77,14 @@ class R06Retrieval:
 
     def _eligible(self, eligible_items):
         if eligible_items is not None:
-            if isinstance(eligible_items, (set, frozenset)):
-                if len(eligible_items) > MAX_ITEMS:
-                    _fail("resource_limit", "eligible catalog exceeds the frozen limit")
-                eligible_items = tuple(eligible_items)
-            eligible_items = frozenset(_ids(eligible_items, MAX_ITEMS, unique=True))
+            if isinstance(eligible_items, (set, frozenset)) and len(eligible_items) > MAX_ITEMS:
+                _fail("resource_limit", "eligible catalog exceeds the frozen limit")
+            if type(eligible_items) is frozenset:
+                _validate_id_values(eligible_items)
+            else:
+                if isinstance(eligible_items, (set, frozenset)):
+                    eligible_items = tuple(eligible_items)
+                eligible_items = frozenset(_ids(eligible_items, MAX_ITEMS, unique=True))
             if not eligible_items.issubset(self._features._indices):
                 _fail("catalog_changed", "eligible catalog is outside the frozen item snapshot")
         return eligible_items

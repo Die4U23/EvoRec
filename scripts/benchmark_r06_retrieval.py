@@ -13,9 +13,9 @@ import sys
 import time
 import tracemalloc
 
-from evorec.infrastructure.r06_features import FEATURE_TOLERANCE, MAX_JSON_BYTES, _json, load_r06_features
+from evorec.infrastructure.r06_features import FEATURE_TOLERANCE, MAX_ITEMS, MAX_JSON_BYTES, _ids, _json, load_r06_features
 from evorec.infrastructure.r06_retrieval import load_r06_retrieval
-from evorec.infrastructure.residual_ranker import SCORE_TOLERANCE, _read, _verified, load_residual_ranker
+from evorec.infrastructure.residual_ranker import ControlledLoadError, SCORE_TOLERANCE, _read, _verified, load_residual_ranker
 
 SOURCE_FILES = (
     "src/evorec/infrastructure/_content_numpy.py", "src/evorec/infrastructure/r06_retrieval.py",
@@ -42,14 +42,15 @@ def _snapshot_sources(project, output):
 
 def _eligible_conversion_reference(runtime, values):
     """Reconstruct the previous conversion path, not a historical process run."""
-    from evorec.infrastructure.r06_features import MAX_ITEMS, _ids
-    from evorec.infrastructure.residual_ranker import ControlledLoadError
-    if len(values) > MAX_ITEMS:
-        raise ControlledLoadError("resource_limit", "eligible catalog exceeds the frozen limit")
-    normalized = frozenset(_ids(tuple(values), MAX_ITEMS, unique=True))
-    if not normalized.issubset(runtime._features._indices):
-        raise ControlledLoadError("catalog_changed", "eligible catalog is outside the frozen item snapshot")
-    return normalized
+    if values is not None:
+        if isinstance(values, (set, frozenset)):
+            if len(values) > MAX_ITEMS:
+                raise ControlledLoadError("resource_limit", "eligible catalog exceeds the frozen limit")
+            values = tuple(values)
+        values = frozenset(_ids(values, MAX_ITEMS, unique=True))
+        if not values.issubset(runtime._features._indices):
+            raise ControlledLoadError("catalog_changed", "eligible catalog is outside the frozen item snapshot")
+    return values
 
 
 def _benchmark_eligible(output, project, features, ranker, runtime, samples, references, rounds):

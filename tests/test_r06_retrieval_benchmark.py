@@ -196,8 +196,24 @@ def test_cli_block_topk_mode_requires_explicit_flag(monkeypatch, capsys, enabled
     if enabled:
         argv.append("--compare-block-topk")
     assert script.main(argv) == 0
-    assert calls == [dict(rounds=1, compare_block_topk=enabled)]
+    assert calls == [dict(rounds=1, compare_block_topk=enabled, compare_eligible_validation=False)]
     assert json.loads(capsys.readouterr().out)["activated"] is False
+
+
+def test_cli_eligibility_comparison_requires_explicit_flag(monkeypatch, capsys):
+    calls = []
+    def benchmark(*args, **kwargs):
+        calls.append(kwargs)
+        return dict(status="passed", comparison="converted-vs-immutable-eligibility-validation",
+                    scope="not HTTP timing", rows=[], activated=False)
+    monkeypatch.setattr(script, "benchmark", benchmark)
+    argv = ["output", "--features-component", "features", "--expected-features-manifest-sha256", "f"*64,
+            "--retrieval-component", "retrieval", "--expected-retrieval-manifest-sha256", "r"*64,
+            "--ranker-component", "ranker", "--expected-ranker-manifest-sha256", "k"*64,
+            "--compare-eligible-validation"]
+    assert script.main(argv) == 0
+    assert calls == [dict(rounds=1, compare_block_topk=False, compare_eligible_validation=True)]
+    assert json.loads(capsys.readouterr().out)["comparison"] == "converted-vs-immutable-eligibility-validation"
 
 
 @pytest.mark.parametrize("rounds", [True, 0, 4, 1.5])
