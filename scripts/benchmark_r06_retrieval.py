@@ -1,6 +1,7 @@
 """Hash-pinned ABBA/BAAB retrieval comparison; no activation, labels or refitting."""
 
 import argparse
+from dataclasses import replace
 import hashlib
 import json
 import math
@@ -23,6 +24,26 @@ SOURCE_FILES = (
     "tests/test_r06_retrieval_numpy.py", "tests/test_r06_retrieval_runtime.py",
     "tests/test_r06_retrieval_benchmark.py", "requirements-retrieval.lock.txt", "pyproject.toml",
 )
+
+
+def _full_numpy_scan(features, context, seen, timestamp_ms, *, eligible_items=None):
+    """Pre-pruning reference stream, not a production backend or new arithmetic."""
+    import numpy as np
+    from evorec.infrastructure._content_numpy import BLOCK_ITEMS, _scores
+    vectors = np.frombuffer(features._vectors, dtype="<f4").reshape(-1, features.dimension)
+    context = np.asarray(context, dtype=np.float32)
+    for start in range(0, len(features.item_ids), BLOCK_ITEMS):
+        stop = min(start + BLOCK_ITEMS, len(features.item_ids))
+        eligible = [i for i in range(start, stop) if features._present[i]
+                    and features._metadata[i].first_seen_ms < timestamp_ms
+                    and features.item_ids[i] not in seen
+                    and (eligible_items is None or features.item_ids[i] in eligible_items)]
+        if not eligible:
+            continue
+        scores = _scores(np, vectors[start:stop], context)
+        for index in eligible:
+            yield -float(scores[index - start]), index
+        del scores
 
 
 def _validation(root, digest):
@@ -53,7 +74,9 @@ def _verify(features, ranker, result, sample, reference):
 
 
 def benchmark(output, features_component, features_digest, retrieval_component, retrieval_digest,
-              ranker_component, ranker_digest, *, rounds=1):
+              ranker_component, ranker_digest, *, rounds=1, compare_block_topk=False):
+    if type(compare_block_topk) is not bool:
+        raise ValueError("comparison mode must be a boolean")
     if type(rounds) is not int or not 1 <= rounds <= 3:
         raise ValueError("one to three fixed comparison rounds are supported")
     project = Path(__file__).resolve().parents[1]
@@ -64,8 +87,15 @@ def benchmark(output, features_component, features_digest, retrieval_component, 
         raise FileExistsError("comparison destination already exists")
     features = load_r06_features(features_component, expected_manifest_sha256=features_digest)
     ranker = load_residual_ranker(ranker_component, expected_manifest_sha256=ranker_digest)
-    engines = {backend: load_r06_retrieval(retrieval_component, features,
-                expected_manifest_sha256=retrieval_digest, content_backend=backend) for backend in ("stdlib", "numpy")}
+    if compare_block_topk:
+        accelerated = load_r06_retrieval(retrieval_component, features,
+            expected_manifest_sha256=retrieval_digest, content_backend="numpy")
+        engines = {"numpy_full_scan": replace(accelerated, _content_scanner=_full_numpy_scan),
+                   "numpy_block_topk": accelerated}
+    else:
+        engines = {backend: load_r06_retrieval(retrieval_component, features,
+                    expected_manifest_sha256=retrieval_digest, content_backend=backend) for backend in ("stdlib", "numpy")}
+    before, after = engines
     samples, references = _validation(features_component, features_digest), _validation(ranker_component, ranker_digest)
     if len(samples) != len(references):
         raise ValueError("feature and ranker reference counts differ")
@@ -88,7 +118,7 @@ def benchmark(output, features_component, features_digest, retrieval_component, 
         for row, (sample, reference) in enumerate(zip(samples, references, strict=True)):
             effective = math.sqrt(sum(v*v for v in sample["expected_context"])) > 1e-8
             for repeat in range(rounds):
-                order = ("stdlib", "numpy", "numpy", "stdlib") if (row + repeat) % 2 == 0 else ("numpy", "stdlib", "stdlib", "numpy")
+                order = (before, after, after, before) if (row + repeat) % 2 == 0 else (after, before, before, after)
                 for backend in order:
                     tick = time.perf_counter()
                     result = engines[backend].retrieve(sample["history"], sample["seen"], sample["timestamp_ms"])
@@ -103,12 +133,12 @@ def benchmark(output, features_component, features_digest, retrieval_component, 
             medians = {backend: statistics.median(m["seconds"] for m in measurements if m["row"] == row
                        and m["backend"] == backend) for backend in engines}
             rows.append({"row": row, "effective_history": effective, "median_seconds": medians,
-                         "speedup": medians["stdlib"] / medians["numpy"]})
+                         "speedup": medians[before] / medians[after]})
             print(json.dumps({"checked_row": row, **rows[-1]}), flush=True)
         if any(row["effective_history"] for row in rows):
             active = {backend: statistics.median(m["seconds"] for m in measurements if m["effective_history"]
                       and m["backend"] == backend) for backend in engines}
-            speedup = active["stdlib"] / active["numpy"]
+            speedup = active[before] / active[after]
         else:
             active, speedup = None, None
         if any(hashlib.sha256((project / relative).read_bytes()).hexdigest() != digest
@@ -117,6 +147,8 @@ def benchmark(output, features_component, features_digest, retrieval_component, 
         import numpy as np
         from evorec.infrastructure._content_numpy import BLOCK_ITEMS
         result = {"status": "passed", "component_only": True, "activated": False,
+                  "comparison": "numpy-full-stream-vs-block-top200" if compare_block_topk else "stdlib-vs-numpy",
+                  "reference_scope": "reconstructed full stream with identical scoring kernel; not a historical process run" if compare_block_topk else "stdlib backend",
                   "scope": "same-process warm retrieval only; not load time, full recommendation latency or SLA",
                   "order": "alternating ABBA/BAAB", "rounds": rounds, "rows": rows, "measurements": measurements,
                   "effective_history_median_seconds": active, "effective_history_speedup": speedup,
@@ -149,10 +181,13 @@ def main(argv=None):
     parser.add_argument("--ranker-component", type=Path, required=True)
     parser.add_argument("--expected-ranker-manifest-sha256", required=True)
     parser.add_argument("--rounds", type=int, default=1)
+    parser.add_argument("--compare-block-topk", action="store_true",
+                        help="compare the pre-pruning full NumPy stream with per-block Top-200")
     args = parser.parse_args(argv)
     result = benchmark(args.output, args.features_component, args.expected_features_manifest_sha256,
                        args.retrieval_component, args.expected_retrieval_manifest_sha256,
-                       args.ranker_component, args.expected_ranker_manifest_sha256, rounds=args.rounds)
+                       args.ranker_component, args.expected_ranker_manifest_sha256, rounds=args.rounds,
+                       compare_block_topk=args.compare_block_topk)
     print(json.dumps({"status": result["status"], "effective_history_median_seconds": result["effective_history_median_seconds"],
                       "effective_history_speedup": result["effective_history_speedup"], "activated": False}))
     return 0

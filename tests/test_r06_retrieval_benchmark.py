@@ -51,7 +51,8 @@ def harness(tmp_path, monkeypatch):
     monkeypatch.setattr(script.time, "perf_counter", clock)
     def run(**kwargs):
         return script.benchmark(project / "artifacts" / "comparison", "features", "f"*64,
-                                "retrieval", "r"*64, "ranker", "k"*64, rounds=kwargs.get("rounds", 1))
+                                "retrieval", "r"*64, "ranker", "k"*64, rounds=kwargs.get("rounds", 1),
+                                compare_block_topk=kwargs.get("compare_block_topk", False))
     return SimpleNamespace(project=project, output=project / "artifacts" / "comparison", source=source,
                            calls=calls, samples=samples, references=references, features=features,
                            ranker=ranker, engines=engines, run=run)
@@ -71,6 +72,30 @@ def test_interleaved_timing_snapshot_and_report(harness):
     assert (harness.output / "source/scripts/benchmark.py").read_bytes() == b"fixed source"
     assert json.loads((harness.output / "verification.json").read_text()) == result
     assert not result["activated"] and not result["test_queries_evaluated"]
+
+
+def test_block_topk_comparison_is_explicit_and_interleaved(harness, monkeypatch):
+    replaced = []
+    def reference(engine, **kwargs):
+        assert engine is harness.engines["numpy"]
+        replaced.append(kwargs)
+        return harness.engines["stdlib"]
+    monkeypatch.setattr(script, "replace", reference)
+    result = harness.run(compare_block_topk=True)
+    assert replaced == [{"_content_scanner": script._full_numpy_scan}]
+    assert result["comparison"] == "numpy-full-stream-vs-block-top200"
+    assert "not a historical process run" in result["reference_scope"]
+    assert [m["backend"] for m in result["measurements"]] == [
+        "numpy_full_scan", "numpy_block_topk", "numpy_block_topk", "numpy_full_scan",
+        "numpy_block_topk", "numpy_full_scan", "numpy_full_scan", "numpy_block_topk"]
+    assert result["effective_history_median_seconds"] == {"numpy_full_scan": 1., "numpy_block_topk": 1.}
+
+
+@pytest.mark.parametrize("mode", [1, None, "true"])
+def test_comparison_mode_rejects_non_boolean_before_output(harness, mode):
+    with pytest.raises(ValueError, match="boolean"):
+        harness.run(compare_block_topk=mode)
+    assert not harness.output.exists() and not harness.calls
 
 
 @pytest.mark.parametrize("rounds", [True, 0, 4, 1.5])
