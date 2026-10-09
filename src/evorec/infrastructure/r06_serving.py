@@ -10,7 +10,9 @@ import hashlib
 from uuid import UUID
 
 from evorec.domain.models import CatalogSnapshot, RankedBatch, RequestContext, ScoredCandidate, SessionSnapshot, Strategy
-from evorec.infrastructure.r06_features import MAX_ITEMS, R06Features, _ids, validate_request
+from evorec.infrastructure.r06_features import (
+    MAX_ITEMS, R06Features, _ids, _validate_id_values, validate_request,
+)
 from evorec.infrastructure.r06_retrieval import BINDING_KEYS, R06Retrieval, RetrievalResult
 from evorec.infrastructure.residual_ranker import ControlledLoadError, ResidualRanker, _digest
 
@@ -54,7 +56,7 @@ class FrozenR06Request:
         object.__setattr__(self, "full_seen", excluded)
         if len(context.catalog.eligible_items) > MAX_ITEMS:
             _fail("resource_limit", "eligible catalog exceeds the frozen limit")
-        _ids(tuple(context.catalog.eligible_items), MAX_ITEMS)
+        _validate_id_values(context.catalog.eligible_items)
         _digest(self.features_manifest_sha256)
         _digest(self.catalog_sha256)
 

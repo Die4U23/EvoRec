@@ -11,10 +11,11 @@ import statistics
 import subprocess
 import sys
 import time
+import tracemalloc
 
-from evorec.infrastructure.r06_features import FEATURE_TOLERANCE, MAX_JSON_BYTES, _json, load_r06_features
+from evorec.infrastructure.r06_features import FEATURE_TOLERANCE, MAX_ITEMS, MAX_JSON_BYTES, _ids, _json, load_r06_features
 from evorec.infrastructure.r06_retrieval import load_r06_retrieval
-from evorec.infrastructure.residual_ranker import SCORE_TOLERANCE, _read, _verified, load_residual_ranker
+from evorec.infrastructure.residual_ranker import ControlledLoadError, SCORE_TOLERANCE, _read, _verified, load_residual_ranker
 
 SOURCE_FILES = (
     "src/evorec/infrastructure/_content_numpy.py", "src/evorec/infrastructure/r06_retrieval.py",
@@ -23,7 +24,127 @@ SOURCE_FILES = (
     "scripts/load_r06_retrieval.py", "scripts/benchmark_r06_retrieval.py",
     "tests/test_r06_retrieval_numpy.py", "tests/test_r06_retrieval_runtime.py",
     "tests/test_r06_retrieval_benchmark.py", "requirements-retrieval.lock.txt", "pyproject.toml",
+    "src/evorec/infrastructure/r06_serving.py", "tests/test_r06_serving.py",
+    "tests/test_r06_features_runtime.py",
 )
+
+
+def _snapshot_sources(project, output):
+    hashes = {}
+    for relative in SOURCE_FILES:
+        raw = (project / relative).read_bytes()
+        target = output / "source" / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+        hashes[relative] = hashlib.sha256(raw).hexdigest()
+    return {**_snapshot_sources_state(project), "source_sha256": hashes}
+
+
+def _eligible_conversion_reference(runtime, values):
+    """Reconstruct the previous conversion path, not a historical process run."""
+    if values is not None:
+        if isinstance(values, (set, frozenset)):
+            if len(values) > MAX_ITEMS:
+                raise ControlledLoadError("resource_limit", "eligible catalog exceeds the frozen limit")
+            values = tuple(values)
+        values = frozenset(_ids(values, MAX_ITEMS, unique=True))
+        if not values.issubset(runtime._features._indices):
+            raise ControlledLoadError("catalog_changed", "eligible catalog is outside the frozen item snapshot")
+    return values
+
+
+def _benchmark_eligible(output, project, features, ranker, runtime, samples, references, rounds):
+    from evorec.infrastructure.r06_features import MAX_ITEMS, _ids, _validate_id_values
+    if tracemalloc.is_tracing():
+        raise ValueError("allocation comparison requires tracemalloc to be inactive")
+    if subprocess.check_output(["git", "-C", str(project), "status", "--porcelain"], text=True).strip():
+        raise ValueError("eligibility comparison requires clean source")
+    full = frozenset(features.item_ids)
+    maximum = [0., 0., 0.]
+    for sample, reference in zip(samples, references, strict=True):
+        actual = runtime.retrieve(sample["history"], sample["seen"], sample["timestamp_ms"], eligible_items=full)
+        errors = _verify(features, ranker, actual, sample, reference)
+        maximum = [max(a, b) for a, b in zip(maximum, errors, strict=True)]
+    # Inputs, bundle replay, and allocations are outside timing. Both functions
+    # visit every ID; the reference intentionally includes the old conversions.
+    def converted_check(values):
+        _ids(tuple(values), MAX_ITEMS)
+    stages = {
+        "retrieval_eligibility": {"converted": lambda v: _eligible_conversion_reference(runtime, v),
+                                  "immutable": runtime._eligible},
+        "capture_id_validation": {"converted": converted_check, "immutable": _validate_id_values},
+    }
+    cases = {"full": full, "sparse": frozenset(features.item_ids[::17]), "empty": frozenset()}
+    output.mkdir(parents=True, exist_ok=False)
+    report, owned = output / "verification.json", False
+    try:
+        source = _snapshot_sources(project, output)
+        if source["working_tree_dirty"]:
+            raise ValueError("source changed before eligibility comparison")
+        measurements, rows = [], []
+        for stage, functions in stages.items():
+            for case, values in cases.items():
+                expected = functions["converted"](values)
+                actual = functions["immutable"](values)
+                if actual != expected or (stage == "retrieval_eligibility" and actual is not values):
+                    raise ValueError("eligibility validation changed values or failed immutable reuse")
+                for repeat in range(rounds):
+                    order = ("converted", "immutable", "immutable", "converted") if repeat % 2 == 0 else (
+                        "immutable", "converted", "converted", "immutable")
+                    for mode in order:
+                        cpu = time.thread_time()
+                        tick = time.perf_counter()
+                        functions[mode](values)
+                        seconds = time.perf_counter() - tick
+                        cpu_seconds = time.thread_time() - cpu
+                        if not math.isfinite(seconds) or seconds <= 0 or not math.isfinite(cpu_seconds) or cpu_seconds < 0:
+                            raise ValueError("comparison clock did not advance")
+                        measurements.append(dict(stage=stage, case=case, mode=mode, round=repeat,
+                                                 seconds=seconds, thread_cpu_seconds=cpu_seconds))
+                peaks = {}
+                for mode, function in functions.items():
+                    tracemalloc.start()
+                    try:
+                        function(values)
+                        peaks[mode] = tracemalloc.get_traced_memory()[1]
+                    finally:
+                        tracemalloc.stop()
+                medians = {mode: statistics.median(m["seconds"] for m in measurements
+                           if m["stage"] == stage and m["case"] == case and m["mode"] == mode) for mode in functions}
+                cpu_medians = {mode: statistics.median(m["thread_cpu_seconds"] for m in measurements
+                               if m["stage"] == stage and m["case"] == case and m["mode"] == mode) for mode in functions}
+                rows.append(dict(stage=stage, case=case, items=len(values), median_seconds=medians,
+                                 median_thread_cpu_seconds=cpu_medians, traced_peak_bytes=peaks))
+        state = _snapshot_sources_state(project)
+        if state != {key: source[key] for key in state} or any(
+                hashlib.sha256((project / name).read_bytes()).hexdigest() != digest
+                for name, digest in source["source_sha256"].items()):
+            raise ValueError("source changed during eligibility comparison")
+        result = dict(status="passed", component_only=True, activated=False,
+                      comparison="converted-vs-immutable-eligibility-validation",
+                      reference_scope="reconstructed previous conversion path with the same ID contract; not a historical process run",
+                      scope="same-process eligibility validation only; not admission, SQL, retrieval scoring, HTTP or SLA",
+                      order="alternating ABBA/BAAB", rounds=rounds, rows=rows, measurements=measurements,
+                      allocation_scope="separate untimed Python tracemalloc peak, not RSS or total model memory",
+                      all_full_provider_orders_exact=True, top20_exact=True, approved_reference_rows=len(samples),
+                      max_context_error=maximum[0], max_scalar_error=maximum[1], max_ranker_score_error=maximum[2],
+                      item_count=len(features.item_ids), dimension=features.dimension,
+                      features_manifest_sha256=features.manifest_sha256, retrieval_manifest_sha256=runtime.manifest_sha256,
+                      ranker_manifest_sha256=ranker.manifest_sha256, test_queries_evaluated=False, retrained=False,
+                      python_version=sys.version.split()[0], platform=platform.platform(), source=source)
+        with report.open("xb") as stream:
+            owned = True
+            stream.write(json.dumps(result, sort_keys=True, allow_nan=False).encode("utf-8"))
+        return result
+    except BaseException:
+        if owned:
+            report.unlink(missing_ok=True)
+        raise
+
+
+def _snapshot_sources_state(project):
+    return {"base_commit": subprocess.check_output(["git", "-C", str(project), "rev-parse", "HEAD"], text=True).strip(),
+            "working_tree_dirty": bool(subprocess.check_output(["git", "-C", str(project), "status", "--porcelain"], text=True).strip())}
 
 
 def _full_numpy_scan(features, context, seen, timestamp_ms, *, eligible_items=None):
@@ -74,9 +195,11 @@ def _verify(features, ranker, result, sample, reference):
 
 
 def benchmark(output, features_component, features_digest, retrieval_component, retrieval_digest,
-              ranker_component, ranker_digest, *, rounds=1, compare_block_topk=False):
-    if type(compare_block_topk) is not bool:
+              ranker_component, ranker_digest, *, rounds=1, compare_block_topk=False, compare_eligible_validation=False):
+    if type(compare_block_topk) is not bool or type(compare_eligible_validation) is not bool:
         raise ValueError("comparison mode must be a boolean")
+    if compare_block_topk and compare_eligible_validation:
+        raise ValueError("comparison modes are mutually exclusive")
     if type(rounds) is not int or not 1 <= rounds <= 3:
         raise ValueError("one to three fixed comparison rounds are supported")
     project = Path(__file__).resolve().parents[1]
@@ -87,6 +210,13 @@ def benchmark(output, features_component, features_digest, retrieval_component, 
         raise FileExistsError("comparison destination already exists")
     features = load_r06_features(features_component, expected_manifest_sha256=features_digest)
     ranker = load_residual_ranker(ranker_component, expected_manifest_sha256=ranker_digest)
+    if compare_eligible_validation:
+        runtime = load_r06_retrieval(retrieval_component, features,
+                                   expected_manifest_sha256=retrieval_digest, content_backend="numpy")
+        samples, references = _validation(features_component, features_digest), _validation(ranker_component, ranker_digest)
+        if len(samples) != len(references):
+            raise ValueError("feature and ranker reference counts differ")
+        return _benchmark_eligible(output, project, features, ranker, runtime, samples, references, rounds)
     if compare_block_topk:
         accelerated = load_r06_retrieval(retrieval_component, features,
             expected_manifest_sha256=retrieval_digest, content_backend="numpy")
@@ -103,17 +233,8 @@ def benchmark(output, features_component, features_digest, retrieval_component, 
     output.mkdir(parents=True, exist_ok=False)
     report, report_owned = output / "verification.json", False
     try:
-        source = output / "source"
-        hashes = {}
-        for relative in SOURCE_FILES:
-            raw = (project / relative).read_bytes()
-            target = source / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(raw)
-            hashes[relative] = hashlib.sha256(raw).hexdigest()
-        code = {"base_commit": subprocess.check_output(["git", "-C", str(project), "rev-parse", "HEAD"], text=True).strip(),
-                "working_tree_dirty": bool(subprocess.check_output(["git", "-C", str(project), "status", "--porcelain"], text=True).strip()),
-                "source_sha256": hashes}
+        code = _snapshot_sources(project, output)
+        hashes = code["source_sha256"]
         measurements, rows, maximum = [], [], [0., 0., 0.]
         for row, (sample, reference) in enumerate(zip(samples, references, strict=True)):
             effective = math.sqrt(sum(v*v for v in sample["expected_context"])) > 1e-8
@@ -183,13 +304,18 @@ def main(argv=None):
     parser.add_argument("--rounds", type=int, default=1)
     parser.add_argument("--compare-block-topk", action="store_true",
                         help="compare the pre-pruning full NumPy stream with per-block Top-200")
+    parser.add_argument("--compare-eligible-validation", action="store_true",
+                        help="compare ID-validation conversions with immutable collection reuse; not HTTP timing")
     args = parser.parse_args(argv)
     result = benchmark(args.output, args.features_component, args.expected_features_manifest_sha256,
                        args.retrieval_component, args.expected_retrieval_manifest_sha256,
                        args.ranker_component, args.expected_ranker_manifest_sha256, rounds=args.rounds,
-                       compare_block_topk=args.compare_block_topk)
-    print(json.dumps({"status": result["status"], "effective_history_median_seconds": result["effective_history_median_seconds"],
-                      "effective_history_speedup": result["effective_history_speedup"], "activated": False}))
+                       compare_block_topk=args.compare_block_topk, compare_eligible_validation=args.compare_eligible_validation)
+    if args.compare_eligible_validation:
+        print(json.dumps({key: result[key] for key in ("status", "comparison", "scope", "rows", "activated")}))
+    else:
+        print(json.dumps({"status": result["status"], "effective_history_median_seconds": result["effective_history_median_seconds"],
+                          "effective_history_speedup": result["effective_history_speedup"], "activated": False}))
     return 0
 
 

@@ -76,13 +76,18 @@ def _timestamp(value):
     return value
 
 
+def _validate_id_values(values):
+    """Check every ID in a caller-bounded collection, without normalizing it."""
+    if any(not isinstance(item, str) or not item.strip() or len(item) > 128 for item in values):
+        _fail("input_shape", "invalid item ID")
+
+
 def _ids(values, limit, *, unique=False):
     if (not isinstance(values, Sequence) or isinstance(values, (str, bytes))
             or len(values) > limit):
         _fail("input_shape", "invalid or oversized item sequence")
     result = tuple(values)
-    if any(not isinstance(item, str) or not item.strip() or len(item) > 128 for item in result):
-        _fail("input_shape", "invalid item ID")
+    _validate_id_values(result)
     if unique and len(set(result)) != len(result):
         _fail("input_shape", "duplicate provider item")
     return result

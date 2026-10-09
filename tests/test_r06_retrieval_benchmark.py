@@ -52,7 +52,8 @@ def harness(tmp_path, monkeypatch):
     def run(**kwargs):
         return script.benchmark(project / "artifacts" / "comparison", "features", "f"*64,
                                 "retrieval", "r"*64, "ranker", "k"*64, rounds=kwargs.get("rounds", 1),
-                                compare_block_topk=kwargs.get("compare_block_topk", False))
+                                compare_block_topk=kwargs.get("compare_block_topk", False),
+                                compare_eligible_validation=kwargs.get("compare_eligible_validation", False))
     return SimpleNamespace(project=project, output=project / "artifacts" / "comparison", source=source,
                            calls=calls, samples=samples, references=references, features=features,
                            ranker=ranker, engines=engines, run=run)
@@ -91,6 +92,89 @@ def test_block_topk_comparison_is_explicit_and_interleaved(harness, monkeypatch)
     assert result["effective_history_median_seconds"] == {"numpy_full_scan": 1., "numpy_block_topk": 1.}
 
 
+@pytest.fixture
+def eligible_harness(harness, monkeypatch):
+    from evorec.infrastructure import r06_features
+    harness.features._indices = {"a": 0, "b": 1}
+    runtime = harness.engines["numpy"]
+    runtime._features = harness.features
+    runtime.manifest_sha256 = "r" * 64
+    runtime._eligible = lambda values: values
+    retrieve = runtime.retrieve
+    runtime.retrieve = lambda *args, **kwargs: retrieve(*args)
+    monkeypatch.setattr(r06_features, "_validate_id_values", lambda values: None, raising=False)
+    return harness
+
+
+def test_eligibility_comparison_is_separate_interleaved_and_full_replay_checked(eligible_harness):
+    h = eligible_harness
+    result = h.run(compare_eligible_validation=True)
+    assert result["comparison"] == "converted-vs-immutable-eligibility-validation"
+    assert "not admission" in result["scope"] and "not a historical" in result["reference_scope"]
+    assert result["approved_reference_rows"] == 2 and result["all_full_provider_orders_exact"] and result["top20_exact"]
+    assert len(result["measurements"]) == 24 and len(result["rows"]) == 6
+    assert [m["mode"] for m in result["measurements"]] == ["converted", "immutable", "immutable", "converted"] * 6
+    assert {row["stage"] for row in result["rows"]} == {"capture_id_validation", "retrieval_eligibility"}
+    assert {row["case"] for row in result["rows"]} == {"full", "sparse", "empty"}
+    assert all(row["median_seconds"] == {"converted": 1., "immutable": 1.} for row in result["rows"])
+    assert all(set(row["traced_peak_bytes"]) == {"converted", "immutable"} for row in result["rows"])
+    assert result["source"]["working_tree_dirty"] is False
+    assert json.loads((h.output / "verification.json").read_text()) == result
+    assert not result["activated"] and not result["retrained"] and not result["test_queries_evaluated"]
+    assert not script.tracemalloc.is_tracing()
+
+
+@pytest.mark.parametrize("failure", ["identity", "clock", "source", "revision"])
+def test_eligibility_comparison_failure_never_issues_passed_report(eligible_harness, monkeypatch, failure):
+    h = eligible_harness
+    if failure == "identity":
+        h.engines["numpy"]._eligible = lambda values: frozenset(tuple(values))
+    elif failure == "clock":
+        monkeypatch.setattr(script.time, "perf_counter", lambda: 1.)
+    elif failure == "source":
+        def changed(values):
+            h.source.write_text("changed source")
+            return values
+        h.engines["numpy"]._eligible = changed
+    else:
+        revisions = iter(["a" * 40, "b" * 40])
+        monkeypatch.setattr(script.subprocess, "check_output", lambda args, **kwargs: next(revisions) if "rev-parse" in args else "")
+    with pytest.raises(ValueError):
+        h.run(compare_eligible_validation=True)
+    assert not (h.output / "verification.json").exists()
+    assert not script.tracemalloc.is_tracing()
+
+
+def test_eligibility_comparison_rejects_dirty_source_before_artifacts(eligible_harness, monkeypatch):
+    monkeypatch.setattr(script.subprocess, "check_output", lambda *args, **kwargs: " M source.py")
+    with pytest.raises(ValueError, match="clean source"):
+        eligible_harness.run(compare_eligible_validation=True)
+    assert not eligible_harness.output.exists()
+
+
+def test_eligibility_comparison_preserves_external_allocation_observer(eligible_harness):
+    script.tracemalloc.start()
+    try:
+        with pytest.raises(ValueError, match="inactive"):
+            eligible_harness.run(compare_eligible_validation=True)
+        assert script.tracemalloc.is_tracing() and not eligible_harness.output.exists()
+    finally:
+        script.tracemalloc.stop()
+
+
+@pytest.mark.parametrize("mode", [1, None, "true"])
+def test_eligibility_comparison_mode_is_boolean(harness, mode):
+    with pytest.raises(ValueError, match="boolean"):
+        harness.run(compare_eligible_validation=mode)
+    assert not harness.output.exists()
+
+
+def test_comparison_modes_are_mutually_exclusive(harness):
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        harness.run(compare_block_topk=True, compare_eligible_validation=True)
+    assert not harness.output.exists()
+
+
 @pytest.mark.parametrize("mode", [1, None, "true"])
 def test_comparison_mode_rejects_non_boolean_before_output(harness, mode):
     with pytest.raises(ValueError, match="boolean"):
@@ -112,8 +196,24 @@ def test_cli_block_topk_mode_requires_explicit_flag(monkeypatch, capsys, enabled
     if enabled:
         argv.append("--compare-block-topk")
     assert script.main(argv) == 0
-    assert calls == [dict(rounds=1, compare_block_topk=enabled)]
+    assert calls == [dict(rounds=1, compare_block_topk=enabled, compare_eligible_validation=False)]
     assert json.loads(capsys.readouterr().out)["activated"] is False
+
+
+def test_cli_eligibility_comparison_requires_explicit_flag(monkeypatch, capsys):
+    calls = []
+    def benchmark(*args, **kwargs):
+        calls.append(kwargs)
+        return dict(status="passed", comparison="converted-vs-immutable-eligibility-validation",
+                    scope="not HTTP timing", rows=[], activated=False)
+    monkeypatch.setattr(script, "benchmark", benchmark)
+    argv = ["output", "--features-component", "features", "--expected-features-manifest-sha256", "f"*64,
+            "--retrieval-component", "retrieval", "--expected-retrieval-manifest-sha256", "r"*64,
+            "--ranker-component", "ranker", "--expected-ranker-manifest-sha256", "k"*64,
+            "--compare-eligible-validation"]
+    assert script.main(argv) == 0
+    assert calls == [dict(rounds=1, compare_block_topk=False, compare_eligible_validation=True)]
+    assert json.loads(capsys.readouterr().out)["comparison"] == "converted-vs-immutable-eligibility-validation"
 
 
 @pytest.mark.parametrize("rounds", [True, 0, 4, 1.5])

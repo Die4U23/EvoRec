@@ -12,6 +12,7 @@ import pytest
 
 from evorec.domain.models import CatalogSnapshot, RequestContext, SessionSnapshot, Strategy
 from evorec.domain.recommendation import select_results
+from evorec.infrastructure import r06_serving as serving_module
 from evorec.infrastructure.r06_features import load_r06_features
 from evorec.infrastructure.r06_retrieval import load_r06_retrieval
 from evorec.infrastructure.r06_serving import FrozenR06Request, R06SnapshotRanker, SERVING_POLICY
@@ -151,6 +152,42 @@ def test_input_exclusion_limit_and_mutable_source_are_handled(components):
         _request(components, seen={"a"}|{f"x{i}" for i in range(9999)}, hidden={"b"})
     with pytest.raises(ControlledLoadError):
         _request(components, history=("a",)*10001)
+
+
+def test_frozen_request_validates_every_eligible_string_without_ids_tuple(monkeypatch, components):
+    visited = []
+
+    class TrackedID(str):
+        def strip(self, chars=None):
+            visited.append(self)
+            return super().strip(chars)
+
+    eligible = tuple(TrackedID(item) for item in components.features.item_ids)
+    original_ids = serving_module._ids
+
+    def reject_catalog_materialization(values, limit, **kwargs):
+        if limit == serving_module.MAX_ITEMS:
+            pytest.fail("eligible catalog must be validated without an intermediate tuple")
+        return original_ids(values, limit, **kwargs)
+
+    monkeypatch.setattr(serving_module, "_ids", reject_catalog_materialization)
+    request = _request(components, eligible=eligible)
+    assert request.context.catalog.eligible_items == frozenset(eligible)
+    assert len(visited) == len(eligible) and set(visited) == set(eligible)
+
+
+@pytest.mark.parametrize("item", ["", "   ", "x" * 129, None, 7])
+def test_frozen_request_keeps_eligible_item_shape_errors(components, item):
+    with pytest.raises(ControlledLoadError) as error:
+        _request(components, eligible={item})
+    assert error.value.code == "input_shape"
+
+
+def test_frozen_request_keeps_eligible_resource_limit(components, monkeypatch):
+    monkeypatch.setattr(serving_module, "MAX_ITEMS", len(components.features.item_ids) - 1)
+    with pytest.raises(ControlledLoadError) as error:
+        _request(components)
+    assert error.value.code == "resource_limit"
 
 
 def test_component_pairing_model_identity_and_independent_requests(components):
