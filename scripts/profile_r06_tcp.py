@@ -3,6 +3,7 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import json
+import math
 import os
 from pathlib import Path
 from time import perf_counter
@@ -50,6 +51,14 @@ def sample(url, ready, session, index, phase):
     return record
 
 
+def _valid_server_start_offset(request):
+    if type(request) is not dict:
+        return False
+    offset = request.get("asgi_start_offset_seconds")
+    return (type(offset) in (int, float) and offset >= 0
+            and (type(offset) is int or math.isfinite(offset)))
+
+
 def profile(output, database_url, root, identity, digest, *, samples=24, concurrency=2, gc_events=True):
     if (type(samples) is not int or not 2 <= samples <= 120
             or type(concurrency) is not int or not 1 <= concurrency <= 8):
@@ -89,6 +98,8 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
     if trace.get("gc_events_enabled") is not gc_events:
         raise ValueError("owned API GC event setting changed")
     server = trace["requests"]
+    shared_server_timeline_complete = bool(server) and all(
+        _valid_server_start_offset(request) for request in server)
     indices = {record["sample"] for record in server}
     successful_client_requests = [r for r in records if r.get("status_code") == 200]
     successful_server_requests = [r for r in server if r.get("status_code") == 200]
@@ -102,6 +113,7 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
     result.update(status="instrumented_diagnostic_completed_not_performance_acceptance",
                   source_commit=commit, source_sha256=hashes, requests=records, server_requests=server,
                   trace_complete=len(server) == samples+2 and indices == set(range(samples+2)),
+                  shared_server_timeline_complete=shared_server_timeline_complete,
                   client_status_matches_server=all(next((s["status_code"] for s in server
                         if s["sample"] == c["sample"]), None) == c["status_code"] for c in records),
                   successful_identities_valid=(all(c["response_identity_valid"] is True
@@ -156,6 +168,7 @@ def main(argv=None):
                      and ((success_count == 0 and identities_valid is None)
                           or (type(success_count) is int and success_count > 0 and identities_valid is True)))
     return 0 if (result["trace_complete"] and result["client_status_matches_server"]
+                 and result.get("shared_server_timeline_complete") is True
                  and identity_gate and database_trace_gate) else 1
 
 

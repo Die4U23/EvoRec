@@ -34,6 +34,7 @@ class ConcurrentTimings(RequestTimings):
     def __init__(self, samples):
         if type(samples) is not int or not 1 <= samples <= 122:
             raise ValueError("trace samples must be 1..122")
+        self._timeline_origin = perf_counter()
         self.samples = samples
         self.active = ContextVar("r06_diagnostic_request", default=None)
         self.phase = ContextVar("r06_diagnostic_phase", default="other")
@@ -115,7 +116,9 @@ class ConcurrentTimings(RequestTimings):
                     duplicate = False
             if duplicate:
                 return await app(scope, receive, send)
-            request = dict(sample=sample, started=perf_counter(), stages=[], status_code=None, error_type=None)
+            started = perf_counter()
+            request = dict(sample=sample, asgi_start_offset_seconds=started - self._timeline_origin,
+                           started=started, stages=[], status_code=None, error_type=None)
             token = self.active.set(request)
             async def observed_send(message):
                 if message.get("type") == "http.response.start":
