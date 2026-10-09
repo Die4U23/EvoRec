@@ -90,10 +90,18 @@ def test_readiness_cancellation_drains_real_connection_before_return(recovery, m
             with manager._connect(autocommit=True) as connection:
                 connections.append(connection)
                 connection.execute(f"SELECT pg_advisory_lock({manager.LOCK_KEY_SQL})", (manager.LOCK_NAME,))
-                entered.set()
-                assert release.wait(10), "readiness probe was not released"
-                if worker_fails:
-                    raise failure
+                try:
+                    entered.set()
+                    assert release.wait(10), "readiness probe was not released"
+                    if worker_fails:
+                        raise failure
+                finally:
+                    # Match recovery's acknowledged unlock; closing the worker socket is not the release operation.
+                    unlocked = connection.execute(
+                        f"SELECT pg_advisory_unlock({manager.LOCK_KEY_SQL}) AS unlocked",
+                        (manager.LOCK_NAME,),
+                    ).fetchone()["unlocked"]
+                    assert unlocked is True
         finally:
             exited.set()
 
@@ -168,7 +176,15 @@ def test_readiness_worker_failure_propagates_unchanged_before_execution_allocati
         with manager._connect(autocommit=True) as connection:
             connections.append(connection)
             connection.execute(f"SELECT pg_advisory_lock({manager.LOCK_KEY_SQL})", (manager.LOCK_NAME,))
-            raise failure
+            try:
+                raise failure
+            finally:
+                # Match recovery's acknowledged unlock; closing the worker socket is not the release operation.
+                unlocked = connection.execute(
+                    f"SELECT pg_advisory_unlock({manager.LOCK_KEY_SQL}) AS unlocked",
+                    (manager.LOCK_NAME,),
+                ).fetchone()["unlocked"]
+                assert unlocked is True
 
     def tracked_execution(*args, **kwargs):
         execution = original_execution(*args, **kwargs)
