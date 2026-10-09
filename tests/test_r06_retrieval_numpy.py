@@ -172,6 +172,11 @@ def test_each_block_emits_exact_top200_and_global_order_matches_scalar(tmp_path,
             continue
         row = struct.unpack_from(f"<{dimension}f", vectors, index * dimension * 4)
         candidates.append((-_content_score(context, row), index))
+    from scripts.benchmark_r06_retrieval import _full_numpy_scan
+    reference_stream = list(_full_numpy_scan(f, context, seen, 11, eligible_items=eligible))
+    assert reference_stream == candidates
+    assert [struct.pack("<f", -score) for score, _ in reference_stream] == [
+        struct.pack("<f", -score) for score, _ in candidates]
     expected = heapq.nsmallest(200, candidates)
     actual = heapq.nsmallest(200, stream)
     assert [index for _, index in actual] == [index for _, index in expected]
@@ -195,7 +200,8 @@ def test_each_block_emits_exact_top200_and_global_order_matches_scalar(tmp_path,
     assert isinstance(f._vectors, bytes) and f._vectors == vectors
 
 
-def test_cross_block_zero_ties_keep_stable_index_order(tmp_path):
+@pytest.mark.parametrize("sparse", [False, True], ids=["pruned", "sparse"])
+def test_cross_block_zero_ties_keep_stable_index_order(tmp_path, sparse):
     _, _, f = _fixture(tmp_path)
     dimension = 3
     count = kernel.BLOCK_ITEMS * 2 + 17
@@ -207,7 +213,8 @@ def test_cross_block_zero_ties_keep_stable_index_order(tmp_path):
     vectors = matrix.tobytes()
     f = replace(f, dimension=dimension, item_ids=ids, _metadata=metadata,
                 _vectors=vectors, _present=bytes([1] * count))
-    selected_indices = (*range(150), *range(kernel.BLOCK_ITEMS, kernel.BLOCK_ITEMS + 100))
+    selected_indices = ((*range(150), *range(kernel.BLOCK_ITEMS, kernel.BLOCK_ITEMS + 100))
+                        if sparse else tuple(range(count)))
     eligible = frozenset(ids[index] for index in selected_indices)
     stream = list(kernel.numpy_scanner()(f, (1., 1., 1.), set(), 11, eligible_items=eligible))
     per_block = {}
