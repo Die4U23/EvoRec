@@ -3,6 +3,7 @@
   "date": "2026-10-09",
   "implementation_commit": "c31bcdc5230c57b9a4353c764925aabd8d8f5885",
   "reviewed_code_commit": "e2c9309786b72660e390e1bcc63b110059616beb",
+  "latest_local_code_commit": "9263d29bff4cf67c2705e9b977b7c7caa5d97d0d",
   "team": {
     "routing": "user_approved_native_explicit_model_parameters_not_custom_profiles",
     "recovery": "gpt-6.1-sol",
@@ -32,8 +33,21 @@
     {"report": "artifacts/untraced-control-green-20261009.xml", "tests": 105, "passed": 105, "failures": 0, "errors": 0, "skipped": 0, "sha256": "de002efc7e23dbfcb1857d79c8db37be8ccc29c1156ac01b58eff8d4ba9348fe", "meaning": "bounded controls including real synthetic PostgreSQL/TCP, not full-catalog performance"},
     {"report": "artifacts/untraced-final-20261009.xml", "tests": 0, "passed": 0, "failures": 0, "errors": 0, "skipped": 0, "sha256": "23e873bd1557e9a60286a5704122397a61f05c07177017ffd26ea59d48e9dd3f", "meaning": "command failed before collection due to misspelled module; exit 1, NOT a passing run"},
     {"report": "artifacts/untraced-final-corrected-20261009.xml", "source_commit": "c31bcdc5230c57b9a4353c764925aabd8d8f5885", "source_clean_before_and_after": true, "tests": 282, "passed": 282, "failures": 0, "errors": 0, "skipped": 0, "sha256": "36fd4a473584158679d0871650de8450a8dfde2001b8ac01eaf8575957c6f2a5"},
-    {"report": "artifacts/untraced-reviewed-20261009.xml", "source_commit": "e2c9309786b72660e390e1bcc63b110059616beb", "source_clean_before_and_after": true, "tests": 282, "passed": 282, "failures": 0, "errors": 0, "skipped": 0, "sha256": "13839cf27c9f00956df585fb410acd2830de0f621e56547a19996e812bab6f76"}
+    {"report": "artifacts/untraced-reviewed-20261009.xml", "source_commit": "e2c9309786b72660e390e1bcc63b110059616beb", "source_clean_before_and_after": true, "tests": 282, "passed": 282, "failures": 0, "errors": 0, "skipped": 0, "sha256": "13839cf27c9f00956df585fb410acd2830de0f621e56547a19996e812bab6f76"},
+    {"report": "artifacts/untraced-external-temp-20261009.xml", "source_commit": "9263d29bff4cf67c2705e9b977b7c7caa5d97d0d", "source_clean_before_and_after": true, "temporary_root_outside_project": true, "tests": 282, "passed": 282, "failures": 0, "errors": 0, "skipped": 0, "sha256": "616fc22c685b013be7cb2c9dc0bb3c982104dffc9b5109ac59af21aba268bbc6"}
   ],
+  "path_boundary_ci_followup": {
+    "failed_head": "6c203d17ef2f151d16329ce4fcfa30dcd3dff8fc",
+    "push_run": 37900421850,
+    "pull_request_run": 37900432647,
+    "service_jobs": "both failed in the new real untraced fixture",
+    "accelerated_jobs": "both succeeded; not overall CI success",
+    "web_and_contract_steps": "not reached after service failures",
+    "cause": "fixture used tmp_path for owned lab output; Linux defaults outside artifacts and existing isolation correctly rejects it; local project-contained basetemp masked this fixture defect",
+    "fix": "owned lab output is project/artifacts/test-tcp-untraced/uuid, synthetic inputs remain tmp_path; production isolation and CI selection not relaxed",
+    "fresh_external_temp_regression": "282 passed on clean 9263d29; repeat owned cleanup confirms six schemas and seven ports removed",
+    "latest_head_ci": "must be checked after this documentation commit; prior failed runs retained"
+  },
   "final_local_scope": ["tests/test_r06_tcp_control.py", "tests/test_r06_tcp_profile.py", "tests/test_r06_phase_gate.py", "tests/test_r06_profile.py", "tests/test_r06_reliability.py", "tests/test_recommendation_recovery.py", "tests/test_architecture.py", "tests/test_repository_hygiene.py"],
   "overlapping_runs_must_not_be_added": true,
   "review_disposition": [
