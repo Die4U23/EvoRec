@@ -1,0 +1,78 @@
+{
+  "date": "2026-10-09",
+  "status": "diagnostic_intervention_validated_but_timeout_not_resolved_and_recovery_regression_unexplained",
+  "checkpoint": "Local evidence; latest-head CI is checked separately in the draft PR. Do not merge merely because CI is green",
+  "source": {
+    "base": "5ce1d96b80ddaf3c205a5ef8a6a5e39df6ab0ff5",
+    "tests_first": "fd4a81491a8c5f108c731d7fc3237a26f684ab8d",
+    "measured_clean_commit": "bbfcf2080eef50f1767679d6b72bf1753a8a2949",
+    "production_src_sql_model_deadline_changed": false,
+    "ci_selection": "add test_r06_phase_gate.py; retain all existing modules and zero-skip gates",
+    "sha256": {
+      "scripts/r06_process_trace.py": "b9eeefa8d0002d790d3aa9ac1d01affb06b2f874584bd236828e62a8b576f705",
+      "scripts/r06_service_lab.py": "445cd573f89a45313bdd2bffea8f7122bd468994ceef4b13288282baf97333b6",
+      "scripts/profile_r06_tcp.py": "ac3d16922977e2c44d0c8702e198cfbc9d97c5548b93dc0e005f59e54e2accd3",
+      "tests/test_r06_phase_gate.py": "f38e57bc89a1c7c6a68cef46e75cd6a7df48901e2e528c9966a2df8383980d4f",
+      "tests/test_r06_tcp_profile.py": "ab19cbb748309840ae3657dd7a678ce870811137870e876249879d86b93f446d",
+      "tests/test_recommendation_recovery.py": "304483729545b0fb37d075fc06ff16425f7b52e6abdde929c494a2789f6b0827"
+    }
+  },
+  "plan": "docs/validation/r06-phase-gate-plan-20261009.json",
+  "mechanism": {
+    "default_enabled": false,
+    "diagnostic_only": true,
+    "requires_profiling": true,
+    "targets": ["actual_catalog_read_and_capture", "retrieval_and_ranking"],
+    "one_process_local_shared_mutex": true,
+    "unmarked_calls_and_other_stages_bypass_gate": true,
+    "wait_stage_suffix": "_diagnostic_gate_wait",
+    "waiting_excluded_from_business_span": true,
+    "waiting_thread_cpu": null,
+    "original_arguments_results_exception_identity_and_cancel_drain_preserved": true,
+    "child_ready_and_profile_flags_require_exact_bool_match": true,
+    "scope_limit": "also serializes capture/capture, not an isolated test of one unique CPU/GIL/SQL/network cause"
+  },
+  "tests": {
+    "red": {"report": "artifacts/phase-gate-red-20261009.xml", "sha256": "b8d65bea6f22f6f23e063538c97c51d215fe44d2c71ba264ad191d2ec81f7d42", "tests": 15, "failures": 15, "errors": 0, "skipped": 0, "interpretation": "new diagnostic flag and contract absent, not evidence of wrong old recommendation output"},
+    "initial_broader_regression": {"report": "artifacts/phase-gate-green-20261009.xml", "sha256": "185a174832665960d09eda26bba5e90987ccea0a629a64a096663fbfe01c2fac", "tests": 151, "passes": 150, "failures": 1, "errors": 0, "skipped": 0, "source_clean_attested": false},
+    "failed_test": "test_concurrent_orphan_retries_share_one_terminal_outcome_without_execution",
+    "failure": "not all four responses were 409; initial report did not include status/code pairs, so unexpected status and unique cause are unknown",
+    "repair_not_claimed": "add safe fixed status/code assertion summary only; preserve 409, terminal outcome, owner, empty-result and unlock checks; no warming, deadline change or accepted alternative statuses",
+    "single_diagnostic_attempt": {"report": "artifacts/orphan-status-20261009.xml", "sha256": "dca46dd4b75b91948dfb07d02b4b8d437156c7157aa66258d1ac460645519baa", "tests": 1, "failures": 0, "errors": 0, "skipped": 0, "does_not_resolve_initial_failure": true},
+    "final_targeted_clean_source": {"report": "artifacts/phase-gate-final-20261009.xml", "sha256": "78a282aafac8a3057bf7d18cd44f06af6a943bafa9c32896253bb983cec27671", "tests": 153, "failures": 0, "errors": 0, "skipped": 0, "modules": ["test_r06_phase_gate.py", "test_r06_tcp_profile.py", "test_r06_profile.py", "test_r06_reliability.py", "test_architecture.py", "test_repository_hygiene.py"], "does_not_include_recovery_module": true},
+    "coverage": "real PostgreSQL and synthetic-package TCP with both gate and GC-observer settings; marked serialization, unmarked bypass, original error/result identity, patch restoration, real CPU drain after cancellation while waiting, exact bool refusal",
+    "counts_overlap_do_not_add": true,
+    "whole_project_locally_passed": false
+  },
+  "experiment": {
+    "order": ["A1", "B1", "B2", "A2"],
+    "same_clean_source_and_tracked_hashes_all_runs": true,
+    "independent_fresh_owned_schema_and_process_each_run": true,
+    "each_run": {"sequential": 2, "load": 8, "concurrency": 2, "profile": "sample", "backend": "numpy", "gc_observer": false, "gc_policy_changed": false, "deadline_seconds": 2.0, "automatic_retries": 0},
+    "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+    "items": 137249,
+    "environment": {"python": "3.12.6", "numpy": "2.1.3", "psycopg": "3.3.6"},
+    "runs": [
+      {"run": "A1", "phase_gate": false, "report": "artifacts/diagnostics/r06-phase-gate-20261009-a1/profile.json", "sha256": "244205f02a4050cb8ea05803d8354657b24c75670525372a65cd542b8ecf5ba0", "sequential_status_codes": [504, 504], "load_successful": 0, "load_504": 8, "client_all_p50_ms": 5047.5727000002735, "client_all_p95_ms": 6478.833600000144, "recorded_business_spans": 10, "cross_request_business_overlap_pairs": 1, "recorded_load_ranking_spans": 0, "load_ranking_wall_median_seconds": null, "gate_wait_spans": 0, "gate_wait_wall_median_seconds": null, "successful_identity_and_db_coverage": null},
+      {"run": "B1", "phase_gate": true, "report": "artifacts/diagnostics/r06-phase-gate-20261009-b1/profile.json", "sha256": "683411a341c8f2659ce183cc0ad2b0f14beba908ba70f92bb92d8ec884c37982", "sequential_status_codes": [504, 504], "load_successful": 0, "load_504": 8, "client_all_p50_ms": 4187.424700000065, "client_all_p95_ms": 4824.743099999978, "recorded_business_spans": 15, "cross_request_business_overlap_pairs": 0, "recorded_load_ranking_spans": 4, "load_ranking_wall_median_seconds": 0.5591935000002195, "gate_wait_spans": 15, "gate_wait_wall_median_seconds": 0.6890364000000773, "successful_identity_and_db_coverage": null},
+      {"run": "B2", "phase_gate": true, "report": "artifacts/diagnostics/r06-phase-gate-20261009-b2/profile.json", "sha256": "9b42b01e36ece5a64d40abad39f6249cee57bb2116c2ff0f41d490666120cf1c", "sequential_status_codes": [504, 504], "load_successful": 0, "load_504": 8, "client_all_p50_ms": 4182.698000000073, "client_all_p95_ms": 4679.00200000031, "recorded_business_spans": 16, "cross_request_business_overlap_pairs": 0, "recorded_load_ranking_spans": 4, "load_ranking_wall_median_seconds": 0.5344778999999562, "gate_wait_spans": 16, "gate_wait_wall_median_seconds": 0.14132165000000896, "successful_identity_and_db_coverage": null},
+      {"run": "A2", "phase_gate": false, "report": "artifacts/diagnostics/r06-phase-gate-20261009-a2/profile.json", "sha256": "8c65fb09de9ec9868fe378d0889aa893c04183eae6b6f79307fab7e36fbd6060", "sequential_status_codes": [200, 200], "load_successful": 0, "load_504": 8, "client_all_p50_ms": 3325.760700000046, "client_all_p95_ms": 3575.640300000032, "recorded_business_spans": 16, "cross_request_business_overlap_pairs": 8, "recorded_load_ranking_spans": 4, "load_ranking_wall_median_seconds": 1.0200549999999566, "gate_wait_spans": 0, "gate_wait_wall_median_seconds": null, "successful_identity_and_db_coverage": true}
+    ],
+    "all_40_client_server_statuses_correlated_and_shared_timelines_complete": true,
+    "total_load": {"requests": 32, "successful": 0, "status_504": 32, "successful_latency": null},
+    "analysis_helper": {"report": "artifacts/diagnostics/analyze-phase-gate-20261009.py", "sha256": "7ff97514b39b44c3788126e37a03ed4073fd7d34a46ef798542e16aa5ecdb350"},
+    "conclusion": "Gate removes recorded targeted overlap but does not make any load request succeed. Do not integrate gate into production",
+    "limits": "A1 has no load ranking span; never fill missing stages with zero. Gate waiting is excluded from ranking wall, so lower ranking wall is not end-to-end improvement. Baseline A1/A2 differ substantially; small arms, instrumentation and uncontrolled host state do not establish a unique cause or stable performance",
+    "observer_overhead_subtracted": false,
+    "nested_stages_summed": false,
+    "asgi_start_is_timeout_entry": false,
+    "pure_sql_lock_wait_or_memory_pressure_measured": false,
+    "production_acceptance": false,
+    "sla_proven": false
+  },
+  "cleanup": {"exact_owned_schemas": 4, "remaining": 0, "test_namespace_count": 0, "exact_owned_ports": 4, "listeners_remaining": 0, "normal_cpu_drain_each_run": true, "temporary_data_recoverable": false, "raw_ignored_reports_and_approved_bundle_retained": true, "user_8000_operated_or_probed": false},
+  "protected_state": {"primary_checkout_head": "6e44594f55dd180ec4bacce1ed8d19e7bf4aee61", "primary_checkout_and_env_unchanged": true, "business_schema_or_active_model_modified": false, "pr44_draft_modified": false},
+  "delivery": {"decision": "draft PR, no merge until unexplained recovery regression is resolved", "team_mode": "custom agent_type unavailable and no reusable agents live; main thread performed bounded work, no generic fallback dispatch", "review": "main-thread quality, performance and reuse checks; not independent Reviewer acceptance", "dependency_checks": ["service", "accelerated"], "research_tests_or_browser_acceptance": false}
+}
