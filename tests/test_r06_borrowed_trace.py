@@ -18,7 +18,7 @@ REQUIRED_DATABASE_STAGES = {
     "database_admission_database_execute_accepted_insert",
     "database_admission_database_transaction_context_exit",
     "actual_catalog_read_and_capture_database_execute_actual_catalog_rows",
-    "actual_catalog_read_and_capture_database_fetchall_decode",
+    "actual_catalog_read_and_capture_database_fetchone_decode",
     "result_write_database_connect",
     "result_write_database_commit",
     "result_write_database_close",

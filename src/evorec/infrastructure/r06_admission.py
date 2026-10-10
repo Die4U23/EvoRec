@@ -17,6 +17,7 @@ from evorec.domain.models import ModelSnapshot
 from evorec.infrastructure.r06_bundle import KIND, FrozenCatalogItem, FrozenR06Bundle, _item_digest, catalog_seal
 from evorec.infrastructure.r06_serving import FrozenR06Request
 from evorec.infrastructure.residual_ranker import ControlledLoadError
+from evorec.infrastructure.r06_catalog_capture import catalog_source_digests, capture_eligible
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,9 @@ class ManagedR06Runtime:
     bundle: FrozenR06Bundle
     catalog_items: Mapping[str, FrozenCatalogItem]
     catalog_text_sha256: Mapping[str, bytes] = field(init=False, repr=False, compare=False)
+    member_sha256: bytes = field(init=False, repr=False, compare=False)
+    full_active_sha256: bytes = field(init=False, repr=False, compare=False)
+    full_eligible_items: frozenset[str] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
         # Pay approved-source hashing once at load. Requests hash actual current
@@ -39,6 +43,10 @@ class ManagedR06Runtime:
         object.__setattr__(self, "catalog_text_sha256", MappingProxyType({
             key: hashlib.sha256(item.text.encode("utf-8")).digest() for key, item in records.items()
         }))
+        members, active = catalog_source_digests(self.item_ids, records, self.catalog_text_sha256)
+        object.__setattr__(self, "member_sha256", members)
+        object.__setattr__(self, "full_active_sha256", active)
+        object.__setattr__(self, "full_eligible_items", frozenset(records))
 
     @property
     def bundle_id(self):
@@ -118,7 +126,7 @@ def validate_captured_context(bundle, context):
         raise ManagementError(error.code, "frozen R06 input validation failed", 422) from error
 
 
-def capture_model(connection, runtime, session, catalog, rows):
+def capture_model(connection, runtime, session, catalog, capture):
     bundle = runtime.bundle
     row = connection.execute(
         "SELECT runtime_kind, manifest_sha256 FROM bundle_versions WHERE bundle_id = %s",
@@ -127,24 +135,8 @@ def capture_model(connection, runtime, session, catalog, rows):
     if (row is None or row["runtime_kind"] != KIND
             or (row["manifest_sha256"] or "").strip() != bundle.manifest_sha256):
         raise ManagementError("r06_snapshot_changed", "registered model identity differs", 503)
-    if not _ordered_membership_matches(rows, bundle.adapter.features.item_ids):
-        raise ManagementError("bundle_members_changed", "approved ordered membership changed", 409)
-    active_count = 0
-    for row in rows:
-        if not row.is_active:
-            continue
-        item_id = row.item_id
-        approved = runtime.catalog_items[item_id]
-        if (row.r06_text_sha256 != runtime.catalog_text_sha256[item_id]
-                or row.r06_first_seen_ms != approved.first_seen_ms):
-            raise ManagementError("r06_catalog_changed", "actual model text/time changed", 409)
-        if item_id not in catalog.eligible_items:
-            raise ManagementError("r06_catalog_changed", "eligible catalog changed during admission", 409)
-        active_count += 1
-    # Ordered membership above already proves unique approved IDs. Inclusion
-    # plus equal cardinality proves exact eligibility without a second set or
-    # a full list of identity pairs that the full-set seal does not use.
-    if active_count != len(catalog.eligible_items):
+    eligible = capture_eligible(runtime, capture)
+    if eligible != catalog.eligible_items:
         raise ManagementError("r06_catalog_changed", "eligible catalog changed during admission", 409)
     seen = set(session.history) | session.hidden_items | session.favorite_items
     seen.update(row["item_id"] for row in connection.execute(
@@ -154,9 +146,9 @@ def capture_model(connection, runtime, session, catalog, rows):
     timestamp = connection.execute(
         "SELECT floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint AS timestamp_ms",
     ).fetchone()["timestamp_ms"]
-    # Actual ordered membership, text/time and eligible coverage were checked
-    # above. Only their immutable canonical full-set digest is reused.
-    seal = (bundle.full_catalog_seal if active_count == len(bundle.catalog_item_sha256)
+    # Actual ordered membership and active text/time were checked in one SQL
+    # view, against immutable approved source fingerprints, not stored hashes.
+    seal = (bundle.full_catalog_seal if capture.active_count == len(bundle.catalog_item_sha256)
             else _seal(bundle, [(item, bundle.catalog_item_sha256[item]) for item in catalog.eligible_items]))
     try:
         return ModelSnapshot(bundle.manifest_sha256, bundle.model_version, timestamp, seen, seal)

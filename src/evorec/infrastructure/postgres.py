@@ -12,7 +12,7 @@ from threading import Lock
 from uuid import UUID, uuid4
 
 import psycopg
-from psycopg.rows import dict_row, namedtuple_row
+from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from evorec.domain.errors import (
@@ -52,6 +52,7 @@ from evorec.infrastructure.r06_admission import (
 )
 from evorec.infrastructure.r06_async import R06CPUQueue, R06RankingPort, _drain
 from evorec.infrastructure.recommendation_execution import RecommendationExecution, _AdmissionRequestAppeared
+from evorec.infrastructure.r06_catalog_capture import read_catalog_capture
 
 if TYPE_CHECKING:
     from evorec.infrastructure.management import CatalogManager
@@ -97,21 +98,13 @@ class PostgresDemoBackend:
         if kind and kind["runtime_kind"] == "r06-frozen-bundle-v1":
             if not self.r06_enabled or not isinstance(runtime, ManagedR06Runtime):
                 raise ManagementError("r06_runtime_unavailable", "approved R06 runtime is unavailable", 503)
-            # One actual-row read supplies eligibility and content, not two READ COMMITTED views.
-            # Compact rows are local to this large read; other queries retain dict_row.
-            # Compute the digest from actual text in this same SQL view. No
-            # mutable stored hash is trusted; raw time and all members remain.
-            with connection.cursor(row_factory=namedtuple_row, binary=True) as cursor:
-                rows = cursor.execute(
-                    "SELECT bi.item_id, bi.internal_item_id, i.is_active, "
-                    "pg_catalog.sha256(pg_catalog.convert_to(i.r06_model_text, 'UTF8')) AS r06_text_sha256, "
-                    "i.r06_first_seen_ms "
-                    "FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id "
-                    "WHERE bi.bundle_id=%s ORDER BY bi.internal_item_id", (bundle_id,),
-                ).fetchall()
-            eligible = frozenset(row.item_id for row in rows if row.is_active)
+            capture = read_catalog_capture(connection, bundle_id, len(runtime.item_ids))
+            # Provisional until capture_model verifies both fingerprints and
+            # this exact partition. Do not hash a partial catalog twice.
+            eligible = (runtime.full_eligible_items if not capture.inactive_ids
+                        else runtime.full_eligible_items.difference(capture.inactive_ids))
             catalog = CatalogSnapshot(bundle_id, control["exclusion_version"], eligible)
-            model = capture_model(connection, runtime, session, catalog, rows)
+            model = capture_model(connection, runtime, session, catalog, capture)
         elif isinstance(runtime, ManagedR06Runtime):
             raise ManagementError("r06_snapshot_changed", "registered runtime kind differs", 503)
         else:

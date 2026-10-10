@@ -1,0 +1,187 @@
+"""Owned full-catalog SQL observations, not an HTTP performance acceptance."""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+from time import perf_counter
+from types import SimpleNamespace
+from uuid import UUID
+
+import psycopg
+from psycopg.rows import dict_row
+
+from evorec.domain.errors import ManagementError
+from evorec.infrastructure.r06_catalog_capture import (
+    CATALOG_CAPTURE_SQL, CatalogCapture, capture_eligible, catalog_source_digests, read_catalog_capture,
+)
+from scripts.assemble_r06_bundle import _source
+from scripts.r06_service_lab import R06ServiceLab
+from scripts.run_r06_demo import marker
+from scripts.verify_r06_reliability import subprocess_sources
+
+
+LEGACY_SQL = """SELECT bi.item_id, bi.internal_item_id, i.is_active,
+    i.r06_model_text, i.r06_first_seen_ms
+    FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id
+    WHERE bi.bundle_id=%s ORDER BY bi.internal_item_id"""
+
+
+def plan_nodes(plan):
+    """Retain measured plan facts without treating LIMIT as a scan guarantee."""
+    result = []
+
+    def visit(node):
+        fields = ("Node Type", "Relation Name", "Index Name", "Actual Rows", "Actual Loops",
+                  "Rows Removed by Filter", "Rows Removed by Join Filter", "Sort Method",
+                  "Sort Space Used", "Sort Space Type", "Shared Hit Blocks", "Shared Read Blocks",
+                  "Temp Read Blocks", "Temp Written Blocks")
+        result.append({key: node[key] for key in fields if key in node})
+        for child in node.get("Plans", []):
+            visit(child)
+
+    visit(plan[0]["Plan"])
+    return result
+
+
+def _reference(rows):
+    # Only a cost reference from this owned, published initial catalog. Approval
+    # predicates are independently tested; this object is not a production runtime.
+    ordered = tuple(row["item_id"] for row in rows)
+    if any(row["internal_item_id"] != index or not row["is_active"]
+           or row["r06_model_text"] is None or row["r06_first_seen_ms"] is None
+           for index, row in enumerate(rows)):
+        raise ValueError("published initial directory is not canonical")
+    records = {row["item_id"]: SimpleNamespace(first_seen_ms=row["r06_first_seen_ms"])
+               for row in rows}
+    digests = {row["item_id"]: hashlib.sha256(row["r06_model_text"].encode("utf-8")).digest()
+               for row in rows}
+    member, active = catalog_source_digests(ordered, records, digests)
+    return SimpleNamespace(item_ids=ordered, catalog_items=records, catalog_text_sha256=digests,
+                           member_sha256=member, full_active_sha256=active,
+                           full_eligible_items=frozenset(ordered))
+
+
+def profile(output, database_url, root, identity, digest):
+    project = Path(__file__).resolve().parents[1]
+    commit, hashes = _source(project), subprocess_sources(project)
+    lab = R06ServiceLab(output, database_url, root, identity, digest,
+                        gc_events=False, profile_samples=0)
+    observations, plans, result = [], [], None
+    try:
+        with lab:
+            ready = dict(lab.ready)
+            # Stop the idle API to avoid its background activity in SQL timings.
+            lab.stop()
+            with psycopg.connect(lab.isolated_url, autocommit=True) as connection:
+                with connection.cursor(row_factory=dict_row, binary=True) as cursor:
+                    version = cursor.execute("SELECT version() AS version").fetchone()["version"]
+                    initial = cursor.execute(LEGACY_SQL, (identity,)).fetchall()
+                if len(initial) != ready["item_count"]:
+                    raise ValueError("full published model directory count changed")
+                runtime = _reference(initial)
+                del initial
+                count = len(runtime.item_ids)
+                down_ids = list(runtime.item_ids[:3])
+                for state in ("all_active", "three_inactive"):
+                    if state == "three_inactive":
+                        connection.execute("UPDATE items SET is_active=false WHERE item_id=ANY(%s)",
+                                           (down_ids,))
+                    expected = runtime.full_eligible_items.difference(down_ids if state != "all_active" else ())
+                    for implementation in ("old", "new", "new", "old"):
+                        query = LEGACY_SQL if implementation == "old" else CATALOG_CAPTURE_SQL
+                        parameters = (identity,) if implementation == "old" else (identity, count+1, count)
+                        with connection.cursor(row_factory=dict_row, binary=True) as cursor:
+                            started = perf_counter()
+                            cursor.execute(query, parameters)
+                            executed = perf_counter()
+                            rows = cursor.fetchall() if implementation == "old" else cursor.fetchone()
+                            fetched = perf_counter()
+                        validated = None
+                        if implementation == "new":
+                            rows["inactive_ids"] = tuple(rows["inactive_ids"])
+                            validation_start = perf_counter()
+                            actual = capture_eligible(runtime, CatalogCapture(**rows))
+                            validated = (perf_counter()-validation_start)*1000
+                        else:
+                            actual = frozenset(row["item_id"] for row in rows if row["is_active"])
+                        if actual != expected:
+                            raise ValueError("SQL diagnostic eligibility changed")
+                        observations.append(dict(state=state, implementation=implementation,
+                            execute_ms=(executed-started)*1000, fetch_decode_ms=(fetched-executed)*1000,
+                            candidate_eligibility_validation_ms=validated,
+                            returned_rows=count if implementation == "old" else 1,
+                            eligible_count=len(actual)))
+                        del rows, actual
+                    for implementation in ("old", "new"):
+                        query = LEGACY_SQL if implementation == "old" else CATALOG_CAPTURE_SQL
+                        parameters = (identity,) if implementation == "old" else (identity, count+1, count)
+                        _explain(connection, query, parameters, state, implementation, plans)
+                # Extra actual member is deliberately outside approval and has NULL
+                # text/time: the N+1 count must reject it before text work.
+                connection.execute("INSERT INTO items(item_id,title,category,is_active) "
+                                   "VALUES ('capture_probe_extra','Owned extra','test',true)")
+                connection.execute("INSERT INTO bundle_items(bundle_id,item_id,internal_item_id) "
+                                   "VALUES (%s,'capture_probe_extra',%s)", (identity, count))
+                capture = read_catalog_capture(connection, identity, count)
+                if capture.member_count != count+1 or capture.active_count != 0:
+                    raise ValueError("overflow did not skip active catalog work")
+                try:
+                    capture_eligible(runtime, capture)
+                except ManagementError as error:
+                    if error.code != "bundle_members_changed":
+                        raise
+                else:
+                    raise ValueError("overflow was accepted")
+                _explain(connection, CATALOG_CAPTURE_SQL, (identity, count+1, count),
+                         "overflow_one", "new", plans)
+                result = dict(source_commit=commit, source_sha256=hashes,
+                    bundle_id=str(identity), manifest_sha256=digest, model_version=ready["model_version"],
+                    item_count=count, database_version=version, driver_version=psycopg.__version__,
+                    environment=dict(python=platform.python_version(), platform=platform.platform(),
+                        processor=platform.processor(), logical_cpus=os.cpu_count(),
+                        load_average=None, load_average_unavailable_on_windows=True),
+                    measurements=observations, plans=plans, overflow_rejected=True,
+                    timing_scope="driver execute and fetch/decode; not pure SQL or HTTP latency",
+                    reference_scope="owned published initial directory; not independent approval proof",
+                    explain_observation_cost_separate=True, production_acceptance=False)
+    finally:
+        if lab.output.exists():
+            marker(lab.output, "catalog-observations", dict(source_commit=commit,
+                measurements=observations, plans=plans, owned_schema_removed=not lab.created))
+    if _source(project) != commit or subprocess_sources(project) != hashes:
+        raise ValueError("source changed during catalog diagnostic")
+    result.update(owned_schema_removed=not lab.created, normal_cpu_drain=lab.stopped[-1]["normal_cpu_drain"])
+    marker(lab.output, "catalog-profile", result)
+    return result
+
+
+def _explain(connection, query, parameters, state, implementation, plans):
+    started = perf_counter()
+    raw = connection.execute("EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON) " + query,
+                             parameters).fetchone()[0]
+    plans.append(dict(state=state, implementation=implementation, raw=raw, nodes=plan_nodes(raw),
+                      observation_elapsed_ms=(perf_counter()-started)*1000))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("output", type=Path)
+    parser.add_argument("managed_root", type=Path)
+    parser.add_argument("bundle_id", type=UUID)
+    parser.add_argument("--expected-manifest-sha256", required=True)
+    args = parser.parse_args()
+    try:
+        result = profile(args.output, os.environ["EVOREC_DATABASE_URL"], args.managed_root,
+                         args.bundle_id, args.expected_manifest_sha256)
+    except Exception as error:
+        print(json.dumps(dict(status="failed", error_type=type(error).__name__)))
+        return 1
+    print(json.dumps(dict(status="observations_only", output=str(args.output), item_count=result["item_count"])))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
