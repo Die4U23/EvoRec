@@ -4,6 +4,7 @@
 
 | 范围 | 首选记录 | 进一步检查 |
 | --- | --- | --- |
+| 流式窄投影与完整包 HTTP 反例 | [预登记](stable-stream-digest-plan-20261010.md)、[目录成本降低但双并发仍失败](stable-stream-digest-20261010.md) | 干净 151 项通过；排序/临时写入降低，初筛 22/24、2 次 504；固定阶段诊断未复现，不作为稳定版合并，远端登记时序偏差保留 |
 | 同 SQL 早快后慢的计划/统计复核 | [预登记](stable-catalog-plans-plan-20261010.md)、[16 组快照与计数结论](stable-catalog-plans-20261010.md) | 干净 147 项通过；fresh 计划及估计相同，慢调用早于目标具名准备、generic=0；不解释旧 504，不改准备/统计设置，不作为稳定门禁通过 |
 | 完整目录等待与可验证 leader CPU 观察 | [预登记](stable-catalog-waits-plan-20261010.md)、[固定八笔观察与未知边界](stable-catalog-waits-20261010.md) | 干净 116 项通过；同 SQL 早快后慢、采到临时文件等待，未采到 Lock/阻塞者；CPU unknown，不解释旧 504，不作为稳定门禁通过 |
 | 目录窄帧候选与精确 SQL 对照 | [预登记](stable-narrow-frames-plan-20261010.md)、[性能否决与撤回](stable-narrow-frames-20261010.md) | 候选干净 51 项功能通过；完整目录物化增加临时写入、少量下架调用更慢，撤回生产 SQL，不执行 HTTP 验收；保留工具、反例及候选提交 |
