@@ -309,7 +309,7 @@ def test_statement_snapshot_survives_change_while_sql_hashing_is_blocked(online)
 
 
 @pytest.mark.parametrize("scenario", ["overflow", "all_inactive"])
-def test_narrow_frames_do_not_evaluate_text_outside_active_approved_count(online, scenario):
+def test_capture_skips_text_outside_active_approved_count(online, scenario):
     """A throwing function proves skipped text work, not just a zero count."""
     from evorec.infrastructure.r06_catalog_capture import CATALOG_CAPTURE_SQL, CatalogCapture
     from psycopg.errors import RaiseException
