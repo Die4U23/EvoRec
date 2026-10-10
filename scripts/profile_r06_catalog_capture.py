@@ -2,6 +2,7 @@
 
 import argparse
 import ast
+from contextlib import nullcontext
 import hashlib
 import json
 import os
@@ -22,6 +23,7 @@ from evorec.infrastructure.r06_catalog_capture import (
 )
 from scripts.assemble_r06_bundle import _source
 from scripts.r06_service_lab import R06ServiceLab
+from scripts.r06_database_observer import DatabaseCallObserver
 from scripts.run_r06_demo import marker
 from scripts.verify_r06_reliability import subprocess_sources
 
@@ -99,7 +101,32 @@ def _reference(rows):
                            full_eligible_items=frozenset(ordered))
 
 
-def profile(output, database_url, root, identity, digest, *, baseline_commit=None):
+def _execute_observed(connection, database_url, query, parameters, *, many, enabled, observation):
+    """Retain the failed SQL observation too; do not retry or replace its error."""
+    observer = None
+    started = executed = fetched = None
+    try:
+        observer = DatabaseCallObserver(connection, database_url) if enabled else None
+        with observer if observer is not None else nullcontext():
+            with connection.cursor(row_factory=dict_row, binary=True) as cursor:
+                started = perf_counter()
+                cursor.execute(query, parameters)
+                executed = perf_counter()
+                rows = cursor.fetchall() if many else cursor.fetchone()
+                fetched = perf_counter()
+        return rows
+    except Exception as error:
+        observation["operation_error_type"] = type(error).__name__
+        raise
+    finally:
+        observation.update(execute_ms=(executed-started)*1000 if executed is not None else None,
+                           fetch_decode_ms=(fetched-executed)*1000 if fetched is not None else None,
+                           database_observation=observer.report() if observer is not None and observer.joined else None)
+
+
+def profile(output, database_url, root, identity, digest, *, baseline_commit=None, observe_waits=False):
+    if type(observe_waits) is not bool:
+        raise ValueError("observe_waits must be a bool")
     project = Path(__file__).resolve().parents[1]
     commit, hashes = _source(project), subprocess_sources(project)
     baseline_query, baseline_source = (_baseline_sql(project, baseline_commit)
@@ -137,12 +164,10 @@ def profile(output, database_url, root, identity, digest, *, baseline_commit=Non
                     reference_capture = None
                     for implementation in (baseline_name, "new", "new", baseline_name):
                         query, parameters = queries[implementation]
-                        with connection.cursor(row_factory=dict_row, binary=True) as cursor:
-                            started = perf_counter()
-                            cursor.execute(query, parameters)
-                            executed = perf_counter()
-                            rows = cursor.fetchall() if implementation == "old" else cursor.fetchone()
-                            fetched = perf_counter()
+                        observation = dict(state=state, implementation=implementation, operation_error_type=None)
+                        observations.append(observation)
+                        rows = _execute_observed(connection, lab.isolated_url, query, parameters,
+                            many=implementation == "old", enabled=observe_waits, observation=observation)
                         validated = None
                         if implementation != "old":
                             capture = _capture(rows)
@@ -158,12 +183,10 @@ def profile(output, database_url, root, identity, digest, *, baseline_commit=Non
                             actual = frozenset(row["item_id"] for row in rows if row["is_active"])
                         if actual != expected:
                             raise ValueError("SQL diagnostic eligibility changed")
-                        observations.append(dict(state=state, implementation=implementation,
-                            execute_ms=(executed-started)*1000, fetch_decode_ms=(fetched-executed)*1000,
-                            eligibility_validation_ms=validated,
+                        observation.update(eligibility_validation_ms=validated,
                             candidate_eligibility_validation_ms=validated if implementation == "new" else None,
                             returned_rows=count if implementation == "old" else 1,
-                            eligible_count=len(actual)))
+                            eligible_count=len(actual))
                         del rows, actual
                     for implementation in (baseline_name, "new"):
                         query, parameters = queries[implementation]
@@ -191,6 +214,7 @@ def profile(output, database_url, root, identity, digest, *, baseline_commit=Non
                     _explain(connection, query, parameters, "overflow_one", implementation, plans)
                 result = dict(source_commit=commit, source_sha256=hashes,
                     baseline_source=baseline_source,
+                    wait_observer_enabled=observe_waits,
                     bundle_id=str(identity), manifest_sha256=digest, model_version=ready["model_version"],
                     item_count=count, database_version=version, driver_version=psycopg.__version__,
                     database_settings=settings, prepare_threshold=connection.prepare_threshold,
@@ -205,6 +229,7 @@ def profile(output, database_url, root, identity, digest, *, baseline_commit=Non
         if lab.output.exists():
             marker(lab.output, "catalog-observations", dict(source_commit=commit,
                 source_sha256=hashes, baseline_source=baseline_source,
+                wait_observer_enabled=observe_waits,
                 measurements=observations, plans=plans, owned_schema_removed=not lab.created))
     if _source(project) != commit or subprocess_sources(project) != hashes:
         raise ValueError("source changed during catalog diagnostic")
@@ -228,15 +253,21 @@ def main():
     parser.add_argument("bundle_id", type=UUID)
     parser.add_argument("--expected-manifest-sha256", required=True)
     parser.add_argument("--baseline-commit", help="full commit SHA of the previous aggregate SQL")
+    parser.add_argument("--observe-waits", action="store_true", help="owned PID sampling; changes observation cost")
     args = parser.parse_args()
     try:
         result = profile(args.output, os.environ["EVOREC_DATABASE_URL"], args.managed_root,
-                         args.bundle_id, args.expected_manifest_sha256, baseline_commit=args.baseline_commit)
+                         args.bundle_id, args.expected_manifest_sha256, baseline_commit=args.baseline_commit,
+                         observe_waits=args.observe_waits)
     except Exception as error:
         print(json.dumps(dict(status="failed", error_type=type(error).__name__)))
         return 1
-    print(json.dumps(dict(status="observations_only", output=str(args.output), item_count=result["item_count"])))
-    return 0
+    complete = not args.observe_waits or (len(result["measurements"]) == 8 and all(
+        row["database_observation"] is not None and row["database_observation"]["observer_complete"]
+        for row in result["measurements"]))
+    print(json.dumps(dict(status="observations_only" if complete else "incomplete_observations",
+                          output=str(args.output), item_count=result["item_count"])))
+    return 0 if complete else 1
 
 
 if __name__ == "__main__":
