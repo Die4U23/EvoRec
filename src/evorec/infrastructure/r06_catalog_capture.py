@@ -55,24 +55,36 @@ SELECT
            ORDER BY internal_item_id), ''::bytea)) AS member_sha256,
        count(*) FILTER (WHERE is_active) AS active_count,
        pg_catalog.sha256(COALESCE(pg_catalog.string_agg(
-           member_frame || pg_catalog.sha256(pg_catalog.convert_to(r06_model_text, 'UTF8'))
-                        || pg_catalog.int8send(r06_first_seen_ms)
+           member_frame || active_suffix
            , ''::bytea ORDER BY internal_item_id) FILTER (WHERE is_active), ''::bytea)) AS active_sha256,
-       count(*) FILTER (WHERE is_active AND
-           (r06_model_text IS NULL OR r06_first_seen_ms IS NULL)) AS invalid_active_count,
+       count(*) FILTER (WHERE is_active AND invalid_active) AS invalid_active_count,
        COALESCE(pg_catalog.array_agg(item_id ORDER BY internal_item_id)
            FILTER (WHERE NOT is_active), ARRAY[]::text[]) AS inactive_ids
 FROM (
-    SELECT bi.item_id, bi.internal_item_id, i.is_active,
-           i.r06_model_text, i.r06_first_seen_ms,
-           pg_catalog.int4send(pg_catalog.octet_length(pg_catalog.convert_to(bi.item_id, 'UTF8')))
-           || pg_catalog.convert_to(bi.item_id, 'UTF8')
-           || pg_catalog.int8send(bi.internal_item_id::bigint) AS member_frame
-    FROM bounded_members bi JOIN items i ON i.item_id=bi.item_id
-    WHERE size.member_count=%s
+    SELECT item_id, internal_item_id, is_active, member_frame,
+           CASE WHEN is_active THEN
+               pg_catalog.sha256(pg_catalog.convert_to(r06_model_text, 'UTF8'))
+               || pg_catalog.int8send(r06_first_seen_ms)
+           END AS active_suffix,
+           (r06_model_text IS NULL OR r06_first_seen_ms IS NULL) AS invalid_active
+    FROM (
+        SELECT bi.item_id, bi.internal_item_id, i.is_active,
+               i.r06_model_text, i.r06_first_seen_ms,
+               pg_catalog.int4send(pg_catalog.octet_length(pg_catalog.convert_to(bi.item_id, 'UTF8')))
+               || pg_catalog.convert_to(bi.item_id, 'UTF8')
+               || pg_catalog.int8send(bi.internal_item_id::bigint) AS member_frame
+        FROM bounded_members bi JOIN items i ON i.item_id=bi.item_id
+        WHERE size.member_count=%s
+    ) AS source_rows
+    OFFSET 0
 ) AS actual_rows
 ) AS summary
 """
+
+# OFFSET 0 preserves the narrow projection boundary in supported PostgreSQL
+# planners without an additional MATERIALIZED frame store. Aggregate-local
+# ORDER BY remains explicit; correctness does not depend on this plan shape.
+# Verify actual sort/temp costs on the full catalog, not just estimated width.
 
 
 def read_catalog_capture(connection, bundle_id, approved_count):

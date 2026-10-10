@@ -1,7 +1,7 @@
 """Bounded R06 capture retains the old row implementation's decisions."""
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 import hashlib
 import json
 from queue import Queue
@@ -13,6 +13,41 @@ import pytest
 from evorec.domain.errors import ManagementError
 from evorec.infrastructure.r06_catalog_capture import capture_eligible, read_catalog_capture
 from test_r06_online import _command, online
+
+
+def _wait_for_capture_gate(blocker, backend_pid, future):
+    until = monotonic() + 10
+    while not blocker.execute(
+        "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE pid=%s "
+        "AND locktype='advisory' AND NOT granted) AS waiting", (backend_pid,),
+    ).fetchone()['waiting']:
+        if future.done():
+            # Surface a SQL error immediately instead of misreporting a
+            # parse/execution failure as a ten-second gate timeout.
+            future.result()
+            pytest.fail("SQL capture completed without reaching the held test gate")
+        assert monotonic() < until, "SQL capture never reached the held test gate"
+        sleep(.01)
+
+
+@pytest.mark.parametrize("failed", [True, False])
+def test_capture_gate_wait_rejects_completed_work_without_a_lock(failed):
+    class NoLock:
+        def execute(self, *args):
+            return self
+
+        def fetchone(self):
+            return {"waiting": False}
+
+    future = Future()
+    if failed:
+        future.set_exception(ValueError("owned SQL failure"))
+        with pytest.raises(ValueError, match="owned SQL failure"):
+            _wait_for_capture_gate(NoLock(), 1, future)
+    else:
+        future.set_result(None)
+        with pytest.raises(pytest.fail.Exception, match="completed without reaching"):
+            _wait_for_capture_gate(NoLock(), 1, future)
 
 
 def _legacy_row_reference(connection, runtime):
@@ -289,13 +324,7 @@ def test_statement_snapshot_survives_change_while_sql_hashing_is_blocked(online)
         future = pool.submit(capture_in_thread)
         try:
             backend_pid = pid.get(timeout=10)
-            until = monotonic() + 10
-            while not blocker.execute(
-                "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE pid=%s "
-                "AND locktype='advisory' AND NOT granted) AS waiting", (backend_pid,),
-            ).fetchone()['waiting']:
-                assert monotonic() < until, "SQL capture never reached the held test gate"
-                sleep(.01)
+            _wait_for_capture_gate(blocker, backend_pid, future)
             with app.backend._connect() as writer:
                 writer.execute("UPDATE items SET is_active=false, r06_model_text='concurrent drift', "
                                "r06_first_seen_ms=99 WHERE item_id='c'")
@@ -354,5 +383,40 @@ def test_capture_skips_text_outside_active_approved_count(online, scenario):
         else:
             connection.execute("UPDATE items SET is_active=true WHERE item_id='a'")
         with pytest.raises(RaiseException, match="text hashing must not run"):
+            with connection.transaction():
+                connection.execute(gated_sql, (identity, count+1, count)).fetchone()
+
+
+def test_mixed_catalog_never_hashes_inactive_text_with_a_real_negative_control(online):
+    from evorec.infrastructure.r06_catalog_capture import CATALOG_CAPTURE_SQL, CatalogCapture
+    from psycopg.errors import RaiseException
+    app, identity, _ = online
+    runtime = app.backend.runtime
+    count = len(runtime.item_ids)
+    with app.backend._connect() as connection:
+        connection.execute("""
+            CREATE FUNCTION test_inactive_text(value text, item text) RETURNS text
+            LANGUAGE plpgsql AS $function$
+            BEGIN
+                IF item = 'a' THEN
+                    RAISE EXCEPTION 'inactive text was hashed';
+                END IF;
+                RETURN value;
+            END;
+            $function$
+        """)
+        connection.execute("UPDATE items SET is_active=false WHERE item_id='a'")
+        gated_sql = CATALOG_CAPTURE_SQL.replace(
+            "pg_catalog.convert_to(r06_model_text, 'UTF8')",
+            "pg_catalog.convert_to(test_inactive_text(r06_model_text, item_id), 'UTF8')",
+        )
+        assert gated_sql != CATALOG_CAPTURE_SQL
+        row = connection.execute(gated_sql, (identity, count+1, count)).fetchone()
+        capture = CatalogCapture(**{**row, "inactive_ids": tuple(row["inactive_ids"])})
+        assert capture_eligible(runtime, capture) == runtime.full_eligible_items - {"a"}
+        assert capture.invalid_active_count == 0
+        # The same SQL/function must fail as soon as that item is active.
+        connection.execute("UPDATE items SET is_active=true WHERE item_id='a'")
+        with pytest.raises(RaiseException, match="inactive text was hashed"):
             with connection.transaction():
                 connection.execute(gated_sql, (identity, count+1, count)).fetchone()
