@@ -4,6 +4,7 @@
 
 | 范围 | 首选记录 | 进一步检查 |
 | --- | --- | --- |
+| 完整目录等待与可验证 leader CPU 观察 | [预登记](stable-catalog-waits-plan-20261010.md)、[固定八笔观察与未知边界](stable-catalog-waits-20261010.md) | 干净 116 项通过；同 SQL 早快后慢、采到临时文件等待，未采到 Lock/阻塞者；CPU unknown，不解释旧 504，不作为稳定门禁通过 |
 | 目录窄帧候选与精确 SQL 对照 | [预登记](stable-narrow-frames-plan-20261010.md)、[性能否决与撤回](stable-narrow-frames-20261010.md) | 候选干净 51 项功能通过；完整目录物化增加临时写入、少量下架调用更慢，撤回生产 SQL，不执行 HTTP 验收；保留工具、反例及候选提交 |
 | 冻结目录 N+1 资源边界与稳定版初筛 | [预登记计划](stable-runtime-plan-20261010.md)、[等价、完整包执行计划与 A/B/B/A](stable-bounded-capture-20261010.md) | 干净 34 项功能通过；初筛 24/24，但候选对照 39/48、9 次 504；少量下架 SQL 风险及失败阶段未知保留，不作为稳定版合并 |
 | 新请求入场连接复用 | [预登记计划](fresh-admission-plan-20261009.json)、[实库连接/回滚/竞态与完整包冒烟](fresh-admission-connection-20261009.json) | 入场连接 2→1；140 项回归及四个真实 R06 请求通过。负面控制明确失败；不是 API 提速或旧并发超时修复 |
