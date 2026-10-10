@@ -87,6 +87,70 @@ def _fresh_database_trace_complete(request):
     return required <= observed
 
 
+def _timeout_trace_complete(request):
+    """504 diagnostic coverage, not proof of a failed durable request.
+
+    The callback time is when the loop executed cancellation, not when the
+    nominal deadline elapsed or the coroutine first received cancellation.
+    Drain spans show original waiters finished. Send completion is ASGI-only.
+    """
+    def finite(value):
+        return type(value) in (int, float) and math.isfinite(value) and value >= 0
+
+    if (type(request) is not dict or request.get("status_code") != 504
+            or "error_type" not in request or request["error_type"] is not None
+            or not finite(request.get("wall_seconds")) or type(request.get("stages")) is not list):
+        return False
+    stages = {}
+    for event in request["stages"]:
+        if (type(event) is not dict or type(event.get("stage")) is not str
+                or "error_type" not in event or not finite(event.get("start_seconds"))
+                or not finite(event.get("wall_seconds"))):
+            return False
+        start = event["start_seconds"]
+        end = start + event["wall_seconds"]
+        if end > request["wall_seconds"]:
+            return False
+        stages.setdefault(event["stage"], []).append((start, end, event["error_type"]))
+
+    def one(label, error=None):
+        events = stages.get(label, [])
+        return events[0] if len(events) == 1 and events[0][2] == error else None
+
+    deadline = one("deadline_callback")
+    workflow = one("recommendation_workflow", "TimeoutError")
+    response = one("response_start_send")
+    body = one("response_body_complete_send")
+    if not all((deadline, workflow, response, body)):
+        return False
+    if not (workflow[0] <= deadline[0] <= deadline[1] <= workflow[1]
+            <= response[0] <= response[1] <= body[0]):
+        return False
+    drains = stages.get("database_owned_work_drain", []) + stages.get("cpu_owned_work_drain", [])
+    if (not drains or any(error is not None or end > workflow[1] for _, end, error in drains)
+            or not any(start >= deadline[1] for start, _, _ in drains)):
+        return False
+    if "execution_lease_and_admission" in stages:
+        close = one("execution_lease_close")
+        if close is None or close[1] > workflow[1]:
+            return False
+        connect = one("execution_lease_and_admission_database_connect")
+        if connect is not None:
+            driver_close = one("execution_lease_close_database_close")
+            if driver_close is None or not close[0] <= driver_close[0] <= driver_close[1] <= close[1]:
+                return False
+        # CPU/admission/result/failure work must end before the owning lease
+        # closes. A drain of the close operation itself may overlap close.
+        for label in ("cpu_work", "execution_lease_and_admission", "result_write", "failure_write"):
+            if any(end > close[0] for _, end, _ in stages.get(label, [])):
+                return False
+    else:
+        recovery = one("publication_recovery")
+        if recovery is None or recovery[1] > workflow[1]:
+            return False
+    return True
+
+
 def profile(output, database_url, root, identity, digest, *, samples=24, concurrency=2, gc_events=True,
             phase_gate=False, trace=True):
     if (type(samples) is not int or not 2 <= samples <= 120
@@ -175,6 +239,7 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
         _valid_server_start_offset(request) for request in server)
     indices = {record["sample"] for record in server}
     successful_server_requests = [r for r in server if r.get("status_code") == 200]
+    timeout_requests = [r for r in server if r.get("status_code") == 504]
     result.update(status="instrumented_diagnostic_completed_not_performance_acceptance",
                   source_commit=commit, source_sha256=hashes, requests=records, server_requests=server,
                   client_observations_complete=client_observations_complete,
@@ -192,6 +257,9 @@ def profile(output, database_url, root, identity, digest, *, samples=24, concurr
                   diagnostic_intervention_changes_scheduling=phase_gate,
                   production_acceptance=False, sla_proven=False)
     result.update(database_driver_version=server_trace.get("database_driver_version"),
+                  timeout_trace_count=len(timeout_requests),
+                  timeout_traces_complete=(all(_timeout_trace_complete(r) for r in timeout_requests)
+                                           if timeout_requests else None),
                   successful_database_trace_count=len(successful_server_requests),
                   successful_database_traces_complete=(
                       all(_fresh_database_trace_complete(r) for r in successful_server_requests)
@@ -291,10 +359,20 @@ def main(argv=None):
     identity_gate = ("successful_identities_valid" in result
                      and ((success_count == 0 and identities_valid is None)
                           or (type(success_count) is int and success_count > 0 and identities_valid is True)))
+    timeout_count, timeout_coverage = result.get("timeout_trace_count"), result.get("timeout_traces_complete")
+    server_rows = result.get("server_requests")
+    timeout_rows = ([r for r in server_rows if r.get("status_code") == 504]
+                    if type(server_rows) is list and all(type(r) is dict for r in server_rows) else None)
+    actual_timeout_coverage = (all(_timeout_trace_complete(r) for r in timeout_rows) if timeout_rows else None)
+    timeout_gate = ("timeout_traces_complete" in result and type(timeout_count) is int and timeout_count >= 0
+                    and timeout_rows is not None and timeout_count == len(timeout_rows)
+                    and timeout_coverage is actual_timeout_coverage
+                    and ((timeout_count == 0 and timeout_coverage is None)
+                         or (timeout_count > 0 and timeout_coverage is True)))
     return 0 if (result.get("status") == "instrumented_diagnostic_completed_not_performance_acceptance"
                   and result.get("trace_complete") and result.get("client_status_matches_server")
                  and result.get("shared_server_timeline_complete") is True
-                 and identity_gate and database_trace_gate) else 1
+                 and identity_gate and database_trace_gate and timeout_gate) else 1
 
 
 if __name__ == "__main__":
