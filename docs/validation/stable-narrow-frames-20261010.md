@@ -47,6 +47,8 @@
 
 最终生产 src 与 f21d7ae 没有差异。最终回归与精确 head CI 在 PR 留档，不能将候选的干净 51 项直接当作撤回后完整源的全部验证。保留新工具的 --baseline-commit 入口及 immutable SHA、Git 对象类型、字面读取/不执行、原始字节摘要测试；原有全行对照模式仍保留。
 
+撤回后干净提交 `7a71bf282a1ba96cb740297a3067a740f97e0121` 的七模块最终回归为 **147 项通过、零失败/错误/跳过，251.839 s**，首尾工作区干净、HEAD 相同。之后只更新文档，不改变 src/scripts/tests/正式迁移；最新文档 head 的 CI 独立核对。数据库 namespace 查询确认剩余 test_evorec_ schema 为 0；模型、主目录和 .env 摘要未变，.env SHA-256 为 `32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267`。
+
 下一轮仍先定位目录 SQL：在正常字段投影之外，进一步拆解实际文本哈希、join 和排序的成本，尤其是早期约 0.6 秒、后期约 2.4 秒的来源；需要服务端真实执行阶段与等待事件，而非将 execute 耗时命名成锁等待。未取得证据前不增 worker、不调 work_mem、不延长期限、不改连接/恢复临界区，也不把 EXPLAIN 额外观测的时间当作请求时间线。
 
 本轮临时 schema 为 test_evorec_da79d8af55c64b379498e4eea50d4888，run_id 为 069b6f26-9cf4-4955-9c91-125bf9dbc88c。生命周期报告记录正常 CPU drain、未硬杀和自有 schema 已移除；主线程另检查数据库 namespace 与已记录进程/端口。临时数据库数据不可恢复，原始文件和只读批准包保留；主目录、业务 schema、.env、8000 未修改。
@@ -61,4 +63,5 @@
 | artifacts/narrow-regression-20261010.xml | c3d2f09c34263be5a81ca2dc101907afa4a4d6c4d82ccaff08996c8676a8c8ab |
 | artifacts/narrow-final-dev-20261010.xml | 1f30a6ffc379380441911c4c3a96521b7754d65d532c411811a2cc34686beb32 |
 | artifacts/narrow-clean-20261010.xml | 642ad539089b3a8cf63ddc540d287b9e8c9bf1a9565c90f0797b54fd7b72e4ce |
+| artifacts/narrow-reverted-clean-20261010.xml | ddf7477752a7b9a4e83094e0bf7f92678a7c97d26cd8a8fcaa0fa1013816136a |
 | artifacts/diagnostics/stable-narrow-catalog-20261010/catalog-profile.json | 59fbeb14f90dc47c53921b4196c9fe82e02aae447a1a0e4ca8124abb55cb46b8 |
