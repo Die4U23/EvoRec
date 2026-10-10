@@ -125,9 +125,9 @@ def test_capture_uses_one_actual_sql_summary_without_dropping_inactive_members(o
     original = postgres.read_catalog_capture
     observed = []
 
-    def counted(connection, bundle_id):
+    def counted(connection, bundle_id, approved_count):
         counter = CountingConnection(connection)
-        capture = original(counter, bundle_id)
+        capture = original(counter, bundle_id, approved_count)
         observed.append((counter.statements, capture))
         return capture
 
@@ -224,7 +224,7 @@ def test_subset_capture_restore_compute_exact_seal_and_reject_full_seal(online, 
     with app.backend._connect() as c:
         c.execute("UPDATE items SET is_active=(item_id=ANY(%s))", (list(active),))
     with app.backend._connect() as c:
-        capture = read_catalog_capture(c, bundle.bundle_id)
+        capture = read_catalog_capture(c, bundle.bundle_id, len(app.backend.runtime.item_ids))
     assert capture.active_count == len(active)
     assert capture.inactive_ids == tuple(item for item in bundle.adapter.features.item_ids if item not in active)
     assert capture_eligible(app.backend.runtime, capture) == active
@@ -252,7 +252,8 @@ def test_inactive_content_and_time_drift_do_not_change_captured_eligibility(onli
     with app.backend._connect() as connection:
         connection.execute("UPDATE items SET r06_model_text='inactive drift', r06_first_seen_ms=99 "
                            "WHERE item_id='a'")
-        capture = read_catalog_capture(connection, app.backend.runtime.bundle.bundle_id)
+        capture = read_catalog_capture(connection, app.backend.runtime.bundle.bundle_id,
+                                       len(app.backend.runtime.item_ids))
     assert capture.invalid_active_count == 0
     assert capture.inactive_ids == ("a",)
     assert capture_eligible(app.backend.runtime, capture) == frozenset({"b", "c", "d", "e", "zero"})
@@ -415,11 +416,13 @@ def test_actual_sql_content_drift_refuses_admission_without_request_row(online, 
             # SQL's source-pair constraint requires both fields to be NULL;
             # admission must still fail closed, not treat NULL as empty text.
             c.execute("UPDATE items SET r06_model_text=NULL, r06_first_seen_ms=NULL WHERE item_id='a'")
-            capture = read_catalog_capture(c, app.backend.runtime.bundle.bundle_id)
+            capture = read_catalog_capture(c, app.backend.runtime.bundle.bundle_id,
+                                           len(app.backend.runtime.item_ids))
             assert capture.invalid_active_count == 1
         else:
             c.execute(sql.SQL("UPDATE items SET {}=%s WHERE item_id='a'").format(sql.Identifier(column)), (value,))
-            capture = read_catalog_capture(c, app.backend.runtime.bundle.bundle_id)
+            capture = read_catalog_capture(c, app.backend.runtime.bundle.bundle_id,
+                                           len(app.backend.runtime.item_ids))
             assert capture.invalid_active_count == 0
             if value == "中文 alphb":
                 assert len(value.encode("utf-8")) == len("中文 alpha".encode("utf-8"))

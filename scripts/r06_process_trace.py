@@ -22,6 +22,7 @@ def query_kind(query):
         ("FROM recommendation_requests WHERE request_id = %s FOR UPDATE", "request_row_lock"),
         ("FROM catalog_control WHERE singleton = 1 AND admission_open FOR SHARE", "catalog_barrier"),
         ("FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id", "actual_catalog_rows"),
+        ("FROM bounded_members bi JOIN items i ON i.item_id=bi.item_id", "actual_catalog_rows"),
         ("INSERT INTO recommendation_requests", "accepted_insert"),
         ("SELECT pg_advisory_lock(", "publication_lock"),
         ("SELECT pg_try_advisory_lock(", "execution_lock"),

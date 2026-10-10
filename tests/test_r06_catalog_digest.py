@@ -13,7 +13,9 @@ from evorec.infrastructure.r06_catalog_capture import (
     catalog_source_digests,
     capture_eligible,
     member_frame,
+    read_catalog_capture,
 )
+from evorec.infrastructure.r06_features import MAX_ITEMS
 
 
 def test_member_and_active_digest_frames_match_independent_utf8_encoding():
@@ -38,6 +40,16 @@ def test_member_and_active_digest_frames_match_independent_utf8_encoding():
 
     assert member_frame("中", 1) == frame_chinese
     assert catalog_source_digests(ids, records, text_digests) == (expected_members, expected_active)
+
+
+@pytest.mark.parametrize("approved_count", [False, -1, MAX_ITEMS + 1])
+def test_capture_rejects_invalid_approved_count_before_database_access(approved_count):
+    class NoDatabaseAccess:
+        def cursor(self, **kwargs):
+            pytest.fail("invalid resource bound reached the database")
+
+    with pytest.raises((TypeError, ValueError)):
+        read_catalog_capture(NoDatabaseAccess(), "bundle", approved_count)
 
 
 def test_capture_is_frozen_and_validates_members_before_active_content():

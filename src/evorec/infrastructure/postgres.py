@@ -98,7 +98,7 @@ class PostgresDemoBackend:
         if kind and kind["runtime_kind"] == "r06-frozen-bundle-v1":
             if not self.r06_enabled or not isinstance(runtime, ManagedR06Runtime):
                 raise ManagementError("r06_runtime_unavailable", "approved R06 runtime is unavailable", 503)
-            capture = read_catalog_capture(connection, bundle_id)
+            capture = read_catalog_capture(connection, bundle_id, len(runtime.item_ids))
             # Provisional until capture_model verifies both fingerprints and
             # this exact partition. Do not hash a partial catalog twice.
             eligible = (runtime.full_eligible_items if not capture.inactive_ids

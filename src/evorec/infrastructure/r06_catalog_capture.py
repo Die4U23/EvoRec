@@ -13,6 +13,7 @@ import struct
 from psycopg.rows import dict_row
 
 from evorec.domain.errors import ManagementError
+from evorec.infrastructure.r06_features import MAX_ITEMS
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,15 @@ def catalog_source_digests(ordered_ids, catalog_items, text_digests):
 
 
 CATALOG_CAPTURE_SQL = """
-SELECT count(*) AS member_count,
+WITH bounded_members AS MATERIALIZED (
+    SELECT item_id, internal_item_id FROM bundle_items
+    WHERE bundle_id=%s ORDER BY internal_item_id LIMIT %s
+), member_size AS (
+    SELECT count(*) AS member_count FROM bounded_members
+)
+SELECT size.member_count, summary.*
+FROM member_size size CROSS JOIN LATERAL (
+SELECT
        pg_catalog.sha256(COALESCE(pg_catalog.string_agg(member_frame, ''::bytea
            ORDER BY internal_item_id), ''::bytea)) AS member_sha256,
        count(*) FILTER (WHERE is_active) AS active_count,
@@ -59,17 +68,22 @@ FROM (
            pg_catalog.int4send(pg_catalog.octet_length(pg_catalog.convert_to(bi.item_id, 'UTF8')))
            || pg_catalog.convert_to(bi.item_id, 'UTF8')
            || pg_catalog.int8send(bi.internal_item_id::bigint) AS member_frame
-    FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id
-    WHERE bi.bundle_id=%s
+    FROM bounded_members bi JOIN items i ON i.item_id=bi.item_id
+    WHERE size.member_count=%s
 ) AS actual_rows
+) AS summary
 """
 
 
-def read_catalog_capture(connection, bundle_id):
+def read_catalog_capture(connection, bundle_id, approved_count):
+    if type(approved_count) is not int or not 0 <= approved_count <= MAX_ITEMS:
+        raise ValueError("approved catalog count must be an integer within the model limit")
     # All members, active content and exclusions use this statement's snapshot.
-    # Only one summary is transferred; NULL content cannot vanish unnoticed.
+    # Materialize at most N+1 actual members BEFORE joining text or hashing.
+    # Any count mismatch skips that work and is rejected by capture_eligible.
+    # This bounds aggregation input, not the planner's underlying scan/sort.
     with connection.cursor(row_factory=dict_row, binary=True) as cursor:
-        row = cursor.execute(CATALOG_CAPTURE_SQL, (bundle_id,)).fetchone()
+        row = cursor.execute(CATALOG_CAPTURE_SQL, (bundle_id, approved_count + 1, approved_count)).fetchone()
     row["inactive_ids"] = tuple(row["inactive_ids"])
     return CatalogCapture(**row)
 

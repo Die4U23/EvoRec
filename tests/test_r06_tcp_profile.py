@@ -461,6 +461,7 @@ def test_real_synthetic_package_tcp_trace_is_correlated_and_drained(isolated_dat
     ("SELECT * FROM recommendation_requests WHERE request_id = %s FOR UPDATE", "request_row_lock"),
     ("SELECT * FROM catalog_control WHERE singleton = 1 AND admission_open FOR SHARE", "catalog_barrier"),
     ("SELECT * FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id", "actual_catalog_rows"),
+    ("SELECT * FROM bounded_members bi JOIN items i ON i.item_id=bi.item_id", "actual_catalog_rows"),
     ("INSERT INTO recommendation_requests VALUES (%s)", "accepted_insert"),
     ("SELECT pg_advisory_lock(123)", "publication_lock"),
     ("SELECT pg_try_advisory_lock(%s)", "execution_lock"),
