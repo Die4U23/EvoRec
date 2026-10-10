@@ -66,6 +66,7 @@ jobs:
             tests/test_r06_catalog_digest.py \
             tests/test_r06_capture_equivalence.py \
             tests/test_r06_catalog_profile.py \
+            tests/test_r06_database_observer.py \
             tests/test_r06_membership_profile.py \
             tests/test_r06_profile.py \
             tests/test_r06_tcp_profile.py \
