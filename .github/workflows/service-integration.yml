@@ -63,6 +63,7 @@ jobs:
             tests/test_r06_catalog_preparation.py \
             tests/test_r06_async.py \
             tests/test_r06_online.py \
+            tests/test_r06_catalog_digest.py \
             tests/test_r06_membership_profile.py \
             tests/test_r06_profile.py \
             tests/test_r06_tcp_profile.py \

@@ -7,7 +7,6 @@ import json
 import hashlib
 import struct
 from threading import Event
-from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import httpx
@@ -23,6 +22,7 @@ from evorec.infrastructure.comparison_store import decode_result, encode_result
 from evorec.infrastructure.postgres import PostgresDemoBackend
 from evorec.infrastructure import r06_admission
 from evorec.infrastructure.r06_admission import ManagedR06Runtime, restore_request
+from evorec.infrastructure.r06_catalog_capture import capture_eligible, read_catalog_capture
 from evorec.infrastructure.r06_serving import R06SnapshotRanker
 from evorec.infrastructure.r06_async import R06CPUQueue
 from test_r06_async import _settle, _started
@@ -88,64 +88,105 @@ def test_full_catalog_capture_restore_reuse_seal_only_after_actual_guards(online
 
 
 @pytest.mark.parametrize("inactive", [False, True])
-def test_capture_uses_compact_actual_rows_without_dropping_inactive_members(online, monkeypatch, inactive):
-    import sys
+def test_capture_uses_one_actual_sql_summary_without_dropping_inactive_members(online, monkeypatch, inactive):
     from evorec.infrastructure import postgres
     app, _, _ = online
     if inactive:
         app.manager.deactivate_item("a")
-    original = postgres.capture_model
+
+    class CountingConnection:
+        def __init__(self, connection):
+            self.connection = connection
+            self.statements = 0
+
+        def cursor(self, **kwargs):
+            return CountingCursor(self, self.connection.cursor(**kwargs))
+
+    class CountingCursor:
+        def __init__(self, owner, cursor):
+            self.owner = owner
+            self.cursor = cursor
+
+        def __enter__(self):
+            self.cursor.__enter__()
+            return self
+
+        def __exit__(self, *exc):
+            return self.cursor.__exit__(*exc)
+
+        def execute(self, *args, **kwargs):
+            self.owner.statements += 1
+            self.cursor.execute(*args, **kwargs)
+            return self
+
+        def fetchone(self):
+            return self.cursor.fetchone()
+
+    original = postgres.read_catalog_capture
     observed = []
 
-    def capture(connection, runtime, session, catalog, rows):
-        fields = ("item_id", "internal_item_id", "is_active", "r06_text_sha256", "r06_first_seen_ms")
-        # Container budget only, not a process RSS or wall-time assertion. A
-        # future equivalent compact representation can satisfy the same test.
-        assert len(rows) == 6
-        assert all(sys.getsizeof(row) < sys.getsizeof(dict.fromkeys(fields)) for row in rows)
-        first = next(row for row in rows if row.item_id == "a")
-        assert first.r06_text_sha256 == hashlib.sha256("中文 alpha".encode("utf-8")).digest()
-        assert first.r06_first_seen_ms == 1
-        assert first.is_active is (not inactive)
-        observed.append(True)
-        return original(connection, runtime, session, catalog, rows)
+    def counted(connection, bundle_id):
+        counter = CountingConnection(connection)
+        capture = original(counter, bundle_id)
+        observed.append((counter.statements, capture))
+        return capture
 
-    monkeypatch.setattr(postgres, "capture_model", capture)
+    monkeypatch.setattr(postgres, "read_catalog_capture", counted)
     async def run():
         context = await app.backend.snapshot_for_comparison(await _command(app))
         assert len(context.catalog.eligible_items) == (5 if inactive else 6)
         assert restore_request(app.backend.runtime.bundle, context).context is context
     asyncio.run(run())
-    assert observed == [True]
+
+    assert len(observed) == 1
+    statements, capture = observed[0]
+    assert statements == 1
+    assert capture.member_count == 6
+    assert capture.member_sha256 == app.backend.runtime.member_sha256
+    assert capture.active_count == (5 if inactive else 6)
+    assert capture.inactive_ids == (("a",) if inactive else ())
+    assert capture.invalid_active_count == 0
 
 
-@pytest.mark.parametrize("damage", ["missing", "order", "index", "unknown", "duplicate", "extra",
-                                    "inactive-index"])
-def test_capture_checks_all_ordered_members_before_content_or_admission(online, monkeypatch, damage):
-    from evorec.infrastructure import postgres
+@pytest.mark.parametrize("damage", ["missing", "order", "index", "unknown", "extra", "inactive-index"])
+def test_capture_checks_real_members_before_content_or_admission(online, damage):
     app, _, _ = online
-    original = postgres.capture_model
-
-    def capture(connection, runtime, session, catalog, rows):
-        rows = list(rows)
-        # An earlier bad active digest must not mask a later membership error.
-        rows[0] = rows[0]._replace(r06_text_sha256=None)
+    identity = app.backend.runtime.bundle.bundle_id
+    with app.backend._connect() as connection:
+        # A content failure precedes these member failures in the old row
+        # sequence. Membership must still be reported first.
+        connection.execute("UPDATE items SET r06_model_text='drifted text' WHERE item_id='a'")
         if damage == "missing":
-            rows.pop()
+            connection.execute("DELETE FROM bundle_items WHERE bundle_id=%s AND item_id='a'", (identity,))
         elif damage == "order":
-            rows[-2], rows[-1] = rows[-1], rows[-2]
+            indices = connection.execute(
+                "SELECT item_id, internal_item_id FROM bundle_items "
+                "WHERE bundle_id=%s AND item_id=ANY(%s)", (identity, ["a", "zero"]),
+            ).fetchall()
+            by_item = {row["item_id"]: row["internal_item_id"] for row in indices}
+            connection.execute("UPDATE bundle_items SET internal_item_id=99 "
+                               "WHERE bundle_id=%s AND item_id='a'", (identity,))
+            connection.execute("UPDATE bundle_items SET internal_item_id=%s "
+                               "WHERE bundle_id=%s AND item_id='zero'", (by_item["a"], identity))
+            connection.execute("UPDATE bundle_items SET internal_item_id=%s "
+                               "WHERE bundle_id=%s AND item_id='a'", (by_item["zero"], identity))
         elif damage == "index":
-            rows[-1] = rows[-1]._replace(internal_item_id=99)
+            connection.execute("UPDATE bundle_items SET internal_item_id=99 "
+                               "WHERE bundle_id=%s AND item_id='zero'", (identity,))
         elif damage == "extra":
-            rows.append(rows[-1])
+            connection.execute("INSERT INTO items(item_id,title,category) "
+                               "VALUES ('extra','Extra','test')")
+            connection.execute("INSERT INTO bundle_items(bundle_id,item_id,internal_item_id) "
+                               "VALUES (%s,'extra',6)", (identity,))
         elif damage == "inactive-index":
-            rows[0] = rows[0]._replace(is_active=False, internal_item_id=99)
+            connection.execute("UPDATE items SET is_active=false WHERE item_id='a'")
+            connection.execute("UPDATE bundle_items SET internal_item_id=99 "
+                               "WHERE bundle_id=%s AND item_id='a'", (identity,))
         else:
-            item_id = "unapproved" if damage == "unknown" else rows[0].item_id
-            rows[-1] = rows[-1]._replace(item_id=item_id)
-        return original(connection, runtime, session, catalog, rows)
-
-    monkeypatch.setattr(postgres, "capture_model", capture)
+            connection.execute("INSERT INTO items(item_id,title,category) "
+                               "VALUES ('unapproved','Unapproved','test')")
+            connection.execute("UPDATE bundle_items SET item_id='unapproved' "
+                               "WHERE bundle_id=%s AND item_id='a'", (identity,))
     async def run():
         with pytest.raises(ManagementError) as error:
             await app.recommend.execute(await _command(app))
@@ -153,33 +194,6 @@ def test_capture_checks_all_ordered_members_before_content_or_admission(online, 
         with app.backend._connect() as connection:
             assert connection.execute("SELECT count(*) AS n FROM recommendation_requests").fetchone()["n"] == 0
     asyncio.run(run())
-
-
-@pytest.mark.parametrize(("expected_ids", "row_data", "matches"), [
-    pytest.param(("a", "b", "c"), (("a", 0, True), ("b", 1, True), ("c", 2, True)), True,
-                 id="valid-full"),
-    pytest.param(("b", "d"), (("b", 0, True), ("d", 1, True)), True, id="valid-subset"),
-    pytest.param((), (), True, id="empty"),
-    pytest.param(("a", "b", "c"), (("a", 0, True), ("b", 1, True)), False, id="missing"),
-    pytest.param(("a", "b", "c"), (("b", 0, True), ("a", 1, True), ("c", 2, True)), False,
-                 id="order"),
-    pytest.param(("a", "b", "c"), (("a", 0, True), ("a", 1, True), ("c", 2, True)), False,
-                 id="duplicate"),
-    pytest.param(("a", "b", "c"), (("a", 0, True), ("unknown", 1, True), ("c", 2, True)),
-                 False, id="unknown"),
-    pytest.param(("a", "b"), (("a", 0, True), ("b", 9, True)), False, id="bad-index"),
-    pytest.param(("a", "b"), (("a", 0, True), ("b", 9, False)), False, id="inactive-bad-index"),
-    pytest.param(("a", "b"), (("a", 0, True), ("b", 1, True), ("c", 2, True)), False,
-                 id="extra"),
-])
-def test_ordered_membership_helper_matches_legacy_predicate(expected_ids, row_data, matches):
-    rows = [SimpleNamespace(item_id=item_id, internal_item_id=internal_id, is_active=is_active)
-            for item_id, internal_id, is_active in row_data]
-    legacy_matches = (tuple(row.item_id for row in rows) == expected_ids
-                      and all(row.internal_item_id == index for index, row in enumerate(rows)))
-
-    assert r06_admission._ordered_membership_matches(rows, expected_ids) is matches
-    assert r06_admission._ordered_membership_matches(rows, expected_ids) is legacy_matches
 
 
 @pytest.mark.parametrize("replacement", [frozenset(), frozenset({"b", "c", "d", "e", "zero"}),
@@ -190,9 +204,9 @@ def test_capture_rejects_actual_eligibility_coverage_mismatch(online, monkeypatc
     app, _, _ = online
     original = postgres.capture_model
 
-    def capture(connection, runtime, session, catalog, rows):
+    def capture(connection, runtime, session, catalog, summary):
         return original(connection, runtime, session,
-                        replace(catalog, eligible_items=replacement), rows)
+                        replace(catalog, eligible_items=replacement), summary)
 
     monkeypatch.setattr(postgres, "capture_model", capture)
     async def run():
@@ -209,6 +223,13 @@ def test_subset_capture_restore_compute_exact_seal_and_reject_full_seal(online, 
     bundle = app.backend.runtime.bundle
     with app.backend._connect() as c:
         c.execute("UPDATE items SET is_active=(item_id=ANY(%s))", (list(active),))
+    with app.backend._connect() as c:
+        capture = read_catalog_capture(c, bundle.bundle_id)
+    assert capture.active_count == len(active)
+    assert capture.inactive_ids == tuple(item for item in bundle.adapter.features.item_ids if item not in active)
+    assert capture_eligible(app.backend.runtime, capture) == active
+    if not active:
+        assert capture.active_sha256 == hashlib.sha256(b"").digest()
     async def run():
         command = await _command(app)
         context = await app.backend.snapshot_for_comparison(command)
@@ -222,6 +243,24 @@ def test_subset_capture_restore_compute_exact_seal_and_reject_full_seal(online, 
         with pytest.raises(ManagementError) as error:
             restore_request(bundle, forged)
         assert error.value.code == "r06_snapshot_changed"
+    asyncio.run(run())
+
+
+def test_inactive_content_and_time_drift_do_not_change_captured_eligibility(online):
+    app, _, _ = online
+    app.manager.deactivate_item("a")
+    with app.backend._connect() as connection:
+        connection.execute("UPDATE items SET r06_model_text='inactive drift', r06_first_seen_ms=99 "
+                           "WHERE item_id='a'")
+        capture = read_catalog_capture(connection, app.backend.runtime.bundle.bundle_id)
+    assert capture.invalid_active_count == 0
+    assert capture.inactive_ids == ("a",)
+    assert capture_eligible(app.backend.runtime, capture) == frozenset({"b", "c", "d", "e", "zero"})
+
+    async def run():
+        context = await app.backend.snapshot_for_comparison(await _command(app))
+        assert context.catalog.eligible_items == frozenset({"b", "c", "d", "e", "zero"})
+        assert restore_request(app.backend.runtime.bundle, context).context is context
     asyncio.run(run())
 
 
@@ -376,8 +415,14 @@ def test_actual_sql_content_drift_refuses_admission_without_request_row(online, 
             # SQL's source-pair constraint requires both fields to be NULL;
             # admission must still fail closed, not treat NULL as empty text.
             c.execute("UPDATE items SET r06_model_text=NULL, r06_first_seen_ms=NULL WHERE item_id='a'")
+            capture = read_catalog_capture(c, app.backend.runtime.bundle.bundle_id)
+            assert capture.invalid_active_count == 1
         else:
             c.execute(sql.SQL("UPDATE items SET {}=%s WHERE item_id='a'").format(sql.Identifier(column)), (value,))
+            capture = read_catalog_capture(c, app.backend.runtime.bundle.bundle_id)
+            assert capture.invalid_active_count == 0
+            if value == "中文 alphb":
+                assert len(value.encode("utf-8")) == len("中文 alpha".encode("utf-8"))
     async def run():
         command = await _command(app)
         with pytest.raises(ManagementError) as error: await app.recommend.execute(command)

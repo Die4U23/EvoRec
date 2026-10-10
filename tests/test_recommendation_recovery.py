@@ -603,8 +603,26 @@ def test_concurrent_orphan_retries_share_one_terminal_outcome_without_execution(
             assert c.execute("SELECT count(*) AS n FROM request_items").fetchone()["n"] == 0
         assert_unlocked(application.backend, command)
     except AssertionError as failure:
+        # Even when the HTTP assertions fail, preserve durable outcome and
+        # liveness evidence. Do not let a diagnostic query mask the failure.
+        durable = {"observation_error": None}
+        try:
+            durable["request"] = state(application.backend, command)
+            durable["registered_executions"] = [len(app.backend._executions) for app in apps]
+            with application.backend._connect() as c:
+                durable["item_count"] = c.execute(
+                    "SELECT count(*) AS n FROM request_items WHERE request_id=%s",
+                    (command.request_id,),
+                ).fetchone()["n"]
+                durable["lease_available"] = c.execute(
+                    "SELECT pg_try_advisory_xact_lock(hashtextextended('evorec:recommendation:' "
+                    "|| current_schema() || ':' || %s, 0)) AS held", (str(command.request_id),),
+                ).fetchone()["held"]
+        except Exception as observation_error:
+            durable["observation_error"] = type(observation_error).__name__
         failure.add_note(repr({"replies": [(reply.status_code, safe_code(reply.json().get("error", {}).get("code")))
                                          for reply in replies], "stages": stages,
+                               "durable": durable,
                                "observer_overhead_included": True}))
         raise
 
