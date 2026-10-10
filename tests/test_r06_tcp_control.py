@@ -105,6 +105,8 @@ def test_profile_defaults_to_tracing_and_cli_untraced_flags_are_explicit(monkeyp
         if kwargs["trace"]:
             return dict(status="instrumented_diagnostic_completed_not_performance_acceptance",
                         trace_complete=True, client_status_matches_server=True,
+                        timeout_trace_count=0, timeout_traces_complete=None,
+                        server_requests=[],
                         shared_server_timeline_complete=True, successful_database_trace_count=0,
                         successful_database_traces_complete=None, successful_identities_valid=None)
         return valid_untraced_report()

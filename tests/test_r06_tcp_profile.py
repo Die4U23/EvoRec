@@ -55,7 +55,7 @@ def test_concurrent_async_and_to_thread_records_do_not_cross_contaminate():
     asyncio.run(run())
     for index, request in enumerate(timing.report()):
         assert request["sample"] == index and request["status_code"] == 200+index
-        assert [s["stage"] for s in request["stages"]] == [f"worker_{index}"]
+        assert [s["stage"] for s in request["stages"]] == [f"worker_{index}", "response_start_send"]
     assert "PRIVATE" not in json.dumps(timing.report())
 
 
@@ -134,7 +134,7 @@ def test_real_cpu_pool_inherits_trace_and_clears_reused_thread():
     asyncio.run(run())
     for index, request in enumerate(timing.report()):
         assert {s["stage"] for s in request["stages"]} == {
-            "cpu_queue_wait", "queue_and_cpu_drain", f"cpu_{index}"}
+            "cpu_queue_wait", "queue_and_cpu_drain", "cpu_work", f"cpu_{index}", "response_start_send"}
         assert all(s["wall_seconds"] >= 0 for s in request["stages"])
 
 
@@ -337,6 +337,8 @@ def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(
         assert report["successful_identities_valid"] is None
         assert report["successful_database_trace_count"] == 0
         assert report["successful_database_traces_complete"] is None
+        assert report["timeout_trace_count"] == 4
+        assert report["timeout_traces_complete"] is False  # Status alone is not timeout coverage.
         assert not report["production_acceptance"] and not report["sla_proven"]
     assert "PRIVATE" not in (output/"observations.json").read_text()
 
@@ -610,6 +612,8 @@ def test_cli_requires_consistent_successful_trace_summaries(
     monkeypatch.setenv("EVOREC_DATABASE_URL", "PRIVATE")
     result_data = dict(status="instrumented_diagnostic_completed_not_performance_acceptance", trace_complete=True,
                        client_status_matches_server=True, successful_database_trace_count=count,
+                       timeout_trace_count=0, timeout_traces_complete=None,
+                       server_requests=[],
                        shared_server_timeline_complete=True)
     if coverage_present:
         result_data["successful_database_traces_complete"] = coverage
@@ -629,6 +633,8 @@ def test_cli_requires_shared_server_timeline_complete(
     monkeypatch.setenv("EVOREC_DATABASE_URL", "PRIVATE")
     result_data = dict(status="instrumented_diagnostic_completed_not_performance_acceptance",
                        trace_complete=True, client_status_matches_server=True,
+                       timeout_trace_count=0, timeout_traces_complete=None,
+                       server_requests=[],
                        successful_database_trace_count=0,
                        successful_database_traces_complete=None, successful_identities_valid=None)
     if timeline_present:
@@ -647,6 +653,8 @@ def test_cli_defaults_to_gc_events_and_accepts_no_gc_events_flag(monkeypatch, tm
         seen.append((kwargs["gc_events"], kwargs["phase_gate"]))
         return dict(status="instrumented_diagnostic_completed_not_performance_acceptance", trace_complete=True,
                     client_status_matches_server=True, gc_events_enabled=kwargs["gc_events"],
+                    timeout_trace_count=0, timeout_traces_complete=None,
+                    server_requests=[],
                     shared_server_timeline_complete=True,
                     successful_identities_valid=None, successful_database_trace_count=0,
                     successful_database_traces_complete=None)

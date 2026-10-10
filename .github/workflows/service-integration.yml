@@ -71,6 +71,7 @@ jobs:
             tests/test_r06_membership_profile.py \
             tests/test_r06_profile.py \
             tests/test_r06_tcp_profile.py \
+            tests/test_r06_timeout_trace.py \
             tests/test_r06_borrowed_trace.py \
             tests/test_r06_tcp_control.py \
             tests/test_r06_phase_gate.py \
