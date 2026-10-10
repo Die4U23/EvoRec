@@ -1,5 +1,15 @@
 # 当前进度与验证记录
 
+## 2026-10-10 同 SQL 计划/统计复核，不支持目标 generic 切换归因
+
+按[预登记](validation/stable-catalog-plans-plan-20261010.md)扩展默认关闭的逐笔 fresh 计划、目录表统计与 prepared 计数观察；元数据 prepare=False，不改变生产 SQL、期限或 worker。干净 6d6efcd 七模块 147 项通过，零失败/错误/跳过，首轮超长测试 ID 的 Windows setup/teardown 错误保留。实库反例证明非执行 EXPLAIN 不调用 VOLATILE 抛异常函数、不增加目标 prepared 选择计数；主线程串行复核，未冒充独立代理评审。
+
+一次固定完整包八笔摘要/资格一致，16 组 fresh 结构和估计摘要完全相同、观察到的 ANALYZE 状态不变；耗时仍 0.64→2.4 秒。目标具名 prepared 第六笔后才出现，后三笔只有 custom 计数 1→2→3、generic=0，慢调用之前已发生。本轮不支持先改自动准备/generic/ANALYZE；也不把 fresh 计划当作实际缓存计划或排除所有瞬时统计变化。转向目录哈希、连接及排序成本，若试窄投影先守住等价和无新增物化开销门禁。[完整报告](validation/stable-catalog-plans-20261010.md)保留全部数值和未知。
+
+自有 schema、九个数据库 PID、模型服务进程/端口均独立确认消失，主目录/.env 不变。没有 HTTP/最终 120 笔/浏览器验收，CPU 仍 unknown，旧 504 与稳定冻结未关闭；草稿 PR 留档并核对精确 head CI，不作为稳定版合并。
+
+发布前补强测试漏洞：前三次元数据调用不足以跨过默认准备阈值；隔离测试改为 threshold=0，并用真实驱动暂时去掉 prepare=False，确认反例会产生额外 prepared 条目。补强后的计划/helper/卫生 69 项通过，范围与前组重叠；只改测试和文档，被测运行实现不变，最终 CI 必须重新核对新 head。
+
 ## 2026-10-10 完整目录等待观察，稳定超时门禁仍未通过
 
 按[预登记](validation/stable-catalog-waits-plan-20261010.md)增加默认关闭、20 ms 休眠/256 样本上限的自有数据库后端观察，生产 SQL 和原 2 秒期限不变。干净 cd6082d 的六模块 116 项通过、零失败/错误/跳过；实库正反控制能区别主动睡眠与真实行锁，并核对取消自有 SQL 后读线程/连接退出，不冒充 API 504 清退验收。首轮临时目录 setup 错误保留，不算通过。

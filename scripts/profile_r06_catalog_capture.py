@@ -24,6 +24,7 @@ from evorec.infrastructure.r06_catalog_capture import (
 from scripts.assemble_r06_bundle import _source
 from scripts.r06_service_lab import R06ServiceLab
 from scripts.r06_database_observer import DatabaseCallObserver
+from scripts.r06_planning_observer import read_planning_snapshot
 from scripts.run_r06_demo import marker
 from scripts.verify_r06_reliability import subprocess_sources
 
@@ -124,9 +125,21 @@ def _execute_observed(connection, database_url, query, parameters, *, many, enab
                            database_observation=observer.report() if observer is not None and observer.joined else None)
 
 
-def profile(output, database_url, root, identity, digest, *, baseline_commit=None, observe_waits=False):
-    if type(observe_waits) is not bool:
-        raise ValueError("observe_waits must be a bool")
+def _planning_observed(connection, query, parameters, phase, observation):
+    try:
+        observation[f"planning_{phase}"] = read_planning_snapshot(connection, query, parameters)
+    except Exception as error:
+        observation["planning_error_type"] = type(error).__name__
+        observation["planning_error_phase"] = phase
+        raise
+
+
+def profile(output, database_url, root, identity, digest, *, baseline_commit=None, observe_waits=False,
+            observe_plans=False):
+    if type(observe_waits) is not bool or type(observe_plans) is not bool:
+        raise ValueError("observation options must be a bool")
+    if observe_plans and baseline_commit is None:
+        raise ValueError("plan observation requires an immutable baseline commit")
     project = Path(__file__).resolve().parents[1]
     commit, hashes = _source(project), subprocess_sources(project)
     baseline_query, baseline_source = (_baseline_sql(project, baseline_commit)
@@ -166,8 +179,12 @@ def profile(output, database_url, root, identity, digest, *, baseline_commit=Non
                         query, parameters = queries[implementation]
                         observation = dict(state=state, implementation=implementation, operation_error_type=None)
                         observations.append(observation)
+                        if observe_plans:
+                            _planning_observed(connection, query, parameters, "before", observation)
                         rows = _execute_observed(connection, lab.isolated_url, query, parameters,
                             many=implementation == "old", enabled=observe_waits, observation=observation)
+                        if observe_plans:
+                            _planning_observed(connection, query, parameters, "after", observation)
                         validated = None
                         if implementation != "old":
                             capture = _capture(rows)
@@ -215,6 +232,7 @@ def profile(output, database_url, root, identity, digest, *, baseline_commit=Non
                 result = dict(source_commit=commit, source_sha256=hashes,
                     baseline_source=baseline_source,
                     wait_observer_enabled=observe_waits,
+                    plan_observer_enabled=observe_plans,
                     bundle_id=str(identity), manifest_sha256=digest, model_version=ready["model_version"],
                     item_count=count, database_version=version, driver_version=psycopg.__version__,
                     database_settings=settings, prepare_threshold=connection.prepare_threshold,
@@ -230,6 +248,7 @@ def profile(output, database_url, root, identity, digest, *, baseline_commit=Non
             marker(lab.output, "catalog-observations", dict(source_commit=commit,
                 source_sha256=hashes, baseline_source=baseline_source,
                 wait_observer_enabled=observe_waits,
+                plan_observer_enabled=observe_plans,
                 measurements=observations, plans=plans, owned_schema_removed=not lab.created))
     if _source(project) != commit or subprocess_sources(project) != hashes:
         raise ValueError("source changed during catalog diagnostic")
@@ -254,17 +273,22 @@ def main():
     parser.add_argument("--expected-manifest-sha256", required=True)
     parser.add_argument("--baseline-commit", help="full commit SHA of the previous aggregate SQL")
     parser.add_argument("--observe-waits", action="store_true", help="owned PID sampling; changes observation cost")
+    parser.add_argument("--observe-plans", action="store_true", help="fresh nonexecuting plan/stat snapshots, not actual cached plans")
     args = parser.parse_args()
     try:
         result = profile(args.output, os.environ["EVOREC_DATABASE_URL"], args.managed_root,
                          args.bundle_id, args.expected_manifest_sha256, baseline_commit=args.baseline_commit,
-                         observe_waits=args.observe_waits)
+                         observe_waits=args.observe_waits, observe_plans=args.observe_plans)
     except Exception as error:
         print(json.dumps(dict(status="failed", error_type=type(error).__name__)))
         return 1
     complete = not args.observe_waits or (len(result["measurements"]) == 8 and all(
         row["database_observation"] is not None and row["database_observation"]["observer_complete"]
         for row in result["measurements"]))
+    if args.observe_plans:
+        complete = complete and len(result["measurements"]) == 8 and all(
+            all(row.get(f"planning_{phase}", {}).get("is_actual_measured_statement_plan") is False
+                for phase in ("before", "after")) for row in result["measurements"])
     print(json.dumps(dict(status="observations_only" if complete else "incomplete_observations",
                           output=str(args.output), item_count=result["item_count"])))
     return 0 if complete else 1
