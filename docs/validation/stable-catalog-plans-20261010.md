@@ -27,8 +27,11 @@
 | 补充 CLI/失败保存控制后 | 116 | 0 / 0 / 0 | 12.725 |
 | 干净 6d6efcd 七模块复测 | 147 | 0 / 0 / 0 | 84.443 |
 | 报告归档后的计划/helper/卫生复测 | 68 | 0 / 0 / 0 | 2.699 |
+| 发布前强化自动准备阈值与真实负面控制 | 69 | 0 / 0 / 0 | 3.231 |
 
-首轮超长参数标签使 Windows 的 PYTEST_CURRENT_TEST 超过 32,767 字符，setup/teardown 两处错误保留，不算通过；仅缩短测试 ID，没有改待测拒绝逻辑。五组范围重叠，不相加；最后一组含待提交报告，实现仍与 6d6efcd 相同，之后仅补档结果。正反控制证明：真实强制 custom/generic 测试的目标计数不会被快照增加；非 ANALYZE 的 fresh EXPLAIN 不调用自有 VOLATILE 抛异常函数，直接调用该函数确实失败；ANALYZE 后 pg_class 估计变化能被记录；缺失/空批次、容量/深度、错误阶段和跨 schema 均拒绝。强制设置仅在小型隔离测试中使用，没有用于完整模型观察。
+首轮超长参数标签使 Windows 的 PYTEST_CURRENT_TEST 超过 32,767 字符，setup/teardown 两处错误保留，不算通过；仅缩短测试 ID，没有改待测拒绝逻辑。六组范围重叠，不相加；末两组含待提交报告，最后一组也含新增测试，src/scripts/正式迁移仍与 6d6efcd 相同。正反控制证明：真实强制 custom/generic 测试的目标计数不会被快照增加；非 ANALYZE 的 fresh EXPLAIN 不调用自有 VOLATILE 抛异常函数，直接调用该函数确实失败；ANALYZE 后 pg_class 估计变化能被记录；缺失/空批次、容量/深度、错误阶段和跨 schema 均拒绝。强制设置仅在小型隔离测试中使用，没有用于完整模型观察。
+
+发布前质量复核发现：前三次元数据调用没有跨过默认 prepare_threshold=5，原“只存在一个目标准备语句”的断言不足以证明元数据不会自动准备。已在隔离正向测试中设 prepare_threshold=0，确保遗漏 prepare=False 时第一次调用就可观察；另一个真实驱动反例暂时移除 False，服务器确实创建额外元数据 prepared 语句，正向“恰好一个”不变量会被打破。新测试通过不代表反例按预期失败被删除；它独立断言反例必须产生额外条目。此补强在完整包观察后，仅改测试，不重跑固定模型批次；完整观察仍绑定 6d6efcd 原实现。
 
 ## 一次固定八笔与十六组快照
 
@@ -65,7 +68,7 @@ N+1 两份为 128.589 / 131.791 ms，实际成员数 137,250，items Actual Loop
 
 run_id=`92669a52-a539-422c-89ad-cfb81a9b5d63`，schema=`test_evorec_6de4a56fe373439781e912f05ea6b246`，空闲 API PID=33444、port=56841。正常 CPU jobs drain，未硬杀；独立检查进程/监听均消失，剩余 test_evorec_ namespace=0。只移除本轮临时数据库数据，无法从页面恢复，原始证据与只读模型保留。
 
-`E:/codex/proj` 仍干净于 `6e44594f55dd180ec4bacce1ed8d19e7bf4aee61`；未操作业务 schema 或 8000，.env SHA-256=`32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267` 不变。后续只归档文档，生产 src 与 baseline 无差异。
+`E:/codex/proj` 仍干净于 `6e44594f55dd180ec4bacce1ed8d19e7bf4aee61`；未操作业务 schema 或 8000，.env SHA-256=`32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267` 不变。完整观察后只强化测试和归档文档，被测 src/scripts/正式迁移不变，生产 src 与 baseline 无差异。
 
 草稿 PR 保留诊断实现和负面结论，不合并稳定版。精确最终 head CI 独立在 PR 核对。此前 504 的失败内部阶段、取消拖尾、独立 session/客户端复用对照、两轮 120 笔、恢复/浏览器/备份及版本冻结仍未关闭。
 
@@ -80,6 +83,7 @@ run_id=`92669a52-a539-422c-89ad-cfb81a9b5d63`，schema=`test_evorec_6de4a56fe373
 | artifacts/plan-final-dev-20261010.xml | de896e55ff74ac5116693d605b8d8997a3dbf04c0cb89802014e939502b4d0b3 |
 | artifacts/plan-clean-20261010.xml | a627171d4cf12a34be53899fb861e3912e12ebab260ec6e3229f7378a7b08d35 |
 | artifacts/plan-report-20261010.xml | 63f765dc3af4f1fadca7f0925a28c9640bf7be17d827da1d3557a3c60bf22d0a |
+| artifacts/plan-threshold-control-20261010.xml | d0df98deb63d803fd12fe2a2939f5f2a2a0187f06fb4c202cd09cb1e3d7acb6b |
 | artifacts/diagnostics/stable-catalog-plans-20261010/catalog-profile.json | f2641569e812e904f6302b9ef3973d0c8f8fe465147b5b06327c62b31bd0a528 |
 | artifacts/diagnostics/stable-catalog-plans-20261010/catalog-observations.json | b832c45ce3558fd4eb840ff335f24da46fa54f7768928a008509dec3c28fc3fe |
 

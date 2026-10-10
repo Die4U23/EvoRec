@@ -91,6 +91,9 @@ def test_non_owned_schema_is_rejected_before_table_or_plan_queries():
                                                ("force_generic_plan", "generic_plans")])
 def test_fresh_explain_does_not_increment_target_prepared_plan_choices(isolated_database, cache_mode, counter):
     with psycopg.connect(isolated_database, autocommit=True) as connection:
+        # Any accidentally auto-prepared metadata is visible on its FIRST call;
+        # three snapshots below the default threshold of five cannot prove this.
+        connection.prepare_threshold = 0
         connection.execute(f"SET plan_cache_mode={cache_mode}", prepare=False)
         query, parameters = "SELECT count(*) FROM items WHERE item_id=%s", ("PRIVATE_PARAMETER",)
         connection.execute(query, parameters, prepare=True).fetchone()
@@ -107,6 +110,24 @@ def test_fresh_explain_does_not_increment_target_prepared_plan_choices(isolated_
         assert third["prepared"][0][counter] == 2
         # None of our four metadata queries created additional prepared statements.
         assert connection.execute("SELECT count(*) FROM pg_prepared_statements", prepare=False).fetchone() == (1,)
+
+
+def test_removing_prepare_false_really_prepares_metadata_negative_control(isolated_database, monkeypatch):
+    with psycopg.connect(isolated_database, autocommit=True) as connection:
+        connection.prepare_threshold = 0
+        query, parameters = "SELECT count(*) FROM items WHERE item_id=%s", ("private",)
+        connection.execute(query, parameters, prepare=True).fetchone()
+        original = psycopg.Cursor.execute
+        def without_explicit_false(cursor, query, *args, **kwargs):
+            if kwargs.get("prepare") is False:
+                kwargs.pop("prepare")
+            return original(cursor, query, *args, **kwargs)
+        with monkeypatch.context() as patch:
+            patch.setattr(psycopg.Cursor, "execute", without_explicit_false)
+            read_planning_snapshot(connection, query, parameters)
+        # The real driver/server register extra metadata statements: the positive
+        # invariant of exactly one target statement above would fail here.
+        assert connection.execute("SELECT count(*) FROM pg_prepared_statements", prepare=False).fetchone()[0] > 1
 
 
 def test_non_analyze_explain_does_not_run_throwing_owned_function(isolated_database):
