@@ -3,6 +3,7 @@
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from functools import wraps
+from threading import Lock
 from time import perf_counter
 from unittest.mock import patch
 
@@ -31,9 +32,13 @@ def query_kind(query):
 
 
 class ConcurrentTimings(RequestTimings):
-    def __init__(self, samples):
+    def __init__(self, samples, *, phase_gate=False):
         if type(samples) is not int or not 1 <= samples <= 122:
             raise ValueError("trace samples must be 1..122")
+        if type(phase_gate) is not bool:
+            raise ValueError("phase_gate must be a bool")
+        self.phase_gate = phase_gate
+        self._phase_gate_lock = Lock()
         self._timeline_origin = perf_counter()
         self.samples = samples
         self.active = ContextVar("r06_diagnostic_request", default=None)
@@ -62,6 +67,19 @@ class ConcurrentTimings(RequestTimings):
                 return timed(*args, **kwargs)
             finally:
                 self.phase.reset(token)
+        if self.phase_gate and label in {"actual_catalog_read_and_capture", "retrieval_and_ranking"}:
+            @wraps(original)
+            def gated(*args, **kwargs):
+                request = self.current
+                if request is None:
+                    return scoped(*args, **kwargs)
+                started = perf_counter()
+                with self._phase_gate_lock:
+                    # Diagnostic intervention only. Keep waiting OUTSIDE the
+                    # original business span; cancellation/drain stay unchanged.
+                    self._event(request, label + "_diagnostic_gate_wait", started, None, None)
+                    return scoped(*args, **kwargs)
+            return gated
         return scoped
 
     def database(self, operation, original):

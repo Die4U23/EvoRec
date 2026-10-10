@@ -27,13 +27,16 @@ class R06ServiceLab:
     """Restart actual API processes without replacing the owned database or bundle."""
 
     def __init__(self, output, database_url, root, bundle_id, digest, backend="numpy", *, profile_samples=0,
-                 gc_events=True):
+                 gc_events=True, phase_gate=False):
         if type(profile_samples) is not int or not 0 <= profile_samples <= 122:
             raise ValueError("profile samples must be 0..122")
         if type(gc_events) is not bool:
             raise ValueError("gc_events must be a bool")
+        if type(phase_gate) is not bool or (phase_gate and not profile_samples):
+            raise ValueError("phase_gate requires a bool and enabled profiling")
         self.profile_samples = profile_samples
         self.gc_events = gc_events
+        self.phase_gate = phase_gate
         self.output, self.root, parameters = validate(
             output, database_url, root, bundle_id, digest, backend, 0)
         self.database_url, self.bundle_id, self.digest, self.backend = database_url, bundle_id, digest, backend
@@ -79,6 +82,8 @@ class R06ServiceLab:
             command.extend(("--profile-samples", str(self.profile_samples)))
         if not self.gc_events:
             command.append("--no-gc-events")
+        if self.phase_gate:
+            command.append("--phase-gate")
         self.process = subprocess.Popen(command, env=environment, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, cwd=Path(__file__).resolve().parents[1],
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -98,6 +103,7 @@ class R06ServiceLab:
                 or self.ready['backend'] != self.backend or self.ready['api_deadline_seconds'] != 2.0
                 or self.ready.get('profile_samples', 0) != self.profile_samples
                 or self.ready.get('gc_events_enabled') is not (bool(self.profile_samples) and self.gc_events)
+                or self.ready.get('phase_gate_enabled') is not self.phase_gate
                 or address.scheme != 'http' or address.hostname != '127.0.0.1'
                 or address.port in (None,0,8000) or address.username is not None
                 or address.path or address.query or address.fragment):
@@ -141,11 +147,13 @@ class R06ServiceLab:
         self.close()
 
 
-def child(output, run_id, *, profile_samples=0, gc_events=True):
+def child(output, run_id, *, profile_samples=0, gc_events=True, phase_gate=False):
     if type(profile_samples) is not int or not 0 <= profile_samples <= 122:
         raise ValueError("profile samples must be 0..122")
     if type(gc_events) is not bool:
         raise ValueError("gc_events must be a bool")
+    if type(phase_gate) is not bool or (phase_gate and not profile_samples):
+        raise ValueError("phase_gate requires a bool and enabled profiling")
     output = output.resolve()
     project = Path(__file__).resolve().parents[1]
     if not output.is_relative_to(project / "artifacts"):
@@ -172,10 +180,10 @@ def child(output, run_id, *, profile_samples=0, gc_events=True):
                 item_count=len(runtime.item_ids),
                 backend=application.backend.r06_content_backend,
                 admin_enabled=False, ephemeral=True, api_deadline_seconds=2.0,
-                gc_events_enabled=bool(profile_samples) and gc_events)
+                gc_events_enabled=bool(profile_samples) and gc_events, phase_gate_enabled=phase_gate)
             if profile_samples:
                 from scripts.r06_process_trace import ConcurrentTimings, trace_api
-                timings = ConcurrentTimings(profile_samples)
+                timings = ConcurrentTimings(profile_samples, phase_gate=phase_gate)
                 metadata["profile_samples"] = profile_samples
                 try:
                     with trace_api(timings, gc_events=gc_events):
@@ -185,6 +193,7 @@ def child(output, run_id, *, profile_samples=0, gc_events=True):
                     asyncio.run(application.backend.aclose())
                     marker(output, "profile", dict(requests=timings.report(),
                         database_driver_version=psycopg.__version__, gc_events_enabled=gc_events,
+                        phase_gate_enabled=phase_gate,
                         instrumentation_overhead_not_subtracted=True, timings_overlap_do_not_sum=True,
                         gc_attribution_not_exclusive=True, production_acceptance=False))
             else:
@@ -202,10 +211,13 @@ if __name__ == "__main__":
     parser.add_argument("--profile-samples", type=int, default=0)
     parser.add_argument("--no-gc-events", dest="gc_events", action="store_false",
                         help="omit garbage-collection callback observations")
+    parser.add_argument("--phase-gate", action="store_true",
+                        help="diagnostic-only serialization of marked catalog capture and ranking")
     parser.set_defaults(gc_events=True)
     args = parser.parse_args()
     try:
-        child(args.output, args.run_id, profile_samples=args.profile_samples, gc_events=args.gc_events)
+        child(args.output, args.run_id, profile_samples=args.profile_samples, gc_events=args.gc_events,
+              phase_gate=args.phase_gate)
     except Exception as error:
         print(json.dumps(dict(status="failed", error_type=type(error).__name__)), flush=True)
         raise SystemExit(1)
