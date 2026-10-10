@@ -306,3 +306,53 @@ def test_statement_snapshot_survives_change_while_sql_hashing_is_blocked(online)
     with app.backend._connect() as connection:
         current = read_catalog_capture(connection, runtime.bundle_id, len(runtime.item_ids))
     assert capture_eligible(runtime, current) == runtime.full_eligible_items - {'c'}
+
+
+@pytest.mark.parametrize("scenario", ["overflow", "all_inactive"])
+def test_capture_skips_text_outside_active_approved_count(online, scenario):
+    """A throwing function proves skipped text work, not just a zero count."""
+    from evorec.infrastructure.r06_catalog_capture import CATALOG_CAPTURE_SQL, CatalogCapture
+    from psycopg.errors import RaiseException
+    app, identity, _ = online
+    runtime = app.backend.runtime
+    count = len(runtime.item_ids)
+    with app.backend._connect() as connection:
+        connection.execute("""
+            CREATE FUNCTION test_forbidden_text(value text) RETURNS text
+            LANGUAGE plpgsql AS $function$
+            BEGIN
+                RAISE EXCEPTION 'text hashing must not run';
+            END;
+            $function$
+        """)
+        if scenario == "overflow":
+            connection.execute("INSERT INTO items(item_id,title,category,is_active) "
+                               "VALUES ('extra','Extra','test',true)")
+            connection.execute("INSERT INTO bundle_items(bundle_id,item_id,internal_item_id) "
+                               "VALUES (%s,'extra',%s)", (identity, count))
+        else:
+            connection.execute("UPDATE items SET is_active=false")
+        gated_sql = CATALOG_CAPTURE_SQL.replace(
+            "pg_catalog.convert_to(r06_model_text, 'UTF8')",
+            "pg_catalog.convert_to(test_forbidden_text(r06_model_text), 'UTF8')",
+        )
+        assert gated_sql != CATALOG_CAPTURE_SQL
+        row = connection.execute(gated_sql, (identity, count+1, count)).fetchone()
+        row["inactive_ids"] = tuple(row["inactive_ids"])
+        capture = CatalogCapture(**row)
+        assert capture.active_count == capture.invalid_active_count == 0
+        if scenario == "overflow":
+            with pytest.raises(ManagementError, match="approved ordered membership changed"):
+                capture_eligible(runtime, capture)
+        else:
+            assert capture_eligible(runtime, capture) == frozenset()
+        # Positive control: the identical instrumented SQL must reach the
+        # function once membership and an active item make hashing applicable.
+        if scenario == "overflow":
+            connection.execute("DELETE FROM bundle_items WHERE bundle_id=%s AND item_id='extra'",
+                               (identity,))
+        else:
+            connection.execute("UPDATE items SET is_active=true WHERE item_id='a'")
+        with pytest.raises(RaiseException, match="text hashing must not run"):
+            with connection.transaction():
+                connection.execute(gated_sql, (identity, count+1, count)).fetchone()
