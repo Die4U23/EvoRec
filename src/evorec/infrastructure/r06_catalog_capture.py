@@ -45,8 +45,27 @@ CATALOG_CAPTURE_SQL = """
 WITH bounded_members AS MATERIALIZED (
     SELECT item_id, internal_item_id FROM bundle_items
     WHERE bundle_id=%s ORDER BY internal_item_id LIMIT %s
-), member_size AS (
+), member_size AS MATERIALIZED (
     SELECT count(*) AS member_count FROM bounded_members
+), actual_frames AS MATERIALIZED (
+    -- Evaluate actual text before ordered aggregation. Materialization prevents
+    -- raw model text from being carried into the aggregate's sort input.
+    SELECT item_id, internal_item_id, is_active, member_frame,
+           CASE WHEN is_active THEN
+               member_frame || pg_catalog.sha256(pg_catalog.convert_to(r06_model_text, 'UTF8'))
+                            || pg_catalog.int8send(r06_first_seen_ms)
+           END AS active_frame,
+           is_active AND (r06_model_text IS NULL OR r06_first_seen_ms IS NULL) AS invalid_active
+    FROM (
+    SELECT bi.item_id, bi.internal_item_id, i.is_active,
+           i.r06_model_text, i.r06_first_seen_ms,
+           pg_catalog.int4send(pg_catalog.octet_length(pg_catalog.convert_to(bi.item_id, 'UTF8')))
+           || pg_catalog.convert_to(bi.item_id, 'UTF8')
+           || pg_catalog.int8send(bi.internal_item_id::bigint) AS member_frame
+    FROM bounded_members bi JOIN items i ON i.item_id=bi.item_id
+    CROSS JOIN member_size size
+    WHERE size.member_count=%s
+    ) AS actual_rows
 )
 SELECT size.member_count, summary.*
 FROM member_size size CROSS JOIN LATERAL (
@@ -54,23 +73,12 @@ SELECT
        pg_catalog.sha256(COALESCE(pg_catalog.string_agg(member_frame, ''::bytea
            ORDER BY internal_item_id), ''::bytea)) AS member_sha256,
        count(*) FILTER (WHERE is_active) AS active_count,
-       pg_catalog.sha256(COALESCE(pg_catalog.string_agg(
-           member_frame || pg_catalog.sha256(pg_catalog.convert_to(r06_model_text, 'UTF8'))
-                        || pg_catalog.int8send(r06_first_seen_ms)
-           , ''::bytea ORDER BY internal_item_id) FILTER (WHERE is_active), ''::bytea)) AS active_sha256,
-       count(*) FILTER (WHERE is_active AND
-           (r06_model_text IS NULL OR r06_first_seen_ms IS NULL)) AS invalid_active_count,
+       pg_catalog.sha256(COALESCE(pg_catalog.string_agg(active_frame, ''::bytea
+           ORDER BY internal_item_id) FILTER (WHERE is_active), ''::bytea)) AS active_sha256,
+       count(*) FILTER (WHERE invalid_active) AS invalid_active_count,
        COALESCE(pg_catalog.array_agg(item_id ORDER BY internal_item_id)
            FILTER (WHERE NOT is_active), ARRAY[]::text[]) AS inactive_ids
-FROM (
-    SELECT bi.item_id, bi.internal_item_id, i.is_active,
-           i.r06_model_text, i.r06_first_seen_ms,
-           pg_catalog.int4send(pg_catalog.octet_length(pg_catalog.convert_to(bi.item_id, 'UTF8')))
-           || pg_catalog.convert_to(bi.item_id, 'UTF8')
-           || pg_catalog.int8send(bi.internal_item_id::bigint) AS member_frame
-    FROM bounded_members bi JOIN items i ON i.item_id=bi.item_id
-    WHERE size.member_count=%s
-) AS actual_rows
+FROM actual_frames
 ) AS summary
 """
 

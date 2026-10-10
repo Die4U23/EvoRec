@@ -1,11 +1,14 @@
 """Owned full-catalog SQL observations, not an HTTP performance acceptance."""
 
 import argparse
+import ast
 import hashlib
 import json
 import os
 from pathlib import Path
 import platform
+import re
+import subprocess
 from time import perf_counter
 from types import SimpleNamespace
 from uuid import UUID
@@ -15,7 +18,7 @@ from psycopg.rows import dict_row
 
 from evorec.domain.errors import ManagementError
 from evorec.infrastructure.r06_catalog_capture import (
-    CATALOG_CAPTURE_SQL, CatalogCapture, capture_eligible, catalog_source_digests, read_catalog_capture,
+    CATALOG_CAPTURE_SQL, CatalogCapture, capture_eligible, catalog_source_digests,
 )
 from scripts.assemble_r06_bundle import _source
 from scripts.r06_service_lab import R06ServiceLab
@@ -27,6 +30,38 @@ LEGACY_SQL = """SELECT bi.item_id, bi.internal_item_id, i.is_active,
     i.r06_model_text, i.r06_first_seen_ms
     FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id
     WHERE bi.bundle_id=%s ORDER BY bi.internal_item_id"""
+
+
+def _sql_literal(source):
+    """Read only the SQL literal, never import/execute historical Python code."""
+    values = [node.value for node in ast.parse(source).body
+              if isinstance(node, ast.Assign)
+              and any(isinstance(target, ast.Name) and target.id == "CATALOG_CAPTURE_SQL"
+                      for target in node.targets)]
+    if (len(values) != 1 or not isinstance(values[0], ast.Constant)
+            or type(values[0].value) is not str):
+        raise ValueError("baseline must contain exactly one literal catalog SQL")
+    return values[0].value
+
+
+def _baseline_sql(project, commit):
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ValueError("baseline must be a full lowercase commit SHA")
+    kind = subprocess.run(["git", "cat-file", "-t", commit], cwd=project, check=True,
+                          capture_output=True).stdout
+    if kind.strip() != b"commit":
+        raise ValueError("baseline identifier must name a commit object")
+    source = subprocess.run(
+        ["git", "show", f"{commit}:src/evorec/infrastructure/r06_catalog_capture.py"],
+        cwd=project, check=True, capture_output=True,
+    ).stdout
+    query = _sql_literal(source.decode("utf-8"))
+    return query, dict(commit=commit, sql_sha256=hashlib.sha256(query.encode("utf-8")).hexdigest(),
+                       module_sha256=hashlib.sha256(source).hexdigest())
+
+
+def _capture(row):
+    return CatalogCapture(**{**row, "inactive_ids": tuple(row["inactive_ids"])})
 
 
 def plan_nodes(plan):
@@ -64,9 +99,12 @@ def _reference(rows):
                            full_eligible_items=frozenset(ordered))
 
 
-def profile(output, database_url, root, identity, digest):
+def profile(output, database_url, root, identity, digest, *, baseline_commit=None):
     project = Path(__file__).resolve().parents[1]
     commit, hashes = _source(project), subprocess_sources(project)
+    baseline_query, baseline_source = (_baseline_sql(project, baseline_commit)
+                                       if baseline_commit is not None else (LEGACY_SQL, None))
+    baseline_name = "baseline" if baseline_commit is not None else "old"
     lab = R06ServiceLab(output, database_url, root, identity, digest,
                         gc_events=False, profile_samples=0)
     observations, plans, result = [], [], None
@@ -78,21 +116,27 @@ def profile(output, database_url, root, identity, digest):
             with psycopg.connect(lab.isolated_url, autocommit=True) as connection:
                 with connection.cursor(row_factory=dict_row, binary=True) as cursor:
                     version = cursor.execute("SELECT version() AS version").fetchone()["version"]
+                    settings = cursor.execute("SELECT current_setting('work_mem') AS work_mem, "
+                                              "current_setting('plan_cache_mode') AS plan_cache_mode, "
+                                              "current_setting('jit') AS jit").fetchone()
                     initial = cursor.execute(LEGACY_SQL, (identity,)).fetchall()
                 if len(initial) != ready["item_count"]:
                     raise ValueError("full published model directory count changed")
                 runtime = _reference(initial)
                 del initial
                 count = len(runtime.item_ids)
+                queries = {baseline_name: (baseline_query, (identity, count+1, count)
+                                           if baseline_commit is not None else (identity,)),
+                           "new": (CATALOG_CAPTURE_SQL, (identity, count+1, count))}
                 down_ids = list(runtime.item_ids[:3])
                 for state in ("all_active", "three_inactive"):
                     if state == "three_inactive":
                         connection.execute("UPDATE items SET is_active=false WHERE item_id=ANY(%s)",
                                            (down_ids,))
                     expected = runtime.full_eligible_items.difference(down_ids if state != "all_active" else ())
-                    for implementation in ("old", "new", "new", "old"):
-                        query = LEGACY_SQL if implementation == "old" else CATALOG_CAPTURE_SQL
-                        parameters = (identity,) if implementation == "old" else (identity, count+1, count)
+                    reference_capture = None
+                    for implementation in (baseline_name, "new", "new", baseline_name):
+                        query, parameters = queries[implementation]
                         with connection.cursor(row_factory=dict_row, binary=True) as cursor:
                             started = perf_counter()
                             cursor.execute(query, parameters)
@@ -100,24 +144,29 @@ def profile(output, database_url, root, identity, digest):
                             rows = cursor.fetchall() if implementation == "old" else cursor.fetchone()
                             fetched = perf_counter()
                         validated = None
-                        if implementation == "new":
-                            rows["inactive_ids"] = tuple(rows["inactive_ids"])
+                        if implementation != "old":
+                            capture = _capture(rows)
                             validation_start = perf_counter()
-                            actual = capture_eligible(runtime, CatalogCapture(**rows))
+                            actual = capture_eligible(runtime, capture)
                             validated = (perf_counter()-validation_start)*1000
+                            if baseline_commit is not None:
+                                if reference_capture is None:
+                                    reference_capture = capture
+                                elif capture != reference_capture:
+                                    raise ValueError("baseline/candidate catalog summaries differ")
                         else:
                             actual = frozenset(row["item_id"] for row in rows if row["is_active"])
                         if actual != expected:
                             raise ValueError("SQL diagnostic eligibility changed")
                         observations.append(dict(state=state, implementation=implementation,
                             execute_ms=(executed-started)*1000, fetch_decode_ms=(fetched-executed)*1000,
-                            candidate_eligibility_validation_ms=validated,
+                            eligibility_validation_ms=validated,
+                            candidate_eligibility_validation_ms=validated if implementation == "new" else None,
                             returned_rows=count if implementation == "old" else 1,
                             eligible_count=len(actual)))
                         del rows, actual
-                    for implementation in ("old", "new"):
-                        query = LEGACY_SQL if implementation == "old" else CATALOG_CAPTURE_SQL
-                        parameters = (identity,) if implementation == "old" else (identity, count+1, count)
+                    for implementation in (baseline_name, "new"):
+                        query, parameters = queries[implementation]
                         _explain(connection, query, parameters, state, implementation, plans)
                 # Extra actual member is deliberately outside approval and has NULL
                 # text/time: the N+1 count must reject it before text work.
@@ -125,21 +174,26 @@ def profile(output, database_url, root, identity, digest):
                                    "VALUES ('capture_probe_extra','Owned extra','test',true)")
                 connection.execute("INSERT INTO bundle_items(bundle_id,item_id,internal_item_id) "
                                    "VALUES (%s,'capture_probe_extra',%s)", (identity, count))
-                capture = read_catalog_capture(connection, identity, count)
-                if capture.member_count != count+1 or capture.active_count != 0:
-                    raise ValueError("overflow did not skip active catalog work")
-                try:
-                    capture_eligible(runtime, capture)
-                except ManagementError as error:
-                    if error.code != "bundle_members_changed":
-                        raise
-                else:
-                    raise ValueError("overflow was accepted")
-                _explain(connection, CATALOG_CAPTURE_SQL, (identity, count+1, count),
-                         "overflow_one", "new", plans)
+                for implementation in ((baseline_name, "new") if baseline_commit is not None else ("new",)):
+                    query, parameters = queries[implementation]
+                    with connection.cursor(row_factory=dict_row, binary=True) as cursor:
+                        capture = _capture(cursor.execute(query, parameters).fetchone())
+                    if (capture.member_count != count+1 or capture.active_count != 0
+                            or capture.invalid_active_count != 0):
+                        raise ValueError("overflow did not skip active catalog work")
+                    try:
+                        capture_eligible(runtime, capture)
+                    except ManagementError as error:
+                        if error.code != "bundle_members_changed":
+                            raise
+                    else:
+                        raise ValueError("overflow was accepted")
+                    _explain(connection, query, parameters, "overflow_one", implementation, plans)
                 result = dict(source_commit=commit, source_sha256=hashes,
+                    baseline_source=baseline_source,
                     bundle_id=str(identity), manifest_sha256=digest, model_version=ready["model_version"],
                     item_count=count, database_version=version, driver_version=psycopg.__version__,
+                    database_settings=settings, prepare_threshold=connection.prepare_threshold,
                     environment=dict(python=platform.python_version(), platform=platform.platform(),
                         processor=platform.processor(), logical_cpus=os.cpu_count(),
                         load_average=None, load_average_unavailable_on_windows=True),
@@ -150,6 +204,7 @@ def profile(output, database_url, root, identity, digest):
     finally:
         if lab.output.exists():
             marker(lab.output, "catalog-observations", dict(source_commit=commit,
+                source_sha256=hashes, baseline_source=baseline_source,
                 measurements=observations, plans=plans, owned_schema_removed=not lab.created))
     if _source(project) != commit or subprocess_sources(project) != hashes:
         raise ValueError("source changed during catalog diagnostic")
@@ -172,10 +227,11 @@ def main():
     parser.add_argument("managed_root", type=Path)
     parser.add_argument("bundle_id", type=UUID)
     parser.add_argument("--expected-manifest-sha256", required=True)
+    parser.add_argument("--baseline-commit", help="full commit SHA of the previous aggregate SQL")
     args = parser.parse_args()
     try:
         result = profile(args.output, os.environ["EVOREC_DATABASE_URL"], args.managed_root,
-                         args.bundle_id, args.expected_manifest_sha256)
+                         args.bundle_id, args.expected_manifest_sha256, baseline_commit=args.baseline_commit)
     except Exception as error:
         print(json.dumps(dict(status="failed", error_type=type(error).__name__)))
         return 1
