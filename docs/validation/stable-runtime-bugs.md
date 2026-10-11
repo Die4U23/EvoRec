@@ -62,12 +62,13 @@
 - 影响：是额外审查的执行顺序错误，不是 API/SQL/模型故障；四轮的 104 笔及逐轮实查记录未变。即使进程／schema 已正常退出，来源不满足也不能称总复查成功。发现后保存 qa-003-premature-restore（SHA `c12f8861df0563ea0dba51e0f318336e7baa825f204c02dee9ffd331dd4b1598`）与本地 helper，不覆盖失败事件。
 - 更正：确认失败进程已经退出，再临时切回精确干净 2f50e62，只重复只读实查，不重跑／增加任何请求。成功 session 51978 exit 0，四个确切 schema/PID/监听均不存在、test schema 总数 0、主目录/.env/模型不变；await 完成后才恢复 84c9bbc，并重新核对原始 A 文件哈希未变。final-live-all 和 restoration 分别保存成功与修正元数据；详情见[报告](stable-result-abba-20261011.md)。
 
-## QA-004：浏览器验收启动前误拒 Windows 测试文件换行（验收工具错误）
+## QA-004：浏览器验收启动前误拒 Windows 测试文件换行（验收工具错误，已更正）
 
 - 发现：02f697c 已提交推送、工作区干净；私有辅助工具逐文件原始字节比较在 tests/web_evaluations.test.cjs 拒绝。只读核对 CRLF→LF 后完全等于 Git blob，core.autocrlf=true、text=auto；不是生产修改、API 或数据库失败。
 - 范围：当时尚未创建 schema/API，HTTP 样本为 0。立即保留本地 qa-004-preflight、失败工具和部分源码快照；不覆盖/删除失败，不计成完整门禁已运行。
 - 更正口径：见[本轮协议补充](stable-browser-backup-plan-20261011.md)。下一次使用全新 attempt-2，运行源码仍要求原始字节一致；仅测试 .cjs 的已核对换行等价单列工作区及 Git blob 双摘要。正式场景尚未完成，不以源码检查更正宣称验收通过。
 - 后续：attempt-2 仍在启动前拒绝 web/evaluations.html，零 schema/API/HTTP。完整只读遍历确认全部差异为三个 tests .cjs 及 web/evaluations.html、web/evaluations.js，五处都是纯 CRLF/LF；第二次失败也保留。下一次 attempt-3 明确限这五个路径并保存原始快照/双摘要，其余运行代码仍字节严格匹配，不把检查器迭代当成 API 失败或正式重跑。
+- 验证：干净已推送 34fec8e、全新 attempt-3 归档 230 个原始来源文件及明确五处双摘要，完整模型浏览器/重置/旧响应隔离和停机成对恢复通过。页面 114/实库 17 项与两项反例负控制、实际账本及精确进程/监听/schema 清退均独立核对；[报告](stable-browser-backup-20261011.md)保留前两次事件/失败工具/部分快照，不修改业务环境或生产源码。只关闭此工具误拒，不宣称旧 504 根因已解决。
 
 ## GATE-001：新持久恢复 oracle 混淆内部失败码和对外错误码（已修复）
 
