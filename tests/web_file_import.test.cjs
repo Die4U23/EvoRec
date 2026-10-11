@@ -639,6 +639,49 @@ test('start and reset automatic requests coalesce with a rapid manual click', as
   assert.notEqual(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
 });
 
+for (const outcome of ['success', 'failure']) {
+  test(`pre-reset recommendation ${outcome} cannot overwrite the new epoch result or retry key`, async () => {
+    const storage = new Map(), posts = [];
+    let release, reject;
+    const resetSession = {...recommendationSession, epoch: 1, history_version: 3};
+    const p = page([], null, [], null, (url, options) => {
+      assert.equal(url, '/api/v1/sessions/session-1/reset');
+      assert.equal(options.method, 'POST');
+      return ok(resetSession);
+    }, storage, (url, options) => {
+      posts.push(options);
+      if (posts.length === 1) return new Promise((resolve, fail) => { release = resolve; reject = fail; });
+      return ok({request_id: options.headers['Idempotency-Key'], actual_strategy: 'dense',
+        bundle_id: 'current-bundle', model_version: 'current-model', session_epoch: 1,
+        history_version: 3, fallback_reason: null, items: []});
+    });
+    await p.ready; p.setSession(recommendationSession);
+    p.element('strategy').value = 'dense'; p.element('count').value = '10';
+    const oldRun = p.element('recommend').onclick(); await settle();
+    assert.equal(posts.length, 1);
+    await p.element('reset-session').onclick();
+    assert.equal(posts.length, 2);
+    assert.notEqual(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
+    assert.equal(JSON.parse(posts[1].body).expected_history_version, 3);
+    const before = p.element('recommendations').children.map(row => row.textContent);
+    assert.match(before[0], /current-bundle.*current-model/);
+    const remembered = storage.get('evorec.comparison');
+    assert.equal(JSON.parse(remembered).session.epoch, 1);
+    assert.equal(JSON.parse(remembered).pendingRecommendation, null);
+    if (outcome === 'success') release(ok({actual_strategy: 'popular', bundle_id: 'old-bundle', items: []}));
+    else reject(new Error('old-epoch network failure'));
+    await oldRun;
+    assert.deepEqual(p.element('recommendations').children.map(row => row.textContent), before);
+    assert.match(p.element('session').textContent, /版本 3/);
+    assert.equal(p.element('message').textContent, '');
+    assert.equal(storage.get('evorec.comparison'), remembered);
+    await p.element('recommend').onclick();
+    assert.equal(posts.length, 3);
+    assert.notEqual(posts[2].headers['Idempotency-Key'], posts[0].headers['Idempotency-Key']);
+    assert.equal(JSON.parse(posts[2].body).expected_history_version, 3);
+  });
+}
+
 test('rapid clicks coalesce an active recommendation and a failed attempt keeps its retry key', async () => {
   const posts = [];
   let finish;
