@@ -70,6 +70,12 @@
 - 后续：attempt-2 仍在启动前拒绝 web/evaluations.html，零 schema/API/HTTP。完整只读遍历确认全部差异为三个 tests .cjs 及 web/evaluations.html、web/evaluations.js，五处都是纯 CRLF/LF；第二次失败也保留。下一次 attempt-3 明确限这五个路径并保存原始快照/双摘要，其余运行代码仍字节严格匹配，不把检查器迭代当成 API 失败或正式重跑。
 - 验证：干净已推送 34fec8e、全新 attempt-3 归档 230 个原始来源文件及明确五处双摘要，完整模型浏览器/重置/旧响应隔离和停机成对恢复通过。页面 114/实库 17 项与两项反例负控制、实际账本及精确进程/监听/schema 清退均独立核对；[报告](stable-browser-backup-20261011.md)保留前两次事件/失败工具/部分快照，不修改业务环境或生产源码。只关闭此工具误拒，不宣称旧 504 根因已解决。
 
+## QA-005：PowerShell 未引用 Git 花括号 revision（只读命令错误，已更正）
+
+- 发现：本轮主干整合的无快进 merge 已完成、工作区干净、与 88cc8f1 内容差异为零；随后 `git rev-parse HEAD HEAD^{tree}` 因 PowerShell 把未引用的花括号参数解析为脚本块而 exit 1。不是 merge/模型/数据库或生产测试失败。
+- 记录：立即保留本地 qa-005-revision-quoting 事件及原输出 chunk f09584，来源 5f989098865efbae15081a7f982e4e94239537e6；当时未新建 schema/API、HTTP 为 0。
+- 更正：只读命令将 `HEAD^{tree}`/候选树 revision 显式引用，exit 0；两者完整 tree 均 dc301a8c79fd335c3fadea6de1cd4d2f75a56da2，merge 的两父提交也独立核对。未回退或重跑 merge，未删除失败事件；后续 Python subprocess 传独立 argv，不经 shell 解释花括号。
+
 ## GATE-001：新持久恢复 oracle 混淆内部失败码和对外错误码（已修复）
 
 - 发现：2026-10-11 18:41（+08:00），新严格验收工具开发中，首组 183 项通过后补终态反例，三项实际 1 通过、2 failure、零 error/skip。数据库保存 execution_interrupted/execution_failed，API 对外返回 recommendation_interrupted/recommendation_idempotency_conflict；直接比较会误拒合法原键失败重放。属于新 oracle，不是生产恢复或超时缺陷，正式完整模型测量尚未开始。
