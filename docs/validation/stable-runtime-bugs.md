@@ -76,6 +76,17 @@
 - 记录：立即保留本地 qa-005-revision-quoting 事件及原输出 chunk f09584，来源 5f989098865efbae15081a7f982e4e94239537e6；当时未新建 schema/API、HTTP 为 0。
 - 更正：只读命令将 `HEAD^{tree}`/候选树 revision 显式引用，exit 0；两者完整 tree 均 dc301a8c79fd335c3fadea6de1cd4d2f75a56da2，merge 的两父提交也独立核对。未回退或重跑 merge，未删除失败事件；后续 Python subprocess 传独立 argv，不经 shell 解释花括号。
 
+## QA-006：额外进程查询循环内重复 CIM 枚举（验收辅助命令错误，已更正）
+
+- 本轮仅为观察运行中的本地测试而执行的只读命令，在 Where-Object 每次迭代中再次 Get-CimInstance，超出初次 10 秒等待且后续仍未返回；主动对唯一自有 session 49365 发 Ctrl-C，实际 exit 1。完整应用回归没有中断，不按此查询推断服务超时、SQL 锁或 CPU 根因。
+- 本地 qa-006-cim-query 事件保留；改为一次 CIM 快照、内存中两次过滤，exit 0。没有修改数据库、服务或生产源。
+
+## GATE-002：保存边界反例假定 pytest 临时根在 artifacts 外（已确认，待修复）
+
+- 发现：冻结 1c178a1 的完整 workflow 53 文件实库回归为 1653 项、1 failure、0 error/skip；tests/test_r06_trace_abba.py 的保存路径反例把 tmp_path 当成 artifacts 外，而本轮 basetemp 正在 artifacts 内。真实 checker 正确允许保存/返回 0，测试却期望 1；不是生产边界丢失或应用 504。
+- 记录：立即保留 bug-gate-002、原 XML（SHA 345abccb044ce59ffbd8039cbe7aedc8f626aa943c1c966f50d5dca45be923e5）、来源 231 blob/原 230 文件及全部日志。[初轮报告](stable-demo-integration-20261011.md)不把 1652 通过和单个失败合成全绿；后续本地 Node/数值停止，PR #66 不合并。
+- 下一项：[预登记](checker-path-isolation-plan-20261011.md)单独修复测试几何条件和真实资料写入隔离，明确允许子目录、项目外和 artifacts 根目录；固定两个临时根运行同模块并执行删守卫负控制。只改测试，不先改生产保存守卫，不自动重跑原完整批次。
+
 ## GATE-001：新持久恢复 oracle 混淆内部失败码和对外错误码（已修复）
 
 - 发现：2026-10-11 18:41（+08:00），新严格验收工具开发中，首组 183 项通过后补终态反例，三项实际 1 通过、2 failure、零 error/skip。数据库保存 execution_interrupted/execution_failed，API 对外返回 recommendation_interrupted/recommendation_idempotency_conflict；直接比较会误拒合法原键失败重放。属于新 oracle，不是生产恢复或超时缺陷，正式完整模型测量尚未开始。

@@ -4,7 +4,7 @@
 
 | 范围 | 首选记录 | 进一步检查 |
 | --- | --- | --- |
-| 本地演示候选主干整合 | [预登记](stable-demo-integration-plan-20261011.md) | 新分支直接以 main 为 base，逐个 PR 祖先与生产/测试 blob 等价核对；完整 workflow 回归、最终 head 及合并后 main CI 尚待执行，不把历史验收改写成本轮重跑 |
+| 本地演示候选主干整合 | [预登记](stable-demo-integration-plan-20261011.md)、[初轮失败和来源/CI](stable-demo-integration-20261011.md)、[路径反例修复预登记](checker-path-isolation-plan-20261011.md) | 15 个 PR 祖先/231 blob 核对、冻结源 CI 四项通过；本地完整 53 文件/1653 项实际 1 failure，GATE-002 为临时根位置假设，后续检查未执行，暂停合并，不用 CI 覆盖失败 |
 | 完整模型浏览器会话安全及停机备份恢复 | [预登记/启动前更正](stable-browser-backup-plan-20261011.md)、[实际浏览器/成对恢复/负控制](stable-browser-backup-20261011.md)、[问题台账](stable-runtime-bugs.md) | 干净页面 114/实库 17 项通过，两个负控制实际拒绝；重置/旧响应隔离、完整 18 文件成对恢复、原键/新 dense/清退通过，保留两次 QA-004 启动拒绝。刷新只恢复会话、不缓存旧卡片，不是长期稳定/SLA |
 | 完整模型双轮负载及持久恢复 | [预登记](stable-recovery-plan-20261011.md)、[双轮 120 笔/恢复与反例](stable-recovery-20261011.md)、[问题台账](stable-runtime-bugs.md) | 干净 385 项通过，固定两轮 120/120、逐笔持久结果/租约/重启/同键/断连/真实崩溃恢复通过；GATE-001 两项失败修复留档；当时待补的浏览器/备份门禁见上一行后续报告，不是长期稳定/SLA |
 | 结果连接旧／新固定交错对照 | [预登记](stable-result-abba-plan-20261011.md)、[四轮完整包与验收错误留档](stable-result-abba-20261011.md)、[问题台账](stable-runtime-bugs.md) | 干净 418 项通过；未插桩 A/B/B/A 各 24/24、另各顺序 2/2，旧版也全成功；保留 QA-002/003 错误及更正，不关闭历史 504，尚需两轮 120 笔等稳定门禁 |

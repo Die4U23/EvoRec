@@ -1,5 +1,11 @@
 # 当前进度与验证记录
 
+## 2026-10-11 主干整合初轮被本地路径反例拒绝
+
+冻结 1c178a1 纳入当前 main 历史，生产及全部测试 231 个 Git blob 与 88cc8f1 相同，15 个 PR head 逐一祖先核对；原 230 文件快照不变。两套依赖检查、冻结源 push/PR 四项 CI 通过，但本地完整 53 文件回归 1653 项中 1 failure、0 error/skip，已停止 Node/数值后续与主干合并，未自动重跑。
+
+GATE-002 的路径反例假定 tmp_path 在 artifacts 外，本轮实际临时根在 artifacts 内，真实 checker 因而正确返回成功而测试误报。[初轮报告](validation/stable-demo-integration-20261011.md)保留 XML/事件与 QA-005/006 命令错误；[单独测试修复协议](validation/checker-path-isolation-plan-20261011.md)将构造独立模拟项目及明确正/负路径，再用删守卫副本反证。尚未完整整合 main 或冻结交付，不将历史模型成功及 CI 绿色当成本轮通过。
+
 ## 2026-10-11 完整模型浏览器及停机成对备份恢复通过
 
 按[预登记及更正](validation/stable-browser-backup-plan-20261011.md)，干净已推送 34fec8e、完整 137,249 项 NumPy，实际浏览器首次自动 dense、详情/收藏/隐藏/撤销、反馈排除已见、获得确认后的重置首次自动推荐通过。唯一旧 epoch 真响应暂缓/释放后，新会话及推荐文本完全未变，初始 Top-10 恢复；刷新保持 version=5/收藏为空，不缓存旧卡片或自动重算。四笔账本精确 completed/租约释放/零 accepted。
