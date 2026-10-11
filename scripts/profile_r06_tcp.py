@@ -17,7 +17,7 @@ from scripts.run_r06_demo import marker
 from scripts.verify_r06_reliability import legal, subprocess_sources, summarize
 
 
-def sample(url, ready, session, index, phase):
+def sample(url, ready, session, index, phase, *, request_key=None, receipt=None):
     started = perf_counter()
     record = dict(sample=index, phase=phase, status_code=None, response_identity_valid=None,
                   client_create_ms=None, exchange_ms=None, validation_ms=0.0, close_ms=None)
@@ -27,7 +27,7 @@ def sample(url, ready, session, index, phase):
         created = perf_counter()
         record["client_create_ms"] = (created-started)*1000
         response = client.post("/api/v1/recommendations", headers={
-            "X-Session-Token": session["access_token"], "Idempotency-Key": str(uuid4()),
+            "X-Session-Token": session["access_token"], "Idempotency-Key": request_key or str(uuid4()),
             "X-EvoRec-Diagnostic-Sample": str(index)}, json={
             "session_id": session["session_id"], "expected_history_version": session["history_version"],
             "strategy": "dense", "k": 10})
@@ -36,7 +36,16 @@ def sample(url, ready, session, index, phase):
         # Numeric/boolean observations only, never dump server error bodies.
         if response.status_code == 200:
             try:
-                record["response_identity_valid"] = legal(response.json(), ready, session)
+                body = response.json()
+                if request_key is None:
+                    record["response_identity_valid"] = legal(body, ready, session)
+                else:
+                    from scripts.check_r06_stable_recovery import strict_legal
+                    record["response_identity_valid"] = strict_legal(body, ready, session, request_key)
+                # Explicit caller-owned ephemeral memory only. Never archive
+                # tokens, keys or response bodies in the numeric record.
+                if receipt is not None and record["response_identity_valid"] is True:
+                    receipt.update(body=body)
             except (ValueError, KeyError, TypeError):
                 record["response_identity_valid"] = False
         record["validation_ms"] = (perf_counter()-exchanged)*1000
@@ -45,7 +54,10 @@ def sample(url, ready, session, index, phase):
     finally:
         close_started = perf_counter()
         if client is not None:
-            client.close()
+            try:
+                client.close()
+            except httpx.HTTPError:
+                record['transport_error'] = True
         record["close_ms"] = (perf_counter()-close_started)*1000
         record["elapsed_ms"] = (perf_counter()-started)*1000
     return record

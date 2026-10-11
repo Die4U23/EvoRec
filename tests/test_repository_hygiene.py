@@ -80,6 +80,7 @@ def test_service_ci_runs_durable_file_job_regressions():
     assert service_step.count('tests/test_r06_timeout_trace.py') == 1
     assert service_step.count('tests/test_r06_trace_abba.py') == 1
     assert service_step.count('tests/test_r06_result_abba.py') == 1
+    assert service_step.count('tests/test_r06_stable_recovery.py') == 1
     assert service_step.count('tests/test_database_handshake.py') == 1
     assert service_step.count('tests/test_session_admission_lock.py') == 1
     assert service_step.count('tests/test_result_connection.py') == 1

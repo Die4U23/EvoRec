@@ -80,6 +80,7 @@ jobs:
             tests/test_database_handshake.py \
             tests/test_r06_demo.py \
             tests/test_r06_reliability.py \
+            tests/test_r06_stable_recovery.py \
             tests/test_evaluation_jobs.py \
             tests/test_catalog_demo.py \
             tests/test_recommendation_recovery.py \
