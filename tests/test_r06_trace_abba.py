@@ -251,9 +251,13 @@ def test_cli_partial_is_not_series_and_rejection_does_not_leak_payload(tmp_path,
     assert "PRIVATE" not in capsys.readouterr().out
 
 
-def test_cli_save_uses_fresh_marker_only_in_artifacts(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("invalid_root_kind", ["outside_project", "artifacts_root"])
+def test_cli_save_uses_fresh_marker_only_in_artifacts(tmp_path, monkeypatch, capsys, invalid_root_kind):
     monkeypatch.setattr(checker, "subprocess_sources", lambda _: HASHES)
-    project = Path(checker.__file__).resolve().parents[1]
+    # Model the project explicitly: pytest's own temporary root may live inside
+    # the real artifacts directory, and synthetic reports must not pollute it.
+    project = tmp_path / "project"
+    monkeypatch.setattr(checker, "__file__", str(project / "scripts" / "check_r06_trace_abba.py"))
     root = project / "artifacts" / "test-trace-abba" / uuid4().hex
     for arm, trace in checker.ORDER:
         write(root / arm, documents(trace))
@@ -263,8 +267,12 @@ def test_cli_save_uses_fresh_marker_only_in_artifacts(tmp_path, monkeypatch, cap
     assert checker.main(args) == 1
     assert (root / "series-check.json").read_bytes() == saved
     assert json.loads(saved)["production_acceptance"] is False
-    for arm, trace in checker.ORDER:
-        write(tmp_path / arm, documents(trace))
-    assert checker.main([str(tmp_path), "--source-commit", COMMIT, "--save"]) == 1
-    assert not (tmp_path / "series-check.json").exists()
     assert "PRIVATE" not in capsys.readouterr().out
+    invalid_root = tmp_path / "outside-project" if invalid_root_kind == "outside_project" else project / "artifacts"
+    for arm, trace in checker.ORDER:
+        write(invalid_root / arm, documents(trace))
+    assert checker.main([str(invalid_root), "--source-commit", COMMIT, "--save"]) == 1
+    assert not (invalid_root / "series-check.json").exists()
+    output = capsys.readouterr().out
+    assert json.loads(output)["failed_check"] == "save boundary"
+    assert "PRIVATE" not in output
