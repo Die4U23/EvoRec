@@ -441,9 +441,10 @@ def test_real_synthetic_package_tcp_trace_is_correlated_and_drained(isolated_dat
             "database_admission_database_transaction_context_exit",
             "actual_catalog_read_and_capture_database_execute_actual_catalog_rows",
             "actual_catalog_read_and_capture_database_fetchone_decode",
-            "result_write_database_connect", "result_write_database_commit", "result_write_database_close",
+            "result_write_database_transaction_context_exit",
             "execution_lease_close_database_close"}
-        assert "database_admission_database_connect" not in {s["stage"] for s in request["stages"]}
+        assert not {"database_admission_database_connect", "result_write_database_connect",
+                    "result_write_database_close"} & {s["stage"] for s in request["stages"]}
         assert profiler._fresh_database_trace_complete(request)
     assert report["database_driver_version"]
     assert report["gc_events_enabled"] is gc_events

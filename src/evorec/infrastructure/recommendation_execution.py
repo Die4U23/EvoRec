@@ -98,6 +98,27 @@ class RecommendationExecution:
                 with connection.transaction():
                     yield connection
 
+    @contextmanager
+    def result_connection(self):
+        # Serialize the complete transaction with close(), not just individual
+        # SQL calls. A borrowed transaction must never close the lease socket.
+        with self._connection_lock:
+            with self.backend._execution_lock:
+                registered = self.backend._executions.get(self.command.request_id) is self
+            connection = self.connection
+            if (not self.admitted or not registered or connection is None or connection.closed
+                    or not connection.autocommit
+                    or connection.info.transaction_status != TransactionStatus.IDLE):
+                raise ManagementError("recommendation_execution_lost", "execution lease is not idle and owned", 503)
+            self._assert_held()
+            with connection.transaction():
+                yield connection
+            # psycopg's Transaction.__exit__ can return normally when its
+            # connection has already closed, without committing the writes.
+            if (connection.closed or not connection.autocommit
+                    or connection.info.transaction_status != TransactionStatus.IDLE):
+                raise ManagementError("recommendation_execution_lost", "result transaction lost its idle lease", 503)
+
     def close(self):
         with self._connection_lock:
             with self.backend._execution_lock:

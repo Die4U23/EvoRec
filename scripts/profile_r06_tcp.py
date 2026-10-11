@@ -78,13 +78,27 @@ def _fresh_database_trace_complete(request):
         "database_admission_database_transaction_context_exit",
         "actual_catalog_read_and_capture_database_execute_actual_catalog_rows",
         "actual_catalog_read_and_capture_database_fetchone_decode",
-        "result_write_database_connect", "result_write_database_commit", "result_write_database_close",
         "execution_lease_close_database_close",
     }
     observed = {stage.get("stage") for stage in request["stages"]
                 if type(stage) is dict and "error_type" in stage and stage["error_type"] is None
                 and type(stage.get("stage")) is str}
-    return required <= observed
+    owned_result = {"result_write_database_connect", "result_write_database_commit",
+                    "result_write_database_close"}
+    borrowed_exit = "result_write_database_transaction_context_exit"
+    labels = {stage.get("stage") for stage in request["stages"]
+              if type(stage) is dict and type(stage.get("stage")) is str}
+    if borrowed_exit in labels:
+        # A borrowed transaction's explicit exit is required; legacy owned
+        # events cannot hide a failed exit or an early close of the lease.
+        result_complete = (borrowed_exit in observed
+                           and not (owned_result | {"result_write_database_transaction_exit"}) & labels
+                           and all(stage.get("error_type", "missing") is None
+                                   for stage in request["stages"] if type(stage) is dict
+                                   and stage.get("stage") == borrowed_exit))
+    else:
+        result_complete = owned_result <= observed
+    return required <= observed and result_complete
 
 
 def _timeout_trace_complete(request):

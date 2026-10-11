@@ -81,6 +81,7 @@ def test_service_ci_runs_durable_file_job_regressions():
     assert service_step.count('tests/test_r06_trace_abba.py') == 1
     assert service_step.count('tests/test_database_handshake.py') == 1
     assert service_step.count('tests/test_session_admission_lock.py') == 1
+    assert service_step.count('tests/test_result_connection.py') == 1
 
 
 def test_optional_retrieval_ci_remains_separate_from_pure_service():

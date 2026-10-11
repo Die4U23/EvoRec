@@ -76,9 +76,44 @@ def test_owned_connection_events_cannot_substitute_for_borrowed_boundaries(requi
     assert profiler._fresh_database_trace_complete(request) is False
 
 
+def _borrowed_result_request():
+    request = _complete_request()
+    request["stages"] = [event for event in request["stages"]
+                         if event["stage"] not in {"result_write_database_connect",
+                                                   "result_write_database_commit", "result_write_database_close"}]
+    request["stages"].append({"stage": "result_write_database_transaction_context_exit", "error_type": None})
+    return request
+
+
+def test_borrowed_result_trace_requires_explicit_error_free_transaction_exit():
+    request = _borrowed_result_request()
+    assert profiler._fresh_database_trace_complete(request)
+    request["stages"][-1]["error_type"] = "RaiseException"
+    assert not profiler._fresh_database_trace_complete(request)
+    del request["stages"][-1]["error_type"]
+    assert not profiler._fresh_database_trace_complete(request)
+    request["stages"].pop()
+    assert not profiler._fresh_database_trace_complete(request)
+
+
+@pytest.mark.parametrize("unexpected", ["result_write_database_connect", "result_write_database_commit",
+                                      "result_write_database_close", "result_write_database_transaction_exit"])
+def test_borrowed_result_trace_rejects_owned_connection_events(unexpected):
+    request = _borrowed_result_request()
+    request["stages"].append({"stage": unexpected, "error_type": None})
+    assert not profiler._fresh_database_trace_complete(request)
+
+
+def test_legacy_complete_result_cannot_hide_a_failed_borrowed_exit():
+    request = _complete_request()
+    request["stages"].append({"stage": "result_write_database_transaction_context_exit", "error_type": "RaiseException"})
+    assert not profiler._fresh_database_trace_complete(request)
+
+
 @pytest.mark.parametrize("fail", [False, True])
+@pytest.mark.parametrize("phase", ["database_admission", "result_write"])
 def test_real_database_trace_records_borrowed_transaction_context_exit(
-        isolated_database, fail):
+        isolated_database, fail, phase):
     from psycopg.pq import TransactionStatus
 
     failure = RuntimeError("PRIVATE-FAILURE-MARKER")
@@ -94,7 +129,7 @@ def test_real_database_trace_records_borrowed_transaction_context_exit(
                 if fail:
                     raise failure
 
-        return await asyncio.to_thread(timing.sync("database_admission", work))
+        return await asyncio.to_thread(timing.sync(phase, work))
 
     try:
         with trace_api(timing):
@@ -118,11 +153,11 @@ def test_real_database_trace_records_borrowed_transaction_context_exit(
         assert connection.info.transaction_status == TransactionStatus.IDLE
 
         stages = timing.report()[0]["stages"]
-        exit_stage = "database_admission_database_transaction_context_exit"
+        exit_stage = phase + "_database_transaction_context_exit"
         assert [event for event in stages if event["stage"] == exit_stage]
         assert not any(event["stage"] in {
-            "database_admission_database_connect",
-            "database_admission_database_close",
+            phase + "_database_connect",
+            phase + "_database_close",
         } for event in stages)
         assert "PRIVATE-FAILURE-MARKER" not in json.dumps(timing.report())
 

@@ -779,7 +779,14 @@ class PostgresDemoBackend:
 
     def _save(self, result: RecommendationResult) -> None:
         binding = result.binding
-        with self._connect() as connection:
+        execution = self._execution(binding.request_id)
+        if execution is not None and (execution.backend is not self
+                                     or execution.command.request_id != binding.request_id):
+            raise SnapshotMismatch("result has no matching execution lease")
+        # Historical unowned writes retain their independent connection. A
+        # failed registered lease must not silently fall back to a new socket.
+        transaction = execution.result_connection() if execution is not None else self._connect()
+        with transaction as connection:
             cursor = connection.execute(
                 """
                 SELECT session_id, session_epoch, history_version, bundle_id,
@@ -827,11 +834,12 @@ class PostgresDemoBackend:
                 return
             if row["status"] != "accepted":
                 raise SnapshotMismatch("request is not in an accepted state")
-            if row["execution_owner"] is not None:
-                execution = self._execution(binding.request_id)
-                if execution is None or execution.owner != row["execution_owner"]:
+            if execution is not None or row["execution_owner"] is not None:
+                current = self._execution(binding.request_id)
+                if (current is None or current.owner != row["execution_owner"]
+                        or (execution is not None and current is not execution)):
                     raise SnapshotMismatch("result has no matching execution owner")
-                execution.assert_held()
+                current.assert_held()
             if result.items:
                 cursor = connection.cursor()
                 cursor.executemany(
