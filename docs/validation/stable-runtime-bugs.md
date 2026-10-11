@@ -62,6 +62,12 @@
 - 影响：是额外审查的执行顺序错误，不是 API/SQL/模型故障；四轮的 104 笔及逐轮实查记录未变。即使进程／schema 已正常退出，来源不满足也不能称总复查成功。发现后保存 qa-003-premature-restore（SHA `c12f8861df0563ea0dba51e0f318336e7baa825f204c02dee9ffd331dd4b1598`）与本地 helper，不覆盖失败事件。
 - 更正：确认失败进程已经退出，再临时切回精确干净 2f50e62，只重复只读实查，不重跑／增加任何请求。成功 session 51978 exit 0，四个确切 schema/PID/监听均不存在、test schema 总数 0、主目录/.env/模型不变；await 完成后才恢复 84c9bbc，并重新核对原始 A 文件哈希未变。final-live-all 和 restoration 分别保存成功与修正元数据；详情见[报告](stable-result-abba-20261011.md)。
 
+## QA-004：浏览器验收启动前误拒 Windows 测试文件换行（验收工具错误）
+
+- 发现：02f697c 已提交推送、工作区干净；私有辅助工具逐文件原始字节比较在 tests/web_evaluations.test.cjs 拒绝。只读核对 CRLF→LF 后完全等于 Git blob，core.autocrlf=true、text=auto；不是生产修改、API 或数据库失败。
+- 范围：当时尚未创建 schema/API，HTTP 样本为 0。立即保留本地 qa-004-preflight、失败工具和部分源码快照；不覆盖/删除失败，不计成完整门禁已运行。
+- 更正口径：见[本轮协议补充](stable-browser-backup-plan-20261011.md)。下一次使用全新 attempt-2，运行源码仍要求原始字节一致；仅测试 .cjs 的已核对换行等价单列工作区及 Git blob 双摘要。正式场景尚未完成，不以源码检查更正宣称验收通过。
+
 ## GATE-001：新持久恢复 oracle 混淆内部失败码和对外错误码（已修复）
 
 - 发现：2026-10-11 18:41（+08:00），新严格验收工具开发中，首组 183 项通过后补终态反例，三项实际 1 通过、2 failure、零 error/skip。数据库保存 execution_interrupted/execution_failed，API 对外返回 recommendation_interrupted/recommendation_idempotency_conflict；直接比较会误拒合法原键失败重放。属于新 oracle，不是生产恢复或超时缺陷，正式完整模型测量尚未开始。

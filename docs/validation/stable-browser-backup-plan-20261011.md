@@ -23,3 +23,7 @@
 复用既有备份 PostgreSQL 测试及 Node 页面反例；补缺失的旧推荐响应/重置反例时单独提交实现和测试，再冻结正式运行。检查非空、零失败/错误/跳过，静态正确性/效率/复用串行复核；缺少 team-mode 要求的 agent_type，不声称独立代理审核。computer-use 用实际浏览器操作，不能用 Node 模拟代替 UI 证据；git-ship 显式路径、中文提交/PR、无 Claude trailer。
 
 本轮结果只能补“指定本地完整模型浏览器及停机成对备份恢复”的证据，不是在线备份、异机灾备、长期稳定、300ms/20QPS/99% SLA；作者连续计时讲解和亲自修改代码不由 AI 代签。保留依赖 #64 的 PR 记录并检查精确最终 head push/PR 四项 CI，所有最终门禁具备后再决定合并/版本冻结。
+
+## 启动前检查更正
+
+首次 02f697c 启动前将整个 tests 工作区与 LF Git blob 做原始字节比较，被 `tests/web_evaluations.test.cjs` 的 CRLF 拒绝；实查仅换行差异，core.autocrlf=true、text=auto、Git 工作区干净。该次未创建 schema/API、HTTP 样本为 0，保存 QA-004 事件、失败辅助工具及部分源码快照，不算浏览器或备份验收失败/通过。下一次使用全新 attempt-2；运行源码 src/scripts/db/web 仍须原始字节等于 Git blob，仅 tests 下 .cjs 可接受已核对的 CRLF/LF 等价，并保存工作区原始字节/哈希和对应 Git blob 哈希、具体路径。除此之外的差异仍拒绝，不修改保护文件或生产代码。批量读取 Git index blob 代替逐文件启动 Git，减少启动检查开销，不改变 HTTP 口径。
