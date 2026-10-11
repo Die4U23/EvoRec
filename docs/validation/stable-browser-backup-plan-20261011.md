@@ -27,3 +27,5 @@
 ## 启动前检查更正
 
 首次 02f697c 启动前将整个 tests 工作区与 LF Git blob 做原始字节比较，被 `tests/web_evaluations.test.cjs` 的 CRLF 拒绝；实查仅换行差异，core.autocrlf=true、text=auto、Git 工作区干净。该次未创建 schema/API、HTTP 样本为 0，保存 QA-004 事件、失败辅助工具及部分源码快照，不算浏览器或备份验收失败/通过。下一次使用全新 attempt-2；运行源码 src/scripts/db/web 仍须原始字节等于 Git blob，仅 tests 下 .cjs 可接受已核对的 CRLF/LF 等价，并保存工作区原始字节/哈希和对应 Git blob 哈希、具体路径。除此之外的差异仍拒绝，不修改保护文件或生产代码。批量读取 Git index blob 代替逐文件启动 Git，减少启动检查开销，不改变 HTTP 口径。
+
+attempt-2 仍在启动前拒绝 web/evaluations.html，零 schema/API/HTTP。随后一次性只读遍历全部检查路径，实际恰有五个纯 CRLF/LF 差异：tests/web_evaluations.test.cjs、tests/web_file_import.test.cjs、tests/web_results.test.cjs、web/evaluations.html、web/evaluations.js。保存第二次失败，不再猜测范围；下一次全新 attempt-3 仅这五个明确路径允许换行等价，全部归档原始字节与双摘要。生产 src/scripts/db、推荐页面 web/index.html 及其他路径仍原始字节严格匹配。此为检查器修正，不是生产候选变化或正式样本重跑。

@@ -67,6 +67,7 @@
 - 发现：02f697c 已提交推送、工作区干净；私有辅助工具逐文件原始字节比较在 tests/web_evaluations.test.cjs 拒绝。只读核对 CRLF→LF 后完全等于 Git blob，core.autocrlf=true、text=auto；不是生产修改、API 或数据库失败。
 - 范围：当时尚未创建 schema/API，HTTP 样本为 0。立即保留本地 qa-004-preflight、失败工具和部分源码快照；不覆盖/删除失败，不计成完整门禁已运行。
 - 更正口径：见[本轮协议补充](stable-browser-backup-plan-20261011.md)。下一次使用全新 attempt-2，运行源码仍要求原始字节一致；仅测试 .cjs 的已核对换行等价单列工作区及 Git blob 双摘要。正式场景尚未完成，不以源码检查更正宣称验收通过。
+- 后续：attempt-2 仍在启动前拒绝 web/evaluations.html，零 schema/API/HTTP。完整只读遍历确认全部差异为三个 tests .cjs 及 web/evaluations.html、web/evaluations.js，五处都是纯 CRLF/LF；第二次失败也保留。下一次 attempt-3 明确限这五个路径并保存原始快照/双摘要，其余运行代码仍字节严格匹配，不把检查器迭代当成 API 失败或正式重跑。
 
 ## GATE-001：新持久恢复 oracle 混淆内部失败码和对外错误码（已修复）
 
