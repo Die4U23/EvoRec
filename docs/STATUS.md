@@ -1,5 +1,13 @@
 # 当前进度与验证记录
 
+## 2026-10-11 完整模型双轮 120 笔和持久恢复门禁通过
+
+按[预登记](validation/stable-recovery-plan-20261011.md)，干净已推送 25a2a03 的完整 137,249 项 NumPy 两轮各 120/120 成功，原 2 秒期限、单 worker、新 HTTP client、零重试、关闭服务插桩不变。逐笔请求键/session epoch/history/模型、资格、唯一 completed/精确结果及租约释放通过；重启精确重放、同键唯一、断连后 completed 保留、真实 accepted+owner 崩溃后 failed/零部分结果和新键成功均通过。HTTP p95 1298.104/1271.969 ms，总客户端 p95 1584.819/1577.011 ms，不当纯服务端耗时。
+
+干净十模块 385 项零失败/错误/跳过；GATE-001 新终态 oracle 误判保留 2 项失败和六文件快照，修复后原反例通过，未改生产代码。两次计划硬杀、四次正常 CPU drain 分别记录；逐轮及总实查六 PID/监听、两个 schema 不存在，test schema 总数 0，主目录/.env/模型未改。临时请求数据已删除，证据/模型保留；见[完整报告](validation/stable-recovery-20261011.md)及[台账](validation/stable-runtime-bugs.md)。
+
+冻结源 push/PR 四项 CI 通过，结果最终 head 另在草稿 PR #64 核对；git-ship 保留依赖 #63 的 PR，team-mode 接口限制下主线程串行复核。指定本地负载/恢复通过，不是长期稳定/20 QPS/300 ms/99% 证明；浏览器 reset 过期响应与备份恢复仍待本版本最终复演，R06-001/OBS-001 历史根因未关闭，暂不合并发布稳定版。
+
 ## 2026-10-11 结果连接旧／新固定对照通过，尚需最终稳定门禁
 
 按[先推送预登记](validation/stable-result-abba-plan-20261011.md)，旧 2f50e62／候选干净已推送 c3a89d9，完整 137,249 项未插桩 A/B/B/A 各负载 24/24、另各顺序 2/2，全部 104 笔身份正确、无 504/其他状态/transport error；目录 SQL、恢复、原 2 秒期限、单 worker、新 HTTP client、零重试不变。候选 HTTP p95 1337.510/1408.983 ms，旧版 1492.735/1669.339 ms；旧版也全成功，有限波动不证明因果或关闭历史 504。
