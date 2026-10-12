@@ -5,7 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 import subprocess
 import sys
-from threading import Event
+from threading import Event, Lock
 import time
 from uuid import uuid4
 
@@ -14,7 +14,7 @@ import pytest
 
 from evorec.api.app import create_app
 from evorec.bootstrap import build_demo_application
-from evorec.domain.errors import ManagementError, SnapshotMismatch
+from evorec.domain.errors import IdempotencyInProgress, ManagementError, SnapshotMismatch
 from evorec.domain.models import RecommendationCommand, RecommendationResult, Strategy
 from evorec.domain.recommendation import select_results
 from evorec.infrastructure.postgres import PostgresDemoBackend
@@ -510,7 +510,7 @@ def test_fresh_admission_without_execution_lease_is_rejected_before_insert(recov
     assert state(application.backend, command) is None
 
 
-def test_concurrent_orphan_retries_share_one_terminal_outcome_without_execution(recovery):
+def test_concurrent_orphan_retries_share_one_terminal_outcome_without_execution(recovery, monkeypatch):
     application, command = recovery
     execution = RecommendationExecution(application.backend, command)
     execution.admit()
@@ -518,19 +518,342 @@ def test_concurrent_orphan_retries_share_one_terminal_outcome_without_execution(
     original_owner = state(application.backend, command)["execution_owner"]
     apps = [build_demo_application(PostgresDemoBackend(application.backend.database_url, r06_enabled=False))
             for _ in range(4)]
+    # Passive observer overhead is included; these times are not benchmark evidence.
+    # Record fixed labels/codes only, never SQL, exception messages or connection data.
+    stages, replies = [], []
+    stage_lock = Lock()
+    indices = {id(app.backend): index for index, app in enumerate(apps)}
+    diagnostic_codes = frozenset({"recommendation_interrupted", "recommendation_in_progress",
+                                 "recommendation_timeout", "database_unavailable", "catalog_unavailable",
+                                 "recommendation_execution_lost", "recommendation_recovery_unavailable",
+                                 "recommendation_idempotency_conflict", "session_not_found",
+                                 "session_access_denied", "history_conflict"})
+
+    def safe_code(code):
+        return code if type(code) is str and code in diagnostic_codes else None
+
+    def record(index, stage, event, error=None):
+        entry = (index, stage, event, time.monotonic(),
+                 type(error).__name__ if error is not None else None,
+                 safe_code(getattr(error, "code", None)))
+        with stage_lock:
+            stages.append(entry)
+
+    def observed(index, stage, work, *args, **kwargs):
+        record(index, stage, "enter")
+        try:
+            result = work(*args, **kwargs)
+        except BaseException as error:
+            record(index, stage, "exit", error)
+            raise
+        record(index, stage, "exit")
+        return result
+
+    def wrap_execution(stage, original):
+        def wrapped(execution, *args, **kwargs):
+            index = indices.get(id(execution.backend))
+            if index is None:
+                return original(execution, *args, **kwargs)
+            return observed(index, stage, original, execution, *args, **kwargs)
+        return wrapped
+
+    monkeypatch.setattr(RecommendationExecution, "admit",
+                        wrap_execution("lease_admission", RecommendationExecution.admit))
+    monkeypatch.setattr(RecommendationExecution, "close",
+                        wrap_execution("lease_close", RecommendationExecution.close))
+
+    def wrap_work(index, stage, original):
+        def wrapped(*args, **kwargs):
+            return observed(index, stage, original, *args, **kwargs)
+        return wrapped
+
+    for index, app in enumerate(apps):
+        monkeypatch.setattr(app.manager, "ensure_ready", wrap_work(index, "readiness", app.manager.ensure_ready))
+        monkeypatch.setattr(app.backend, "_admit", wrap_work(index, "terminal_admission", app.backend._admit))
+
+    async def observed_post(index, app):
+        record(index, "http_request", "enter")
+        try:
+            reply = await post(app, command)
+        except BaseException as error:
+            record(index, "http_request", "exit", error)
+            raise
+        # HTTP errors are returned responses; worker records retain their exception.
+        record(index, "http_request", "exit")
+        return reply
+
     async def run():
-        replies = await asyncio.gather(*(post(app, command) for app in apps))
-        codes = {reply.json()["error"]["code"] for reply in replies}
-        assert all(reply.status_code == 409 for reply in replies), [
-            (reply.status_code, reply.json()["error"]["code"]) for reply in replies]
-        assert "recommendation_interrupted" in codes
-        assert codes <= {"recommendation_interrupted", "recommendation_in_progress"}
-        for app in apps:
-            assert (await post(app, command)).json()["error"]["code"] == "recommendation_interrupted"
-            assert not app.backend._executions
+        try:
+            replies.extend(await asyncio.gather(*(observed_post(index, app) for index, app in enumerate(apps))))
+            codes = {reply.json()["error"]["code"] for reply in replies}
+            assert all(reply.status_code == 409 for reply in replies), [
+                (reply.status_code, reply.json()["error"]["code"]) for reply in replies]
+            assert "recommendation_interrupted" in codes
+            assert codes <= {"recommendation_interrupted", "recommendation_in_progress"}
+            for app in apps:
+                assert (await post(app, command)).json()["error"]["code"] == "recommendation_interrupted"
+                assert not app.backend._executions
+        finally:
+            await asyncio.gather(*(app.backend.aclose() for app in apps))
+    try:
+        asyncio.run(run())
+        assert state(application.backend, command) == dict(status="failed", failure_code="execution_interrupted",
+                                                          execution_owner=original_owner)
+        with application.backend._connect() as c:
+            assert c.execute("SELECT count(*) AS n FROM request_items").fetchone()["n"] == 0
+        assert_unlocked(application.backend, command)
+    except AssertionError as failure:
+        # Even when the HTTP assertions fail, preserve durable outcome and
+        # liveness evidence. Do not let a diagnostic query mask the failure.
+        durable = {"observation_error": None}
+        try:
+            durable["request"] = state(application.backend, command)
+            durable["registered_executions"] = [len(app.backend._executions) for app in apps]
+            with application.backend._connect() as c:
+                durable["item_count"] = c.execute(
+                    "SELECT count(*) AS n FROM request_items WHERE request_id=%s",
+                    (command.request_id,),
+                ).fetchone()["n"]
+                durable["lease_available"] = c.execute(
+                    "SELECT pg_try_advisory_xact_lock(hashtextextended('evorec:recommendation:' "
+                    "|| current_schema() || ':' || %s, 0)) AS held", (str(command.request_id),),
+                ).fetchone()["held"]
+        except Exception as observation_error:
+            durable["observation_error"] = type(observation_error).__name__
+        failure.add_note(repr({"replies": [(reply.status_code, safe_code(reply.json().get("error", {}).get("code")))
+                                         for reply in replies], "stages": stages,
+                               "durable": durable,
+                               "observer_overhead_included": True}))
+        raise
+
+
+def test_orphan_retry_with_held_lease_serializes_competitors_before_terminal_reconciliation(recovery, monkeypatch):
+    """Controlled service/lease ordering; not a reproduction of the HTTP 2s deadline."""
+    application, command = recovery
+    execution = RecommendationExecution(application.backend, command)
+    execution.admit()
+    execution.close()
+    original_owner = state(application.backend, command)["execution_owner"]
+    apps = [build_demo_application(PostgresDemoBackend(application.backend.database_url, r06_enabled=False))
+            for _ in range(4)]
+    winner = apps[0].backend
+    entered, release = Event(), Event()
+    original_admit = winner._admit
+
+    def gated_admit(*args, **kwargs):
+        winner._execution(command.request_id).assert_held()
+        entered.set()
+        assert release.wait(10), "orphan retry admission was not released"
+        return original_admit(*args, **kwargs)
+
+    async def unexpected_execution(*args, **kwargs):
+        pytest.fail("orphan retry reached ranking or result persistence")
+
+    monkeypatch.setattr(winner, "_admit", gated_admit)
+    for app in apps:
+        monkeypatch.setattr(app.backend, "rank", unexpected_execution)
+        monkeypatch.setattr(app.backend, "save", unexpected_execution)
+
+    async def competitor(app):
+        with pytest.raises(IdempotencyInProgress):
+            await app.recommend.execute(command)
+        assert not app.backend._executions
+
+    async def run():
+        task = asyncio.create_task(apps[0].recommend.execute(command))
+        tasks = [task]
+        try:
+            await started(entered)
+            assert not task.done()
+            assert winner._execution(command.request_id) is not None
+            assert state(application.backend, command) == dict(status="accepted", failure_code=None,
+                                                              execution_owner=original_owner)
+            tasks.extend(asyncio.create_task(competitor(app)) for app in apps[1:])
+            async with asyncio.timeout(5):
+                await asyncio.gather(*tasks[1:])
+            assert not task.done()
+            assert state(application.backend, command)["status"] == "accepted"
+            release.set()
+            async with asyncio.timeout(5):
+                with pytest.raises(ManagementError) as failure:
+                    await task
+            assert failure.value.status_code == 409
+            assert failure.value.code == "recommendation_interrupted"
+            # Remove only the test gate before terminal reads.
+            monkeypatch.setattr(winner, "_admit", original_admit)
+            for app in apps:
+                with pytest.raises(ManagementError) as terminal:
+                    await app.recommend.execute(command)
+                assert terminal.value.status_code == 409
+                assert terminal.value.code == "recommendation_interrupted"
+                assert not app.backend._executions
+        finally:
+            release.set()
+            try:
+                async with asyncio.timeout(5):
+                    await asyncio.gather(*tasks, return_exceptions=True)
+            finally:
+                await asyncio.gather(*(app.backend.aclose() for app in apps))
+
     asyncio.run(run())
     assert state(application.backend, command) == dict(status="failed", failure_code="execution_interrupted",
                                                       execution_owner=original_owner)
     with application.backend._connect() as c:
         assert c.execute("SELECT count(*) AS n FROM request_items").fetchone()["n"] == 0
     assert_unlocked(application.backend, command)
+
+
+def test_real_http_deadline_waiting_for_publication_readiness_drains_before_lease(recovery, monkeypatch):
+    """The HTTP route's 2s timeout drains real readiness recovery before leasing."""
+    application, command = recovery
+    backend, manager = application.backend, application.backend.manager
+
+    orphan = RecommendationExecution(backend, command)
+    try:
+        orphan.admit()
+        orphan_owner = state(backend, command)["execution_owner"]
+    finally:
+        orphan.close()
+    assert orphan_owner is not None
+    assert_unlocked(backend, command)
+
+    # Hold the exact catalog publication/recovery lock on an owned fresh connection.
+    lock_connection = manager._connect(autocommit=True)
+    try:
+        lock_key = lock_connection.execute(
+            f"SELECT {manager.LOCK_KEY_SQL} AS key", (manager.LOCK_NAME,),
+        ).fetchone()["key"]
+        lock_connection.execute(f"SELECT pg_advisory_lock({manager.LOCK_KEY_SQL})",
+                                (manager.LOCK_NAME,))
+    except BaseException:
+        lock_connection.close()
+        raise
+    lock_pid = lock_connection.info.backend_pid
+    lock_held = True
+
+    original_connect = manager._connect
+    readiness_connections, connected = [], Event()
+    connection_lock = Lock()
+
+    def observe_readiness_connection(*args, **kwargs):
+        connection = original_connect(*args, **kwargs)
+        with connection_lock:
+            readiness_connections.append(connection)
+        connected.set()
+        return connection
+
+    monkeypatch.setattr(manager, "_connect", observe_readiness_connection)
+    allocations = []
+    original_execution = postgres_adapter.RecommendationExecution
+
+    def tracked_execution(*args, **kwargs):
+        execution = original_execution(*args, **kwargs)
+        allocations.append(execution)
+        return execution
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("readiness timeout reached ranking or result persistence")
+
+    monkeypatch.setattr(postgres_adapter, "RecommendationExecution", tracked_execution)
+    monkeypatch.setattr(backend, "rank", unexpected)
+    monkeypatch.setattr(backend, "save", unexpected)
+
+    class_code, object_id = (lock_key >> 32) & 0xffffffff, lock_key & 0xffffffff
+    request_task = None
+
+    def release_owned_lock():
+        nonlocal lock_held
+        if lock_held:
+            unlocked = lock_connection.execute(
+                f"SELECT pg_advisory_unlock({manager.LOCK_KEY_SQL}) AS unlocked",
+                (manager.LOCK_NAME,),
+            ).fetchone()["unlocked"]
+            lock_held = False
+            assert unlocked is True
+
+    async def wait_until_readiness_is_blocked(connection):
+        pid = connection.info.backend_pid
+        async with asyncio.timeout(5):
+            while True:
+                with backend._connect() as observer:
+                    waiting = observer.execute(
+                        "SELECT granted FROM pg_locks WHERE locktype='advisory' AND pid=%s "
+                        "AND objsubid=1 AND classid::bigint=%s AND objid::bigint=%s",
+                        (pid, class_code, object_id),
+                    ).fetchall()
+                    holder = observer.execute(
+                        "SELECT granted FROM pg_locks WHERE locktype='advisory' AND pid=%s "
+                        "AND objsubid=1 AND classid::bigint=%s AND objid::bigint=%s",
+                        (lock_pid, class_code, object_id),
+                    ).fetchall()
+                if any(row["granted"] is False for row in waiting):
+                    assert any(row["granted"] is True for row in holder)
+                    return
+                await asyncio.sleep(.01)
+
+    async def run():
+        nonlocal request_task
+        try:
+            # post() exercises the ASGI route, which constructs its own 2s command.
+            request_task = asyncio.create_task(post(application, command))
+            await started(connected)
+            assert readiness_connections
+            readiness_connection = readiness_connections[0]
+            await wait_until_readiness_is_blocked(readiness_connection)
+            assert not readiness_connection.closed
+            assert state(backend, command) == dict(status="accepted", failure_code=None,
+                                                   execution_owner=orphan_owner)
+            assert not allocations and not backend._executions
+            with backend._connect() as observer:
+                assert observer.execute("SELECT count(*) AS n FROM request_items WHERE request_id=%s",
+                                        (command.request_id,)).fetchone()["n"] == 0
+            assert_unlocked(backend, command)
+
+            # The actual request task receives its 2s cancellation while the
+            # readiness worker remains blocked on the verified advisory lock.
+            async with asyncio.timeout(5):
+                while request_task.cancelling() == 0:
+                    assert not request_task.done()
+                    await asyncio.sleep(.01)
+            assert request_task.cancelling() > 0
+            assert not request_task.done() and not readiness_connection.closed
+            assert not allocations and not backend._executions
+            assert state(backend, command) == dict(status="accepted", failure_code=None,
+                                                   execution_owner=orphan_owner)
+
+            release_owned_lock()
+            response = await asyncio.wait_for(request_task, timeout=5)
+            assert response.status_code == 504
+            assert response.json()["error"]["code"] == "recommendation_timeout"
+            assert readiness_connection.closed
+            assert not allocations and not backend._executions
+            assert state(backend, command) == dict(status="accepted", failure_code=None,
+                                                   execution_owner=orphan_owner)
+            with backend._connect() as observer:
+                assert observer.execute("SELECT count(*) AS n FROM request_items WHERE request_id=%s",
+                                        (command.request_id,)).fetchone()["n"] == 0
+            assert_unlocked(backend, command)
+
+            # Timeout did not settle or rewrite the original accepted request.
+            terminal = await asyncio.wait_for(post(application, command), timeout=5)
+            assert terminal.status_code == 409
+            assert terminal.json()["error"]["code"] == "recommendation_interrupted"
+            assert state(backend, command) == dict(status="failed", failure_code="execution_interrupted",
+                                                   execution_owner=orphan_owner)
+            with backend._connect() as observer:
+                assert observer.execute("SELECT count(*) AS n FROM request_items WHERE request_id=%s",
+                                        (command.request_id,)).fetchone()["n"] == 0
+            assert not backend._executions
+            assert_unlocked(backend, command)
+        finally:
+            release_owned_lock()
+            if request_task is not None:
+                await asyncio.wait_for(asyncio.gather(request_task, return_exceptions=True), timeout=5)
+
+    try:
+        asyncio.run(run())
+    finally:
+        try:
+            release_owned_lock()
+        finally:
+            lock_connection.close()

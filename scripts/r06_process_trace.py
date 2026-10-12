@@ -1,5 +1,6 @@
 """Opt-in, bounded per-request tracing for the owned process lab, not production."""
 
+import asyncio
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from functools import wraps
@@ -22,6 +23,7 @@ def query_kind(query):
         ("FROM recommendation_requests WHERE request_id = %s FOR UPDATE", "request_row_lock"),
         ("FROM catalog_control WHERE singleton = 1 AND admission_open FOR SHARE", "catalog_barrier"),
         ("FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id", "actual_catalog_rows"),
+        ("FROM bounded_members bi JOIN items i ON i.item_id=bi.item_id", "actual_catalog_rows"),
         ("INSERT INTO recommendation_requests", "accepted_insert"),
         ("SELECT pg_advisory_lock(", "publication_lock"),
         ("SELECT pg_try_advisory_lock(", "execution_lock"),
@@ -110,7 +112,7 @@ class ConcurrentTimings(RequestTimings):
                 token = self.active.set(request)
                 try:
                     self._event(request, "cpu_queue_wait", started, None, None)
-                    return work()
+                    return super(ConcurrentTimings, self).sync("cpu_work", work)()
                 finally:
                     self.active.reset(token)
             return await super(ConcurrentTimings, self).async_stage(label, original)(queue, bound_work)
@@ -142,6 +144,12 @@ class ConcurrentTimings(RequestTimings):
                 if message.get("type") == "http.response.start":
                     request["status_code"] = message["status"]
                 await send(message)
+                # Observe successful send completion, not client receipt. No
+                # body or headers enter the report, including error responses.
+                if message.get("type") == "http.response.start":
+                    self._event(request, "response_start_send", perf_counter(), None, None)
+                elif message.get("type") == "http.response.body" and not message.get("more_body", False):
+                    self._event(request, "response_body_complete_send", perf_counter(), None, None)
             try:
                 return await app(scope, receive, observed_send)
             except BaseException:
@@ -163,8 +171,22 @@ class ConcurrentTimings(RequestTimings):
 @contextmanager
 def trace_api(timings, *, gc_events=True):
     from evorec.api import app as api
+    from evorec.application.recommend import Recommend
+    from evorec.infrastructure import postgres, r06_async
     original = api.create_app
     with observe(timings, gc_events=gc_events), ExitStack() as stack:
+        # Owned diagnostic process only. Keep the original deadline callback,
+        # cancellation and drain implementation. A missing private hook fails
+        # patch installation; it must not silently imply observed deadlines.
+        stack.enter_context(patch.object(asyncio.Timeout, "_on_timeout",
+                            timings.sync("deadline_callback", asyncio.Timeout._on_timeout)))
+        for target, method, label in (
+            (Recommend, "execute", "recommendation_workflow"),
+            (postgres, "_drain", "database_owned_work_drain"),
+            (r06_async, "_drain", "cpu_owned_work_drain"),
+        ):
+            stack.enter_context(patch.object(target, method,
+                                timings.async_stage(label, getattr(target, method))))
         stack.enter_context(patch.object(api, "create_app", lambda *a, **kw: timings.wrap(original(*a, **kw))))
         stack.enter_context(patch.object(psycopg, "connect", timings.database("connect", psycopg.connect)))
         for target, method, label in (
@@ -173,6 +195,9 @@ def trace_api(timings, *, gc_events=True):
             (psycopg.Cursor, "fetchone", "fetchone_decode"),
             (psycopg.Cursor, "close", "cursor_close"),
             (psycopg.Connection, "__exit__", "transaction_exit"),
+            # Explicit transaction() commits/rolls back without closing the
+            # lease connection; Connection.__exit__ alone cannot observe it.
+            (psycopg.Transaction, "__exit__", "transaction_context_exit"),
             (psycopg.Connection, "commit", "commit"),
             (psycopg.Connection, "rollback", "rollback"),
             (psycopg.Connection, "close", "close"),

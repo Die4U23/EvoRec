@@ -4,6 +4,23 @@
 
 | 范围 | 首选记录 | 进一步检查 |
 | --- | --- | --- |
+| 修复后的完整整合重验 | [预登记](stable-demo-revalidation-plan-20261012.md)、[完整回归/源 CI 与原失败](stable-demo-revalidation-20261012.md) | 服务 1654、检索 178、ranker 16、页面 114 项通过，分开分母；原失败/负控制/保护均不变。源四项 CI 通过，最终 head 与普通 merge 后 main CI 另据 PR #68，非重新压测或 SLA |
+| 保存路径反例隔离修复 | [预登记](checker-path-isolation-plan-20261011.md)、[内外临时根与删守卫负控制](checker-path-isolation-20261011.md) | 相同模块两种临时根各 112 项通过，项目外及 artifacts 根拒绝；原两项删守卫负控制实际失败。保留初次 import error 和原整合 1653 项失败，不代表整体整合通过 |
+| 本地演示候选主干整合 | [预登记](stable-demo-integration-plan-20261011.md)、[初轮失败和来源/CI](stable-demo-integration-20261011.md)、[路径反例修复预登记](checker-path-isolation-plan-20261011.md) | 15 个 PR 祖先/231 blob 核对、冻结源 CI 四项通过；本地完整 53 文件/1653 项实际 1 failure，GATE-002 为临时根位置假设，后续检查未执行，暂停合并，不用 CI 覆盖失败 |
+| 完整模型浏览器会话安全及停机备份恢复 | [预登记/启动前更正](stable-browser-backup-plan-20261011.md)、[实际浏览器/成对恢复/负控制](stable-browser-backup-20261011.md)、[问题台账](stable-runtime-bugs.md) | 干净页面 114/实库 17 项通过，两个负控制实际拒绝；重置/旧响应隔离、完整 18 文件成对恢复、原键/新 dense/清退通过，保留两次 QA-004 启动拒绝。刷新只恢复会话、不缓存旧卡片，不是长期稳定/SLA |
+| 完整模型双轮负载及持久恢复 | [预登记](stable-recovery-plan-20261011.md)、[双轮 120 笔/恢复与反例](stable-recovery-20261011.md)、[问题台账](stable-runtime-bugs.md) | 干净 385 项通过，固定两轮 120/120、逐笔持久结果/租约/重启/同键/断连/真实崩溃恢复通过；GATE-001 两项失败修复留档；当时待补的浏览器/备份门禁见上一行后续报告，不是长期稳定/SLA |
+| 结果连接旧／新固定交错对照 | [预登记](stable-result-abba-plan-20261011.md)、[四轮完整包与验收错误留档](stable-result-abba-20261011.md)、[问题台账](stable-runtime-bugs.md) | 干净 418 项通过；未插桩 A/B/B/A 各 24/24、另各顺序 2/2，旧版也全成功；保留 QA-002/003 错误及更正，不关闭历史 504，尚需两轮 120 笔等稳定门禁 |
+| 结果事务复用执行租约连接 | [预登记](stable-result-lease-plan-20261011.md)、[机制/断连反例与完整包初筛](stable-result-lease-20261011.md)、[问题台账](stable-runtime-bugs.md) | 干净 520 项通过；固定未插桩 24/24、插桩 8/8，无结果新连接；保留并修复 R06-002 两次真实失败，历史 504 未关闭，不是稳定版通过 |
+| 同源码插桩开关与真实写入超时 | [预登记](stable-trace-abba-plan-20261011.md)、[四轮与失败时间线](stable-trace-abba-20261011.md)、[问题台账](stable-runtime-bugs.md) | 干净 542 项通过；固定 24/24、23/24、24/24、24/24，保留 1 个 504；期限回调在新建结果连接中，持久终态未采样，不是稳定版通过；OBS-002 浮点校验误报修复并留失败证据 |
+| 超时清退时间线与负面门禁 | [预登记](stable-timeout-timeline-plan-20261010.md)、[机制测试与固定完整模型批次](stable-timeout-timeline-20261010.md) | 干净 431 项通过，24/24 插桩成功但未复现历史 504；失败覆盖 null，不是稳定验收 |
+| 流式窄投影与完整包 HTTP 反例 | [预登记](stable-stream-digest-plan-20261010.md)、[目录成本降低但双并发仍失败](stable-stream-digest-20261010.md) | 干净 151 项通过；排序/临时写入降低，初筛 22/24、2 次 504；固定阶段诊断未复现，不作为稳定版合并，远端登记时序偏差保留 |
+| 同 SQL 早快后慢的计划/统计复核 | [预登记](stable-catalog-plans-plan-20261010.md)、[16 组快照与计数结论](stable-catalog-plans-20261010.md) | 干净 147 项通过；fresh 计划及估计相同，慢调用早于目标具名准备、generic=0；不解释旧 504，不改准备/统计设置，不作为稳定门禁通过 |
+| 完整目录等待与可验证 leader CPU 观察 | [预登记](stable-catalog-waits-plan-20261010.md)、[固定八笔观察与未知边界](stable-catalog-waits-20261010.md) | 干净 116 项通过；同 SQL 早快后慢、采到临时文件等待，未采到 Lock/阻塞者；CPU unknown，不解释旧 504，不作为稳定门禁通过 |
+| 目录窄帧候选与精确 SQL 对照 | [预登记](stable-narrow-frames-plan-20261010.md)、[性能否决与撤回](stable-narrow-frames-20261010.md) | 候选干净 51 项功能通过；完整目录物化增加临时写入、少量下架调用更慢，撤回生产 SQL，不执行 HTTP 验收；保留工具、反例及候选提交 |
+| 冻结目录 N+1 资源边界与稳定版初筛 | [预登记计划](stable-runtime-plan-20261010.md)、[等价、完整包执行计划与 A/B/B/A](stable-bounded-capture-20261010.md) | 干净 34 项功能通过；初筛 24/24，但候选对照 39/48、9 次 504；少量下架 SQL 风险及失败阶段未知保留，不作为稳定版合并 |
+| 新请求入场连接复用 | [预登记计划](fresh-admission-plan-20261009.json)、[实库连接/回滚/竞态与完整包冒烟](fresh-admission-connection-20261009.json) | 入场连接 2→1；140 项回归及四个真实 R06 请求通过。负面控制明确失败；不是 API 提速或旧并发超时修复 |
+| 冻结目录成员校验临时分配 | [预登记计划](r06-membership-plan-20261009.json)、[两轮合成谓词测量与真实包冒烟](r06-membership-allocation-20261009.json) | 局部 traced peak 1,161,216→600 字节；不是 RSS/API 提速。真实包四请求通过不覆盖旧超时，保留代理工作区误写及恢复记录 |
+| 全量目录追踪开关与 HTTP 等锁超时 | [预登记计划](r06-trace-overhead-plan-20261009.json)、[四轮原始摘要与真实恢复反例](r06-trace-overhead-20261009.json) | 负载 29/32 成功、3 个 504；关闭追踪仍有超时，不是纯追踪开销或 SLA。受控 ASGI 等锁测试验证排空与幂等终结，不解释旧间歇失败 |
 | R06 并发诊断控制与零成功摘要 | [四轮 concurrency ABBA 观察](r06-probe-controls-20261008.json) | 每轮 2 个顺序参考请求均成功；并发 1 两轮各 4/4 成功，并发 2 两轮为 1/4、0/4；仅是并发相关现象，不证明根因或 SLA。探针默认记录 GC 回调，`--no-gc-events` 只关闭该观察；测试/CI 状态待主线程补录 |
 | 数据库连接交错对照 | [只读回环三组、两轮连接测量](database-handshake-20261008.json) | 三组均约 100 毫秒；未采用参数改动，不是 DNS、认证根因或 HTTP 超时改善证明 |
 | R06 数据库驱动阶段诊断 | [连接、查询/接收、行解码与事务边界](r06-database-stages-20261008.json) | 每笔 4 次连接约 380–786 毫秒；插桩 24/24 不覆盖上一轮 7 个未插桩超时，不是握手原因或 SLA 证明 |

@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-09",
+  "status": "registered_before_validation",
+  "base_commit": "7392e9b902460548eb5914d7fcdbc02b03af7f62",
+  "scope": "Only fresh recommendation admission borrows the idle request-owned PostgreSQL lease connection. Existing requests retain independently committed reconciliation. No public API, SQL snapshot, ranking, deadline, readiness, failure write or result write change.",
+  "acceptance": [
+    "Real database tests verify one backend connection for fresh admission, actual capture connection identity/PID, durable accepted row and released transaction row locks while the advisory lease remains held.",
+    "Capture and deferred insert/commit failures roll back; borrowed connection remains open, IDLE and locked until explicit close.",
+    "Requests appearing after initial lookup or the post-lock probe are reconciled on the original independently owned transaction; interrupted failure remains durable.",
+    "Invalid, mismatched, unlocked or non-idle lease cannot admit; same lease admission transactions are serialized.",
+    "Existing cancellation/deadline drain, orphan/replay, row-lock interlock and R06 snapshot tests retain their assertions.",
+    "Latest PR head service and accelerated push/PR CI must pass before any merge decision. Diagnostic dependency chain stays draft."
+  ],
+  "measurement": {
+    "claim": "Connection-count and correctness change only; no API speedup or SLA claim.",
+    "full_bundle_smoke_budget": "At most one candidate functional smoke: 2 sequential and 2 load requests at concurrency 1, original 2-second deadline, approved frozen package, no server phase tracing/GC observation/gate, no retry. Any timeout remains evidence, not an invitation to rerun.",
+    "not_run": "No baseline/candidate latency A/B, no broad concurrency campaign or browser acceptance."
+  },
+  "isolation": "C:/Users/7/.codex/worktrees/r06-probe-controls/proj only. Database tests run serially with owned disposable schemas. Primary E:/codex/proj and its .env, business database/model and user port 8000 are not modified or probed."
+}

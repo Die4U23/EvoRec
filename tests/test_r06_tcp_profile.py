@@ -55,7 +55,7 @@ def test_concurrent_async_and_to_thread_records_do_not_cross_contaminate():
     asyncio.run(run())
     for index, request in enumerate(timing.report()):
         assert request["sample"] == index and request["status_code"] == 200+index
-        assert [s["stage"] for s in request["stages"]] == [f"worker_{index}"]
+        assert [s["stage"] for s in request["stages"]] == [f"worker_{index}", "response_start_send"]
     assert "PRIVATE" not in json.dumps(timing.report())
 
 
@@ -134,7 +134,7 @@ def test_real_cpu_pool_inherits_trace_and_clears_reused_thread():
     asyncio.run(run())
     for index, request in enumerate(timing.report()):
         assert {s["stage"] for s in request["stages"]} == {
-            "cpu_queue_wait", "queue_and_cpu_drain", f"cpu_{index}"}
+            "cpu_queue_wait", "queue_and_cpu_drain", "cpu_work", f"cpu_{index}", "response_start_send"}
         assert all(s["wall_seconds"] >= 0 for s in request["stages"])
 
 
@@ -337,6 +337,8 @@ def test_profile_all_failures_remain_diagnostic_not_acceptance_and_source_bound(
         assert report["successful_identities_valid"] is None
         assert report["successful_database_trace_count"] == 0
         assert report["successful_database_traces_complete"] is None
+        assert report["timeout_trace_count"] == 4
+        assert report["timeout_traces_complete"] is False  # Status alone is not timeout coverage.
         assert not report["production_acceptance"] and not report["sla_proven"]
     assert "PRIVATE" not in (output/"observations.json").read_text()
 
@@ -432,11 +434,18 @@ def test_real_synthetic_package_tcp_trace_is_correlated_and_drained(isolated_dat
     for request in report["requests"]:
         assert {s["stage"] for s in request["stages"]} >= {
             "actual_catalog_read_and_capture", "cpu_queue_wait", "retrieval_and_ranking", "result_write",
-            "publication_recovery_database_connect", "database_admission_database_connect",
+            "publication_recovery_database_connect", "execution_lease_and_admission_database_connect",
+            "execution_lease_and_admission_database_execute_execution_lock",
             "database_admission_database_execute_session_snapshot_lock",
+            "database_admission_database_execute_accepted_insert",
+            "database_admission_database_transaction_context_exit",
             "actual_catalog_read_and_capture_database_execute_actual_catalog_rows",
-            "actual_catalog_read_and_capture_database_fetchall_decode",
-            "result_write_database_commit", "result_write_database_close"}
+            "actual_catalog_read_and_capture_database_fetchone_decode",
+            "result_write_database_transaction_context_exit",
+            "execution_lease_close_database_close"}
+        assert not {"database_admission_database_connect", "result_write_database_connect",
+                    "result_write_database_close"} & {s["stage"] for s in request["stages"]}
+        assert profiler._fresh_database_trace_complete(request)
     assert report["database_driver_version"]
     assert report["gc_events_enabled"] is gc_events
     assert report["phase_gate_enabled"] is phase_gate
@@ -455,6 +464,7 @@ def test_real_synthetic_package_tcp_trace_is_correlated_and_drained(isolated_dat
     ("SELECT * FROM recommendation_requests WHERE request_id = %s FOR UPDATE", "request_row_lock"),
     ("SELECT * FROM catalog_control WHERE singleton = 1 AND admission_open FOR SHARE", "catalog_barrier"),
     ("SELECT * FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id", "actual_catalog_rows"),
+    ("SELECT * FROM bounded_members bi JOIN items i ON i.item_id=bi.item_id", "actual_catalog_rows"),
     ("INSERT INTO recommendation_requests VALUES (%s)", "accepted_insert"),
     ("SELECT pg_advisory_lock(123)", "publication_lock"),
     ("SELECT pg_try_advisory_lock(%s)", "execution_lock"),
@@ -603,6 +613,8 @@ def test_cli_requires_consistent_successful_trace_summaries(
     monkeypatch.setenv("EVOREC_DATABASE_URL", "PRIVATE")
     result_data = dict(status="instrumented_diagnostic_completed_not_performance_acceptance", trace_complete=True,
                        client_status_matches_server=True, successful_database_trace_count=count,
+                       timeout_trace_count=0, timeout_traces_complete=None,
+                       server_requests=[],
                        shared_server_timeline_complete=True)
     if coverage_present:
         result_data["successful_database_traces_complete"] = coverage
@@ -622,6 +634,8 @@ def test_cli_requires_shared_server_timeline_complete(
     monkeypatch.setenv("EVOREC_DATABASE_URL", "PRIVATE")
     result_data = dict(status="instrumented_diagnostic_completed_not_performance_acceptance",
                        trace_complete=True, client_status_matches_server=True,
+                       timeout_trace_count=0, timeout_traces_complete=None,
+                       server_requests=[],
                        successful_database_trace_count=0,
                        successful_database_traces_complete=None, successful_identities_valid=None)
     if timeline_present:
@@ -640,6 +654,8 @@ def test_cli_defaults_to_gc_events_and_accepts_no_gc_events_flag(monkeypatch, tm
         seen.append((kwargs["gc_events"], kwargs["phase_gate"]))
         return dict(status="instrumented_diagnostic_completed_not_performance_acceptance", trace_complete=True,
                     client_status_matches_server=True, gc_events_enabled=kwargs["gc_events"],
+                    timeout_trace_count=0, timeout_traces_complete=None,
+                    server_requests=[],
                     shared_server_timeline_complete=True,
                     successful_identities_valid=None, successful_database_trace_count=0,
                     successful_database_traces_complete=None)

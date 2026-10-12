@@ -12,7 +12,7 @@ from threading import Lock
 from uuid import UUID, uuid4
 
 import psycopg
-from psycopg.rows import dict_row, namedtuple_row
+from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from evorec.domain.errors import (
@@ -51,7 +51,8 @@ from evorec.infrastructure.r06_admission import (
     validate_captured_context,
 )
 from evorec.infrastructure.r06_async import R06CPUQueue, R06RankingPort, _drain
-from evorec.infrastructure.recommendation_execution import RecommendationExecution
+from evorec.infrastructure.recommendation_execution import RecommendationExecution, _AdmissionRequestAppeared
+from evorec.infrastructure.r06_catalog_capture import read_catalog_capture
 
 if TYPE_CHECKING:
     from evorec.infrastructure.management import CatalogManager
@@ -97,21 +98,13 @@ class PostgresDemoBackend:
         if kind and kind["runtime_kind"] == "r06-frozen-bundle-v1":
             if not self.r06_enabled or not isinstance(runtime, ManagedR06Runtime):
                 raise ManagementError("r06_runtime_unavailable", "approved R06 runtime is unavailable", 503)
-            # One actual-row read supplies eligibility and content, not two READ COMMITTED views.
-            # Compact rows are local to this large read; other queries retain dict_row.
-            # Compute the digest from actual text in this same SQL view. No
-            # mutable stored hash is trusted; raw time and all members remain.
-            with connection.cursor(row_factory=namedtuple_row, binary=True) as cursor:
-                rows = cursor.execute(
-                    "SELECT bi.item_id, bi.internal_item_id, i.is_active, "
-                    "pg_catalog.sha256(pg_catalog.convert_to(i.r06_model_text, 'UTF8')) AS r06_text_sha256, "
-                    "i.r06_first_seen_ms "
-                    "FROM bundle_items bi JOIN items i ON i.item_id=bi.item_id "
-                    "WHERE bi.bundle_id=%s ORDER BY bi.internal_item_id", (bundle_id,),
-                ).fetchall()
-            eligible = frozenset(row.item_id for row in rows if row.is_active)
+            capture = read_catalog_capture(connection, bundle_id, len(runtime.item_ids))
+            # Provisional until capture_model verifies both fingerprints and
+            # this exact partition. Do not hash a partial catalog twice.
+            eligible = (runtime.full_eligible_items if not capture.inactive_ids
+                        else runtime.full_eligible_items.difference(capture.inactive_ids))
             catalog = CatalogSnapshot(bundle_id, control["exclusion_version"], eligible)
-            model = capture_model(connection, runtime, session, catalog, rows)
+            model = capture_model(connection, runtime, session, catalog, capture)
         elif isinstance(runtime, ManagedR06Runtime):
             raise ManagementError("r06_snapshot_changed", "registered runtime kind differs", 503)
         else:
@@ -341,8 +334,20 @@ class PostgresDemoBackend:
         with self._execution_lock:
             return self._executions.get(request_id)
 
-    def _admit(self, command: RecommendationCommand) -> RequestContext:
-        with self._connect() as connection:
+    def _admit(self, command: RecommendationCommand, *, execution=None) -> RequestContext:
+        if execution is not None and (execution.backend is not self or execution.command != command):
+            raise ManagementError("recommendation_execution_lost", "admission lease belongs to another request", 503)
+        try:
+            return self._admit_transaction(command, execution=execution)
+        except _AdmissionRequestAppeared:
+            # A writer outside the lease protocol may insert after our probe.
+            # The borrowed transaction has rolled back; reconcile on the old
+            # independently owned connection, never commit inside transaction().
+            return self._admit_transaction(command)
+
+    def _admit_transaction(self, command: RecommendationCommand, *, execution=None) -> RequestContext:
+        admission = execution.admission_connection() if execution is not None else self._connect()
+        with admission as connection:
             # Admission only reads session state. Shared readers may capture
             # distinct keys concurrently, but feedback/reset retain FOR UPDATE
             # and cannot change this snapshot until admission commits. The
@@ -370,12 +375,14 @@ class PostgresDemoBackend:
                 (command.request_id,),
             ).fetchone()
             if previous is not None:
+                if execution is not None and connection is execution.connection:
+                    raise _AdmissionRequestAppeared()
                 self._matching_request(previous, command)
                 if previous["status"] == "accepted":
-                    execution = self._execution(command.request_id)
-                    if (previous["execution_owner"] is not None and execution is not None
-                            and previous["execution_owner"] != execution.owner):
-                        execution.assert_held()
+                    registered = self._execution(command.request_id)
+                    if (previous["execution_owner"] is not None and registered is not None
+                            and previous["execution_owner"] != registered.owner):
+                        registered.assert_held()
                         connection.execute(
                             "UPDATE recommendation_requests SET status = 'failed', "
                             "failure_code = 'execution_interrupted', updated_at = clock_timestamp() "
@@ -412,6 +419,8 @@ class PostgresDemoBackend:
                     previous["fallback_reason"],
                     model.model_version if model else None, model.timestamp_ms if model else None,
                 ))
+            if execution is None or self._execution(command.request_id) is not execution:
+                raise ManagementError("recommendation_execution_lost", "fresh admission requires its explicit execution lease", 503)
             if session.history_version != command.expected_history_version:
                 raise HistoryConflict("history changed before admission")
 
@@ -427,17 +436,17 @@ class PostgresDemoBackend:
                 raise RuntimeError("catalog admission is not ready")
             context = self._capture_context(connection, command.request_id, session, control)
             catalog = context.catalog
-            execution = self._execution(command.request_id)
-            if execution is None:
-                raise ManagementError("recommendation_execution_lost", "fresh admission requires an execution lease", 503)
+            if self._execution(command.request_id) is not execution:
+                raise ManagementError("recommendation_execution_lost", "fresh admission execution owner changed", 503)
             execution.assert_held()
-            connection.execute(
+            inserted = connection.execute(
                 """
                 INSERT INTO recommendation_requests (
                     request_id, session_id, session_epoch, history_version,
                     history_snapshot, hidden_snapshot, bundle_id, exclusion_version,
                     requested_strategy, requested_k, model_snapshot, execution_owner, status
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'accepted')
+                ON CONFLICT (request_id) DO NOTHING RETURNING request_id
                 """,
                 (
                     command.request_id, command.session_id, session.epoch,
@@ -447,7 +456,9 @@ class PostgresDemoBackend:
                     Jsonb(encode_model(context.model)) if context.model else None,
                     execution.owner,
                 ),
-            )
+            ).fetchone()
+            if inserted is None:
+                raise _AdmissionRequestAppeared()
         return context
 
     def _mark_failed(self, request_id: UUID) -> None:
@@ -768,7 +779,14 @@ class PostgresDemoBackend:
 
     def _save(self, result: RecommendationResult) -> None:
         binding = result.binding
-        with self._connect() as connection:
+        execution = self._execution(binding.request_id)
+        if execution is not None and (execution.backend is not self
+                                     or execution.command.request_id != binding.request_id):
+            raise SnapshotMismatch("result has no matching execution lease")
+        # Historical unowned writes retain their independent connection. A
+        # failed registered lease must not silently fall back to a new socket.
+        transaction = execution.result_connection() if execution is not None else self._connect()
+        with transaction as connection:
             cursor = connection.execute(
                 """
                 SELECT session_id, session_epoch, history_version, bundle_id,
@@ -816,11 +834,12 @@ class PostgresDemoBackend:
                 return
             if row["status"] != "accepted":
                 raise SnapshotMismatch("request is not in an accepted state")
-            if row["execution_owner"] is not None:
-                execution = self._execution(binding.request_id)
-                if execution is None or execution.owner != row["execution_owner"]:
+            if execution is not None or row["execution_owner"] is not None:
+                current = self._execution(binding.request_id)
+                if (current is None or current.owner != row["execution_owner"]
+                        or (execution is not None and current is not execution)):
                     raise SnapshotMismatch("result has no matching execution owner")
-                execution.assert_held()
+                current.assert_held()
             if result.items:
                 cursor = connection.cursor()
                 cursor.executemany(

@@ -1,0 +1,65 @@
+{
+  "date": "2026-10-09",
+  "status": "fresh_admission_connection_reuse_verified_not_timeout_fix",
+  "plan": "docs/validation/fresh-admission-plan-20261009.json",
+  "base_commit": "7392e9b902460548eb5914d7fcdbc02b03af7f62",
+  "regression_and_smoke_source": "e692a2b11f71525cae6899a3c923403b20e08066",
+  "source_clean_before_and_after_final_regression_and_smoke": true,
+  "production_change": "Only fresh admission borrows the idle autocommit execution lease connection. Explicit backend/request/registered owner identity and actual advisory lease are required. Transaction exit commits or rolls back without closing lease. Existing requests use independent transactions; both no-row lookup races roll back borrowed transaction before independently committed reconciliation.",
+  "connection_count_claim": "One fresh small-catalog real PostgreSQL admission opens one backend connection, with capture and INSERT on the lease's same actual object/PID. Negative owned-connection control opens two. This is admission-only, not the entire API connection count or a latency A/B.",
+  "unchanged": ["session/catalog shared row-lock snapshot", "actual R06 catalog membership/digest/eligibility/seen/time/seal checks", "frozen model and ranking", "result and failure write connections", "readiness recovery", "shield/drain ordering", "original 2-second API deadline", "public API and Web contracts"],
+  "new_cases": 16,
+  "new_case_scope": ["same real capture/INSERT connection and backend PID", "committed external visibility and transaction row-lock release while advisory lease remains held", "capture exception identity and rollback with admitted=false", "deferred constraint trigger failure at commit rolls back with admitted=false", "autocommit=false", "autocommit=true with explicit outer BEGIN", "closed/unlocked lease", "mismatched backend/request and unregistered identity", "live registered owner cannot authorize fresh caller omitting explicit execution", "stale prelock observation", "external accepted insertion after lease probe", "external insertion after transaction's empty FOR UPDATE lookup", "repeated cancellation inside actual borrowed capture with 20s test-only deadline", "same-owner admission transaction serialization with observed real failed nonblocking mutex acquire"],
+  "negative_control": {
+    "script": "artifacts/diagnostics/mutate-admission-owned-20261009.py",
+    "script_sha256": "2af12bdf7134258054f1b75285e109ecca1a7cef32203433cad03b62a2458205",
+    "report": "artifacts/fresh-admission-owned-control-20261009.xml",
+    "sha256": "a48b7a0e9cdb1a34c580bd222208a0f499db47865d497a325340fe83bbdaff24",
+    "tests": 1, "passed": 0, "failures": 1, "errors": 0, "skipped": 0,
+    "expected_failure": "2 connections != required 1; independent test-process mutation replaces borrowed connection provider with owned backend connection; no production source mutation",
+    "not_a_prior_commit_or_latency_baseline": true
+  },
+  "local_runs": [
+    {"report": "artifacts/fresh-admission-initial-20261009.xml", "tests": 29, "passed": 29, "failures": 0, "errors": 0, "skipped": 0, "sha256": "4eb4110e58e09f9f3029401520905f28f74bfda3b050854b46ac5cddeb67aa57", "meaning": "dirty initial candidate recovery and row-lock development checks before review repairs"},
+    {"report": "artifacts/fresh-admission-online-20261009.xml", "tests": 72, "passed": 72, "failures": 0, "errors": 0, "skipped": 0, "sha256": "97352768dfad105f771b404a44e918dd4f5d82fd0912c700db8415a879770d57", "meaning": "dirty initial-candidate imported online code; review repair files changed while this process ran; not final-source proof"},
+    {"report": "artifacts/fresh-admission-new-20261009.xml", "tests": 16, "passed": 16, "failures": 0, "errors": 0, "skipped": 0, "sha256": "25a7c0d5135b0496d7152acb68cd6b362cfd856a6fdf370bf99cdf50d93e3000", "meaning": "development new cases after ownership and second-race repairs"},
+    {"report": "artifacts/fresh-admission-hardening-20261009.xml", "tests": 16, "passed": 16, "failures": 0, "errors": 0, "skipped": 0, "sha256": "97061f7b1ed57c42ecb95b567179d7207f370004ae952458748cc2fe4866b176", "meaning": "development after exception identity/admitted assertions and manual outer BEGIN guard tightening"},
+    {"report": "artifacts/fresh-admission-final-20261009.xml", "source_commit": "e692a2b11f71525cae6899a3c923403b20e08066", "source_clean_before_and_after": true, "tests": 140, "passed": 140, "failures": 0, "errors": 0, "skipped": 0, "sha256": "43a73e110e5f71442317af98bf89565bca05ca9a573a9f65050db2efc7edb0f1"}
+  ],
+  "final_local_scope": ["tests/test_admission_connection.py", "tests/test_session_admission_lock.py", "tests/test_recommendation_recovery.py", "tests/test_r06_online.py", "tests/test_catalog_lock.py", "tests/test_postgres_api.py", "tests/test_architecture.py", "tests/test_repository_hygiene.py"],
+  "overlapping_runs_must_not_be_added": true,
+  "real_smoke": {
+    "report": "artifacts/diagnostics/fresh-admission-smoke-20261009/profile.json",
+    "sha256": "779e736680c2d2dd0ab6a3cac53a1c98bf98d7abfe6c6e17a1c3b66829364842",
+    "bundle_id": "bfe57ed8-3f6f-429d-ba07-b64b2ab1aeec",
+    "manifest_sha256": "9d622c95841027175779b19cbda5e1f0923c574c45d5daa4dab8a84ed8691ca6",
+    "model_version": "eebd07deded0d2368fc54087e3ad80992d04181af7da7b97d331f3cc71aa1fdc",
+    "items": 137249, "backend": "numpy", "api_deadline_seconds": 2.0,
+    "sequential_status_codes": [200,200], "additional_status_codes": [200,200], "concurrency": 1,
+    "all_four_actual_response_identities_verified": true,
+    "automatic_retries": 0, "trace": false, "gc_events": false, "phase_gate": false,
+    "server_database_coverage": null, "normal_cpu_drain": true, "hard_killed": false,
+    "meaning": "preregistered bounded actual full-catalog functional smoke, not API latency A/B, stable concurrency or SLA"
+  },
+  "independent_guard": {"script": "artifacts/diagnostics/check-fresh-admission-20261009.py", "sha256": "9d8b7b70faa46869467de2e7c5fd555594233067a230cad8065a67e98097a464", "same_clean_commit_and_tracked_source_hashes_checked": true, "actual_response_identity_and_normal_drain_checked": true},
+  "reviews": {"implementation": "main thread", "test_executor": "GPT-6 Luna", "quality": "GPT-5.6 Sol", "performance_and_reuse": "GPT-6 Sol", "fresh_repaired_candidate_review": "GPT-6.1 Sol", "accepted_findings": ["require supplied registered execution identity instead of implicit registry borrowing", "handle post-SELECT insertion conflict through rollback and independent reconciliation"], "final_material_findings": 0, "main_owns_serial_tests_measurement_acceptance_and_publishing": true, "native_model_routing_user_authorized": true, "no_6Astra_or_personal_configuration_change": true},
+  "dependency_checks": {"service_pip_check": "passed", "accelerated_pip_check": "passed", "research_environment_not_checked": true},
+  "cleanup": {"exact_owned_schema_checked": 1, "exact_owned_schema_remaining": 0, "test_namespace_count_after_regression_and_smoke": 0, "exact_owned_port_checked": 1, "owned_listeners_remaining": 0, "temporary_schema_data_recoverable": false, "protected_8000_not_probed": true},
+  "preserved": {"primary_checkout_clean": true, "primary_head": "6e44594f55dd180ec4bacce1ed8d19e7bf4aee61", "env_sha256": "32f05a41febf54595c5cef010ecee661c47570ac9e0a41238501b9297939e267", "business_database_and_model_not_published_or_migrated": true},
+  "unresolved": ["prior 3/32 full-catalog timeouts", "original intermittent orphan failure cause", "stable concurrency and SLA", "current browser acceptance", "draft PR dependency-chain merge"],
+  "ci_repair": {
+    "failed_head": "7d26220dd749f6fd738d40fa64172a2dd36c2ec0",
+    "failed_runs": [
+      {"run_id": 37940875337, "event": "push", "service": "failure", "accelerated": "success", "log": "artifacts/delivery/fresh-admission-ci-failed-37940875337.log", "sha256": "b8cefff0a9b205fb3b567b05e7d47b9616d6889a56e7c5837745496e2e33be79"},
+      {"run_id": 37940882943, "event": "pull_request", "service": "failure", "accelerated": "success", "log": "artifacts/delivery/fresh-admission-ci-failed-37940882943.log", "sha256": "c70b942c21fecda7d4c72f5c43631dea98a90bef764b9c449c7258c5239e461c"}
+    ],
+    "each_service_failed_cases": "Four GC/phase-gate combinations of test_real_synthetic_package_tcp_trace_is_correlated_and_drained; HTTP replies were 200, but the required old database_admission_database_connect event no longer occurs.",
+    "repair": "Observe actual psycopg.Transaction.__exit__ under a distinct transaction_context_exit label (commit or rollback, without closing lease); replace obsolete admission-connect requirement with real lease connect/lock, accepted insert, borrowed exit, independent result connect/commit/close, and final lease close. Require explicit known error-free stage/request metadata. New untraced field stays null and forged values fail CLI.",
+    "does_not_fake_a_connect_or_commit_event": true,
+    "initial_repair_run": {"report": "artifacts/fresh-admission-trace-fix-20261009.xml", "tests": 217, "passed": 217, "failures": 0, "errors": 0, "skipped": 0, "sha256": "c4dd5b86e7714356c7f810c31b2424fb27ae32d878ae2efcf9b93e47ba7322a4", "source": "dirty diagnostic repair, before two owned-lookalike negative cases added"},
+    "independent_review": "GPT-6 Sol read-only diagnosis; GPT-6 Luna independent tests; GPT-6.1 Sol fresh repaired-trace quality/performance/reuse review, no actionable findings; main implements and serially validates.",
+    "all_81_production_source_hashes_match_original_full_smoke": true,
+    "approved_full_smoke_not_rerun": "Original e692a2b report retained with its exact source; no second full-catalog run or new API speedup claim."
+  },
+  "delivery_checks": "After CI diagnostic repair, verify clean targeted regression, contracts/index and latest-head push/pull_request CI separately in the PR record; old failed runs are preserved and previous green checks are not substituted. No merge performed."
+}
