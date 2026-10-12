@@ -376,6 +376,7 @@ def test_lost_or_mismatched_execution_cannot_commit_late_results(recovery, monke
     monkeypatch.setattr(application.backend, "rank", rank)
     async def run():
         task = asyncio.create_task(application.recommend.execute(command))
+        replacement_owner = uuid4()
         try:
             await started(entered)
             execution = application.backend._execution(command.request_id)
@@ -386,18 +387,88 @@ def test_lost_or_mismatched_execution_cannot_commit_late_results(recovery, monke
             else:
                 with application.backend._connect() as c:
                     c.execute("UPDATE recommendation_requests SET execution_owner=%s WHERE request_id=%s",
-                              (uuid4(), command.request_id))
+                              (replacement_owner, command.request_id))
             release.set()
             with pytest.raises((SnapshotMismatch, ManagementError)):
                 await task
-            assert state(application.backend, command)["status"] == "failed"
+            terminal = state(application.backend, command)
+            if loss == "owner_change":
+                # The stale executor must not change the new owner's state.
+                assert terminal == dict(status="accepted", failure_code=None,
+                                        execution_owner=replacement_owner)
+            else:
+                assert terminal["status"] == "failed"
             with application.backend._connect() as c:
                 assert c.execute("SELECT count(*) AS n FROM request_items WHERE request_id=%s",
                                  (command.request_id,)).fetchone()["n"] == 0
             assert_unlocked(application.backend, command)
+            if loss == "owner_change":
+                replay = await post(application, command)
+                assert replay.json()["error"]["code"] == "recommendation_interrupted"
+                assert state(application.backend, command) == dict(
+                    status="failed", failure_code="execution_interrupted", execution_owner=replacement_owner)
         finally:
             release.set()
             await asyncio.gather(task, return_exceptions=True)
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("worker_fails", [False, True])
+def test_cancelled_snapshot_restore_drains_before_failure_and_lease_release(online, monkeypatch, worker_fails):
+    application, _, _ = online
+    backend = application.backend
+    entered, release, exited = Event(), Event(), Event()
+    original = postgres_adapter.R06RankingPort.from_snapshot
+
+    def blocked_restore(*args):
+        try:
+            entered.set()
+            assert release.wait(10), "snapshot restore was not released"
+            if worker_fails:
+                raise ValueError("intentional snapshot restore failure")
+            return original(*args)
+        finally:
+            exited.set()
+
+    monkeypatch.setattr(postgres_adapter.R06RankingPort, "from_snapshot", blocked_restore)
+
+    async def run():
+        command = await _command(application, timeout=20.)
+        task = asyncio.create_task(application.recommend.execute(command))
+        loop = asyncio.get_running_loop()
+        unhandled = []
+        previous_handler = loop.get_exception_handler()
+        loop.set_exception_handler(lambda _loop, context: unhandled.append(context))
+        try:
+            await started(entered)
+            execution = backend._execution(command.request_id)
+            for _ in range(3):
+                task.cancel()
+                await asyncio.sleep(.05)
+            assert not task.done() and not exited.is_set()
+            assert backend._execution(command.request_id) is execution
+            assert not execution.connection.closed
+            execution.assert_held()
+            assert state(backend, command)["status"] == "accepted"
+            assert backend.r06_queue.outstanding == 0
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert exited.is_set() and execution.connection.closed
+            assert not backend._executions
+            assert state(backend, command)["status"] == "failed"
+            with backend._connect() as connection:
+                assert connection.execute("SELECT count(*) AS n FROM request_items WHERE request_id=%s",
+                                          (command.request_id,)).fetchone()["n"] == 0
+            assert_unlocked(backend, command)
+            await asyncio.sleep(0)
+            assert not unhandled
+        finally:
+            release.set()
+            await asyncio.gather(task, return_exceptions=True)
+            await started(exited)
+            loop.set_exception_handler(previous_handler)
+
     asyncio.run(run())
 
 

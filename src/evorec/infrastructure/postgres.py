@@ -311,7 +311,8 @@ class PostgresDemoBackend:
                 # Retain the execution lock until all owned writes have drained.
                 await _drain(admission)
                 if execution.admitted:
-                    failure = asyncio.create_task(asyncio.to_thread(self._mark_failed, command.request_id))
+                    failure = asyncio.create_task(asyncio.to_thread(
+                        self._mark_failed, command.request_id, execution.owner))
                     await _drain(failure)
                 raise
         finally:
@@ -461,15 +462,17 @@ class PostgresDemoBackend:
                 raise _AdmissionRequestAppeared()
         return context
 
-    def _mark_failed(self, request_id: UUID) -> None:
+    def _mark_failed(self, request_id: UUID, execution_owner: UUID) -> None:
         with self._connect() as connection:
+            # Compare ownership in the write itself: an old executor must not
+            # fail a request whose durable owner changed while it was draining.
             connection.execute(
                 """
                 UPDATE recommendation_requests
                 SET status = 'failed', failure_code = 'execution_failed', updated_at = now()
-                WHERE request_id = %s AND status = 'accepted'
+                WHERE request_id = %s AND execution_owner = %s AND status = 'accepted'
                 """,
-                (request_id,),
+                (request_id, execution_owner),
             )
 
     async def record_feedback(self, command: FeedbackCommand) -> FeedbackResult:
@@ -727,7 +730,15 @@ class PostgresDemoBackend:
         if context.model is not None or isinstance(runtime, ManagedR06Runtime):
             if (not self.r06_enabled or self.r06_queue is None or not isinstance(runtime, ManagedR06Runtime)):
                 raise ManagementError("r06_runtime_unavailable", "frozen R06 runtime is unavailable", 503)
-            port = await asyncio.to_thread(R06RankingPort.from_snapshot, self.r06_queue, runtime.bundle, context)
+            restoring = asyncio.create_task(asyncio.to_thread(
+                R06RankingPort.from_snapshot, self.r06_queue, runtime.bundle, context))
+            try:
+                port = await asyncio.shield(restoring)
+            except asyncio.CancelledError:
+                # Snapshot verification is real CPU work, before the ranking
+                # queue. Retain the execution lease until that thread exits too.
+                await _drain(restoring)
+                raise
             if command.strategy in {Strategy.DENSE, Strategy.ADAPTIVE}:
                 return await port.rank(context, replace(command, strategy=Strategy.DENSE))
             # Explicit baseline: same frozen eligibility/time/full-seen exclusions.

@@ -204,11 +204,12 @@ def test_repeated_cpu_cancellation_keeps_work_alive_and_records_finished_drain()
     assert drain["error_type"] is None and "deadline_callback" not in stages
 
 
-@pytest.mark.parametrize("phase", ["recovery", "admission", "cpu", "save"])
+@pytest.mark.parametrize("phase", ["recovery", "admission", "restore", "cpu", "save"])
 def test_real_api_deadline_drains_owned_work_and_preserves_late_committed_result(online, monkeypatch, phase):
     application, _, _ = online
     targets = {"recovery": (CatalogManager, "ensure_ready"),
                "admission": (PostgresDemoBackend, "_admit"),
+               "restore": (r06_async.R06RankingPort, "from_snapshot"),
                "cpu": (R06SnapshotRanker, "score"), "save": (PostgresDemoBackend, "_save")}
     target, method = targets[phase]
     original = getattr(target, method)
@@ -238,6 +239,12 @@ def test_real_api_deadline_drains_owned_work_and_preserves_late_committed_result
                 try:
                     assert await asyncio.to_thread(entered.wait, 5)
                     assert await asyncio.to_thread(deadline_fired.wait, 4)
+                    if phase == "restore":
+                        # A callback alone does not prove that cancellation has
+                        # propagated through cleanup. Keep the worker blocked
+                        # while giving an incorrectly early response time to finish.
+                        with pytest.raises(TimeoutError):
+                            await asyncio.wait_for(asyncio.shield(task), .25)
                     assert not task.done() and timing.report() == []
                     assert application.backend.r06_queue.outstanding == (1 if phase == "cpu" else 0)
                     execution = application.backend._execution(command.request_id)
