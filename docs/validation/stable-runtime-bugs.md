@@ -2,6 +2,11 @@
 
 只记录实际证据，区分症状、已确认缺陷和待验证假说。发现时先在本地忽略事件记录中落盘，测量批次结束再追加这里，避免改变正在测量的冻结源码。关闭须有修复提交及相应正/负控制；CI 或单次成功不能替代复现条件。
 
+## QA-009：Git SSH 22 通道关闭及备用通道检查（网络操作错误，已找到可用通道）
+
+- 2026-10-12 重验开始前，origin 的 22 端口被关闭；443 默认 HostName 严格校验因没有该别名的已信任 key 拒绝。两个临时 HTTPS override 命令仍使用 SSH/22，均失败；不据此猜测具体配置或网络根因，原四次输出和本地 ssh22-failure 事件保留。GitHub API 同时正常，未开始测试或新建 schema/API。
+- 仅对命令指定 `ssh -p 443 -o HostName=ssh.github.com -o HostKeyAlias=github.com -o StrictHostKeyChecking=yes -o ConnectTimeout=15`，复用既有已信任 GitHub key，ls-remote 实际 exit 0，main=4557ad2、PR #67 head=0d7a423。未修改全局配置/known_hosts/remote，未关闭校验，后续 push 仍需独立观察。不是应用 504 或测试失败。
+
 ## R06-001：完整包双并发间歇 HTTP 504（未解决）
 
 - 范围：137,249 商品、NumPy、2 秒服务期限、单排名 worker、轮内同一 session / 每笔新键、每笔新 HTTP client。
