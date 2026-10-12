@@ -6,6 +6,7 @@
 
 - 2026-10-12 重验开始前，origin 的 22 端口被关闭；443 默认 HostName 严格校验因没有该别名的已信任 key 拒绝。两个临时 HTTPS override 命令仍使用 SSH/22，均失败；不据此猜测具体配置或网络根因，原四次输出和本地 ssh22-failure 事件保留。GitHub API 同时正常，未开始测试或新建 schema/API。
 - 仅对命令指定 `ssh -p 443 -o HostName=ssh.github.com -o HostKeyAlias=github.com -o StrictHostKeyChecking=yes -o ConnectTimeout=15`，复用既有已信任 GitHub key，ls-remote 实际 exit 0，main=4557ad2、PR #67 head=0d7a423。未修改全局配置/known_hosts/remote，未关闭校验，后续 push 仍需独立观察。不是应用 504 或测试失败。
+- 后续：该临时通道实际推送冻结 `6b9d348` 成功、exit 0；完整本地重验和源四项 CI 通过，见[报告](stable-demo-revalidation-20261012.md)。只确认本轮可用，不声称永久修复 22 端口或已确认网络根因。
 
 ## R06-001：完整包双并发间歇 HTTP 504（未解决）
 
@@ -92,6 +93,7 @@
 - 记录：立即保留 bug-gate-002、原 XML（SHA 345abccb044ce59ffbd8039cbe7aedc8f626aa943c1c966f50d5dca45be923e5）、来源 231 blob/原 230 文件及全部日志。[初轮报告](stable-demo-integration-20261011.md)不把 1652 通过和单个失败合成全绿；后续本地 Node/数值停止，PR #66 不合并。
 - 下一项：[预登记](checker-path-isolation-plan-20261011.md)单独修复测试几何条件和真实资料写入隔离，明确允许子目录、项目外和 artifacts 根目录；固定两个临时根运行同模块并执行删守卫负控制。只改测试，不先改生产保存守卫，不自动重跑原完整批次。
 - 修复/验证：13e1e2d 将根改为自有模拟项目，保留真实 CLI/marker，分别确认两个非法路径的拒绝原因与未写入；相同模块在真实 tmp/artifacts 临时根各 112 项零失败/错误/跳过。独立副本删一条生产守卫后，原两个参数均实际 failure，源四项 CI 通过。[修复报告](checker-path-isolation-20261011.md)保留原 1653 项失败和 QA-008；只关闭测试构造缺陷，不称主干整合已通过。
+- 完整重验：另按 2026-10-12 协议冻结 `6b9d348`，原 53 文件服务批次 1654 项零 failure/error/skip，两个路径参数均执行；数值/Node/契约与源 CI 通过。[报告](stable-demo-revalidation-20261012.md)继续保留旧失败及负控制，生产/期限不改；最终整合和 main CI 另按门禁核对，不把后续通过改写成第一次全绿。
 
 ## QA-008：独立负控制遗漏测试辅助模块路径（验收工具错误，已更正）
 

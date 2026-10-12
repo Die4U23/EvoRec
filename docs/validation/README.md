@@ -4,7 +4,7 @@
 
 | 范围 | 首选记录 | 进一步检查 |
 | --- | --- | --- |
-| 修复后的完整整合重验 | [预登记](stable-demo-revalidation-plan-20261012.md) | 独立分支、只允许既有单测试修复，完整 workflow/精确来源/保护与新 head CI 通过前不合并；旧失败和负控制不覆盖 |
+| 修复后的完整整合重验 | [预登记](stable-demo-revalidation-plan-20261012.md)、[完整回归/源 CI 与原失败](stable-demo-revalidation-20261012.md) | 服务 1654、检索 178、ranker 16、页面 114 项通过，分开分母；原失败/负控制/保护均不变。源四项 CI 通过，最终 head 与普通 merge 后 main CI 另据 PR #68，非重新压测或 SLA |
 | 保存路径反例隔离修复 | [预登记](checker-path-isolation-plan-20261011.md)、[内外临时根与删守卫负控制](checker-path-isolation-20261011.md) | 相同模块两种临时根各 112 项通过，项目外及 artifacts 根拒绝；原两项删守卫负控制实际失败。保留初次 import error 和原整合 1653 项失败，不代表整体整合通过 |
 | 本地演示候选主干整合 | [预登记](stable-demo-integration-plan-20261011.md)、[初轮失败和来源/CI](stable-demo-integration-20261011.md)、[路径反例修复预登记](checker-path-isolation-plan-20261011.md) | 15 个 PR 祖先/231 blob 核对、冻结源 CI 四项通过；本地完整 53 文件/1653 项实际 1 failure，GATE-002 为临时根位置假设，后续检查未执行，暂停合并，不用 CI 覆盖失败 |
 | 完整模型浏览器会话安全及停机备份恢复 | [预登记/启动前更正](stable-browser-backup-plan-20261011.md)、[实际浏览器/成对恢复/负控制](stable-browser-backup-20261011.md)、[问题台账](stable-runtime-bugs.md) | 干净页面 114/实库 17 项通过，两个负控制实际拒绝；重置/旧响应隔离、完整 18 文件成对恢复、原键/新 dense/清退通过，保留两次 QA-004 启动拒绝。刷新只恢复会话、不缓存旧卡片，不是长期稳定/SLA |

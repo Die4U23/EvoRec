@@ -1,5 +1,11 @@
 # 当前进度与验证记录
 
+## 2026-10-12 修复后的完整整合重验通过
+
+干净已推送 `6b9d348`，生产源码不改，仅沿用 PR #67 已验证的单测试修复。完整 workflow 的服务 53 文件 1654 项、accelerated 检索 178/ranker 16 项、Node 页面 114 项均零 failure/error/skip；两套依赖和契约导出/diff 通过，wrapper 实际 exit 0。17 个原 PR head 祖先、原失败/负控制及来源逐一保留；test schema/本轮进程/前轮 PID 与监听清退，主目录/.env/原模型/对照树不改。
+
+[重验报告](validation/stable-demo-revalidation-20261012.md)区分本轮回归与生产等价所支持的历史完整模型负载/实际浏览器证据，不称本轮重新实验。源 push/PR 四项 CI 已独立通过；报告最终 head 及普通 merge 后精确 main 两项 CI 的结果另在 [PR #68](https://github.com/Die4U23/EvoRec/pull/68) 留档，全部门禁通过且 main 未变才合并，不 squash/删除分支或原 PR。QA-009 保留 SSH22 及备用通道错误，严格校验的 443 临时命令已成功推送。未创建 release/tag 或升级版本，不关闭历史超时根因，不宣称长期稳定/SLA。
+
 ## 2026-10-11 路径边界测试隔离修复与负控制通过
 
 干净已推送 13e1e2d 只改一个测试文件：独立模拟项目消除 tmp_path 所在位置假设，合法子目录仍保存/不覆盖，项目外和 artifacts 根明确拒绝。相同模块在真实 tmp/artifacts 内外分别 112 项零 failure/error/skip；独立副本仅删一条目录守卫后，原两个边界反例均实际失败。[报告](validation/checker-path-isolation-20261011.md)保留原 1653 项失败及负控制初次 import error（QA-008），不将两份 112 当成不同用例或收集错误当有效反证。
