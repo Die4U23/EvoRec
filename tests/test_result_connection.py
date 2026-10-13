@@ -210,7 +210,7 @@ def test_completed_result_remains_unique_and_legacy_replay_uses_owned_connection
     monkeypatch.setattr(backend, "_connect", tracked)
     backend._save(result)
     assert len(opened) == 1 and opened[0].closed
-    backend._mark_failed(result.binding.request_id)
+    backend._mark_failed(result.binding.request_id, execution.owner)
     row, count = _state(connect, result.binding.request_id)
     assert row["status"] == "completed" and count == 2
 
