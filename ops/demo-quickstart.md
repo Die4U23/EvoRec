@@ -49,6 +49,6 @@ New-Item -ItemType File -Path '<本轮 output 路径>/stop'
 
 等待启动终端真正退出，再检查本轮 `stopped.json`：catalog 的 `worker_drained` / `owned_schema_removed`，R06 的 `cpu_jobs_drained` / `owned_schema_removed` 均为 true；catalog 临时令牌应已删除。不要批量停止端口/删除 schema，也不要把仅存在 marker 当成独立清退验收。
 
-旧入口支持 Ctrl+C 的 finally 清退，但本轮新包装入口的实机 Ctrl+C 仍待专门验证；当前推荐已实测的 stop 文件方式。正常停止会删除本轮临时演示数据，页面不能撤销；原模型和输出诊断保留。强杀/断电可能残留，按确切 owned.json 检查，不做宽泛清理。
+也可在启动终端按一次 Ctrl+C，并等待实际退出。统一入口的 catalog 与完整 R06 已在本机真实终端验证；catalog 曾误报 `worker_drained=false`，学习版 `19f712e` 已改为记录实际工作线程退出状态，见[修复与清退证据](../docs/validation/learning-delivery-20261013.md)。终端宿主的中断退出码不能替代 marker、PID、监听及确切 schema 检查。正常停止会删除本轮临时演示数据，页面不能撤销；原模型和输出诊断保留。强杀/断电可能残留，按确切 owned.json 检查，不做宽泛清理。
 
-整套连续演示和作者理解验收仍见 [三分钟讲解与作者参与](../docs/product/demo-scope.md#作者参与的最后一轮验收)。此入口不等于 public release、真实 R06 动态新品或工业级 SLA。
+连续核心操作与工程验收见[交付记录](../docs/validation/learning-delivery-20261013.md)；接下来按[代码导读](../docs/learning-guide.md)学习，再做[三分钟讲解与作者参与](../docs/product/demo-scope.md#作者参与的最后一轮验收)。作者学习不阻塞工程收尾。此入口不等于 public release、真实 R06 动态新品或工业级 SLA。

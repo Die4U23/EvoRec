@@ -42,8 +42,10 @@ def fixtures(output):
         writer.writerow(['demo-rejected-invalid','','解谜'])
 
 
-async def serve_catalog(application, listener, output, metadata):
+async def serve_catalog(application, listener, output, metadata, *, worker_drained=None):
     stop_worker=Event()
+    if worker_drained is None:
+        worker_drained=Event()
     def work():
         try:
             while not stop_worker.is_set():
@@ -56,6 +58,10 @@ async def serve_catalog(application, listener, output, metadata):
             # Fail closed: stop the owned listener instead of silently losing jobs.
             (output/'stop').touch()
             raise
+        finally:
+            # SIGINT may be re-raised after the listener has stopped. Observe the
+            # real thread exit rather than whether asyncio.run returned normally.
+            worker_drained.set()
     worker=asyncio.create_task(asyncio.to_thread(work))
     try:
         await serve(application,listener,output,metadata)
@@ -73,7 +79,7 @@ def run(output, database_url, *, port=0):
     isolated=make_conninfo(**{**parameters,'options':'-c search_path='+schema})
     application=None
     created=False
-    drained=False
+    worker_drained=Event()
     with socket.socket() as listener:
         listener.bind(('127.0.0.1',port))
         if listener.getsockname()[1]==8000:
@@ -107,8 +113,8 @@ def run(output, database_url, *, port=0):
                 model_id=application.backend.runtime.model_id,
                 content_encoder_id=application.backend.runtime.content_encoder_id)
             os.environ['EVOREC_ADMIN_TOKEN']=token
-            asyncio.run(serve_catalog(application,listener,output,metadata))
-            drained=True
+            asyncio.run(serve_catalog(application,listener,output,metadata,
+                                      worker_drained=worker_drained))
         finally:
             os.environ.pop('EVOREC_ADMIN_TOKEN',None)
             if application is not None:
@@ -119,7 +125,7 @@ def run(output, database_url, *, port=0):
                 with psycopg.connect(database_url) as connection:
                     connection.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
                 marker(output,'stopped',dict(pid=os.getpid(),run_id=metadata['run_id'],schema=schema,
-                    owned_schema_removed=True,worker_drained=drained))
+                    owned_schema_removed=True,worker_drained=worker_drained.is_set()))
 
 
 def main(argv=None):

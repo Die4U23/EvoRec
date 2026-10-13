@@ -43,6 +43,8 @@ R06 测试现已查看，后续调参需要新协议。静态商品元数据缺�
 
 ## 从这里开始
 
+本地学习版从[代码导读](docs/learning-guide.md)开始，按[统一启动指南](ops/demo-quickstart.md)运行。[交付记录](docs/validation/learning-delivery-20261013.md)固定代码版本、验证范围和证据来源；工程收尾与作者后续学习分别记录，不需要先读完全部研究历史。
+
 想先演示新品流程而不准备研究模型：使用[独立内容基线入口](docs/product/demo-scope.md#独立新品内容基线入口)。只需服务环境与本地 PostgreSQL，自动创建临时合成目录和后台 worker；这是工程演示，不是 R06 实验效果。
 
 先看[文档导航](docs/README.md)：按当前状态、系统设计、研究实验和验证证据分层查找。常用的三个直接入口是[架构与实现过程](docs/10-architecture-and-implementation.md)、[当前进度](docs/STATUS.md)和[实验索引](docs/experiments/README.md)。早期计划与原始 PRD 在导航中保留，但不作为当前完成度的依据。
