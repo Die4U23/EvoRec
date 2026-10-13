@@ -75,7 +75,7 @@ def test_worker_exit_waits_for_actual_thread(monkeypatch,tmp_path):
     from threading import Event
     from types import SimpleNamespace
     import scripts.run_catalog_demo as demo
-    started,release,finished=Event(),Event(),Event()
+    started,release,finished,drained=Event(),Event(),Event(),Event()
     def run_next(_):
         started.set()
         assert release.wait(5)
@@ -87,15 +87,15 @@ def test_worker_exit_waits_for_actual_thread(monkeypatch,tmp_path):
     application=SimpleNamespace(manager=SimpleNamespace(file_jobs=SimpleNamespace(run_next=run_next),
         builds=SimpleNamespace(run_next=lambda:False)))
     async def exercise():
-        task=asyncio.create_task(demo.serve_catalog(application,None,tmp_path,{}))
+        task=asyncio.create_task(demo.serve_catalog(application,None,tmp_path,{},worker_drained=drained))
         try:
             assert await asyncio.to_thread(started.wait,5)
             await asyncio.sleep(.03)
-            assert not task.done() and not finished.is_set()
+            assert not task.done() and not finished.is_set() and not drained.is_set()
         finally:
             release.set()
             await task
-        assert finished.is_set()
+        assert finished.is_set() and drained.is_set()
     asyncio.run(exercise())
 
 
@@ -129,6 +129,27 @@ def test_setup_failure_removes_only_owned_schema(isolated_database,monkeypatch):
     stopped=json.loads((output/'stopped.json').read_bytes())
     assert stopped['owned_schema_removed']
     assert not (output/'ready.json').exists() and not (output/'admin-token.txt').exists()
+    with psycopg.connect(isolated_database) as connection:
+        assert connection.execute('SELECT 1 FROM pg_namespace WHERE nspname=%s',(stopped['schema'],)).fetchone() is None
+
+
+def test_interrupt_reports_actual_worker_exit(isolated_database,monkeypatch):
+    import asyncio
+    import scripts.run_catalog_demo as demo
+    monkeypatch.delenv('EVOREC_ADMIN_TOKEN',raising=False)
+    async def interrupted_serve(*_):
+        # Uvicorn re-raises the captured SIGINT after shutting down its listener.
+        # Keep the real catalog worker and run/finally cleanup in this test.
+        await asyncio.sleep(.05)
+        raise KeyboardInterrupt
+    monkeypatch.setattr(demo,'serve',interrupted_serve)
+    output=ROOT/'artifacts/catalog-demo-tests'/uuid4().hex
+    with pytest.raises(KeyboardInterrupt):
+        run(output,isolated_database)
+    stopped=json.loads((output/'stopped.json').read_bytes())
+    assert stopped['worker_drained']
+    assert stopped['owned_schema_removed']
+    assert not (output/'admin-token.txt').exists()
     with psycopg.connect(isolated_database) as connection:
         assert connection.execute('SELECT 1 FROM pg_namespace WHERE nspname=%s',(stopped['schema'],)).fetchone() is None
 
