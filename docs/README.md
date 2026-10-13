@@ -1,6 +1,6 @@
 # 文档导航
 
-不必按文件名从 `01` 读到 `10`。先看下面四个入口，再按问题查专题；`docs/experiments/` 与 `docs/validation/` 保存可追溯证据，不是连续阅读的教程。
+不必按文件名从 `01` 读到 `10`。第一次学习先读[学习版代码导读](learning-guide.md)，运行看[统一启动指南](../ops/demo-quickstart.md)，完成度看[交付记录](validation/learning-delivery-20261013.md)。下表用于按问题查专题；`docs/experiments/` 与 `docs/validation/` 保存可追溯证据，不是连续阅读的教程。
 
 | 要做什么 | 首选入口 | 说明 |
 | --- | --- | --- |
