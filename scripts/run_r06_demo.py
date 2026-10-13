@@ -39,7 +39,12 @@ def validate_isolation(output, database_url, port):
     parameters = conninfo_to_dict(database_url)
     if parameters.get("host", "") not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("isolated demo requires an explicit local PostgreSQL host")
-    if parameters.get("hostaddr", "") not in {"", "127.0.0.1", "::1"}:
+    # libpq fills unset parameters from the process environment/service file.
+    # A literal host is not sufficient when hostaddr silently selects a route.
+    if parameters.get("service") or os.getenv("PGSERVICE"):
+        raise ValueError("isolated demo rejects database service routing defaults")
+    address = parameters.get("hostaddr") or os.getenv("PGHOSTADDR", "")
+    if address not in {"", "127.0.0.1", "::1"}:
         raise ValueError("database host address must also be loopback")
     return output, parameters
 

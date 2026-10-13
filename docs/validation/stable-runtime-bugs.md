@@ -2,6 +2,18 @@
 
 只记录实际证据，区分症状、已确认缺陷和待验证假说。发现时先在本地忽略事件记录中落盘，测量批次结束再追加这里，避免改变正在测量的冻结源码。关闭须有修复提交及相应正/负控制；CI 或单次成功不能替代复现条件。
 
+## DEMO-001：依赖预检未核对可编辑包的导入来源（已修复）
+
+- 开发原型依赖/107 项服务/198 项加速检查通过后，实查借用 E 虚拟环境：scripts.demo 在 C 工作树，evorec 实际从 E 主工作区导入，check_packages 仍通过。未启动数据库连接/API。新增原反例实际 1 failure、0 error/skip，XML SHA `8db0b6dc5a2ca3ab7f03fa292db0afb8d133d1be6afc6f85c99dc6eba862d434`；完整未提交字节快照/事件保留，不用原绿色掩盖缺口。
+- 新入口要求实际 evorec.__file__ 对应当前 checkout 的 src，错树明确拒绝，不重新安装共享环境或改 sys.path。反例在修复后 111 项服务及随后 116 项回归通过；NumPy 198 项通过。这里是开发检查，精确提交后的模型/入口复验与 CI 另计；主干原验收已明确 PYTHONPATH，不据此否定或改写。
+- 冻结复验：`4a1f1df` 干净推送后116/198/114通过；真实错树共享环境CLI exit1且没有数据库/API，正确来源完整包只读检查与两入口TCP/清退通过、源四项CI通过，见[报告](demo-delivery-20261012.md)。关闭本缺口，原失败保留，不代表全部交付或工业稳定完成。
+
+## DEMO-002：隔离检查未覆盖 libpq 继承路由（已修复）
+
+- conninfo_to_dict 只显示显式 host=127.0.0.1，继承 PGHOSTADDR 可另有地址；显式/继承 service 也可能提供默认路由，依据 [PostgreSQL 环境说明](https://www.postgresql.org/docs/18/libpq-envars.html)。三个真实执行的 guard 反例实际 failure，数据库 probe mocked，**没有实际远端连接或泄露事件**；原 XML、routing-regression-before-fix 完整字节和 bug-demo-002 保留。
+- 仅共享 validate_isolation 增加 service 拒绝与有效 hostaddr 校验，覆盖新旧两入口，保留显式 loopback 覆盖继承值；不清空认证/SSL/GSS、不改运行清退、期限或算法。116 项回归零 failure/error/skip，原三反例与两项 loopback/优先级正例都执行。冻结后的独立复验及 CI 待另记，不将这项开发边界缺陷当历史 504 原因。
+- 冻结复验：`4a1f1df` 的相同116项、原三拒绝及两正例通过；NumPy198/页面114、完整包只读/两入口TCP/清退、源四项CI通过。[报告](demo-delivery-20261012.md)与完整源/原失败保留；无真实远端连接/泄露证明，关闭本guard缺口，不关闭历史504。
+
 ## QA-009：Git SSH 22 通道关闭及备用通道检查（网络操作错误，已找到可用通道）
 
 - 2026-10-12 重验开始前，origin 的 22 端口被关闭；443 默认 HostName 严格校验因没有该别名的已信任 key 拒绝。两个临时 HTTPS override 命令仍使用 SSH/22，均失败；不据此猜测具体配置或网络根因，原四次输出和本地 ssh22-failure 事件保留。GitHub API 同时正常，未开始测试或新建 schema/API。

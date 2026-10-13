@@ -71,6 +71,8 @@ artifacts/            模型、索引与结果区域，内容不进入版本控�
 
 ## 运行本地服务演示
 
+本地作品 Demo 优先使用[统一启动与只读预检](ops/demo-quickstart.md)：`python -m scripts.demo catalog --env-file .env` 演示合成新品，`r06` 模式使用另行准备的批准包与 NumPy 环境；加 `--check` 只检查、不启动。两条路径均复用隔离临时 schema/随机端口，不操作已有 8000；预检成功不等于服务 ready 或验收通过。下面保留普通服务配置方法。
+
 服务环境使用 Python 3.12；算法基线使用独立环境。以下操作在项目根目录执行。
 
 ```powershell

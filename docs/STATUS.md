@@ -1,5 +1,11 @@
 # 当前进度与验证记录
 
+## 2026-10-12 统一 Demo 入口与完整模型新入口 TCP 通过
+
+干净已推送 `4a1f1df`，新增 `python -m scripts.demo catalog / r06` 与 `--check`，详见[简明启动/停止](../ops/demo-quickstart.md)。只读检查、包导入来源、批准模型/NumPy、业务变量隔离与原清退复用；共享启动guard补继承service/hostaddr保护，不改src/db/web/算法/期限。DEMO-001/002原1+3项失败及有效删guard3项失败保留，修复后冻结116服务/198加速/114页面均零failure/error/skip。
+
+[报告](validation/demo-delivery-20261012.md)绑定完整137,249项只读预检和两入口实际TCP/stop清退：catalog导入/发布/下架/回滚，真实R06原键/反馈/重置后三笔新计算等通过；14条推荐观测含12个200与预期401/409，非负载或浏览器。进程/监听/schema/临时令牌清退，主目录/.env/18模型/对照不改。源码四项CI已独立通过，最终报告head另在草稿[PR #69](https://github.com/Die4U23/EvoRec/pull/69)核对。尚未整套连续浏览器/新CLI Ctrl+C/作者验收或release，不将旧失败改写为初轮全绿。
+
 ## 2026-10-12 修复后的完整整合重验通过
 
 干净已推送 `6b9d348`，生产源码不改，仅沿用 PR #67 已验证的单测试修复。完整 workflow 的服务 53 文件 1654 项、accelerated 检索 178/ranker 16 项、Node 页面 114 项均零 failure/error/skip；两套依赖和契约导出/diff 通过，wrapper 实际 exit 0。17 个原 PR head 祖先、原失败/负控制及来源逐一保留；test schema/本轮进程/前轮 PID 与监听清退，主目录/.env/原模型/对照树不改。
