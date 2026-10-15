@@ -12,6 +12,18 @@
 
 [代码导读](docs/learning-guide.md) · [架构与实现](docs/10-architecture-and-implementation.md) · [启动指南](ops/demo-quickstart.md) · [R06 实验报告](docs/experiments/r06-multi-interest/report.md)
 
+## 演示界面
+
+以下画面使用本地 **合成商品内容基线**（初始 24 件，导入样例后 26 件），不是冻结 R06 的模型效果或质量评估。
+
+![合成商品目录基线的推荐体验页](assets/readme/catalog-recommendations.jpg)
+
+推荐页：示例用户的内容基线结果与反馈入口。
+
+![合成商品目录基线的管理操作页](assets/readme/catalog-management.jpg)
+
+管理页：导入、构建预览和显式发布入口。[截图来源与本轮操作核对](docs/validation/readme-walkthrough-20261015.json)。
+
 ## 核心能力
 
 - **推荐与反馈闭环**：示例/新用户、商品详情、收藏、隐藏、撤销与会话重置；后续推荐使用更新后的历史与资格过滤。
@@ -44,6 +56,12 @@
 ```
 
 `domain` 定义规则，`application` 编排用例，`infrastructure` 适配数据库与模型；离线研究代码位于 `src/evorec/research/`。调用链、事务边界与表关系见[代码导读](docs/learning-guide.md)。
+
+三个关键取舍（详见[代码导读](docs/learning-guide.md)）：
+
+- **请求快照**固定入场时的会话历史、商品资格和模型绑定，让排序与保存对应同一输入；此后页面状态可能已经变化。
+- **同键幂等**对相同输入重放已完成结果，对同键不同输入拒绝，避免不确定响应后悄悄发起另一笔计算。
+- **取消后清退**等待后台排序和写入实际结束，再释放执行租约与连接；因此客户端等待可能超过 API 的 2 秒期限。
 
 ## 已验证结果
 
@@ -88,6 +106,11 @@
 
 <a id="运行本地服务演示"></a>
 
+| 模式 | 需要什么 | 可以观察什么 |
+| --- | --- | --- |
+| `catalog` | 本机数据库与普通 `.venv`；内置合成商品 | 内容基线推荐、反馈、导入 → 构建 → 预览 → 发布；不衡量推荐质量 |
+| `r06` | 另备批准的冻结模型包与 `.venv-accelerated` | 真实冻结模型的推荐与反馈；不支持任意新品进入旧模型，也不启动新品管理 worker |
+
 ### 1. 准备服务环境
 
 需要 **Python 3.12** 和可连接的本机 **PostgreSQL 16+**，数据库账号需要创建临时 schema 的权限。以下命令在仓库根目录的 PowerShell 执行；已有环境可跳过创建与安装。
@@ -111,11 +134,23 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 
 第一条只做只读预检。第二条创建隔离的临时 schema、24 件合成商品和 catalog worker；出现 `status: ready` 后，用输出的随机本地 URL 打开 `/app`，即可体验推荐与新品流程。上传样例和临时管理令牌位于本轮输出目录。
 
+首次体验可按页面控件顺序操作：
+
+1. 选择“示例用户”并点“开始体验”，查看自动返回的热门推荐；选择“受控稠密模型”并点“获取推荐”，核对响应中的实际策略。对返回的商品点“收藏”或“隐藏”，再获取推荐，观察会话版本与结果。刷新页面后核对保留的会话与反馈状态；商品是否换位不作为验收条件。
+2. 展开“管理操作（本地演示）”，填入本轮临时令牌，上传输出目录的 `new-items.csv`并点“提交文件校验任务”；导入完成后点“处理／重试当前构建”，用“查询状态与预览”核对，再点“确认发布当前预览”。发布后重新获取推荐，核对活动商品库与商品资格；导入本身不会发布。
+
 按一次 **Ctrl+C** 等待退出，或在本轮输出目录创建 `stop` 文件。正常停止会删除本轮临时数据；检查 `stopped.json` 的 `worker_drained` 与 `owned_schema_removed`。不操作既有 8000 服务。
 
 ### 3. 运行冻结 R06 或学习代码
 
-真实 R06 需要另行准备批准的模型包及 `.venv-accelerated`，不会自动下载或训练。配置后通过 `python -m scripts.demo r06 --env-file .env.demo` 启动，具体步骤见[统一启动指南](ops/demo-quickstart.md)。原始数据、模型与逐请求轨迹不随 Git 分发。
+真实 R06 需要另行准备批准的模型包及 `.venv-accelerated`，不会自动下载或训练。配置 `.env.demo` 后使用同一解释器预检和启动：
+
+```powershell
+.\.venv-accelerated\Scripts\python.exe -m scripts.demo r06 --env-file .env.demo --check
+.\.venv-accelerated\Scripts\python.exe -m scripts.demo r06 --env-file .env.demo
+```
+
+配置字段和模型包核对见[统一启动指南](ops/demo-quickstart.md)。原始数据、模型与逐请求轨迹不随 Git 分发。
 
 [学习调用链](docs/learning-guide.md) · [普通服务、迁移与 worker 配置](ops/service-reference.md) · [研究环境与复现](research/README.md)
 

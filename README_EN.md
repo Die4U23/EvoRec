@@ -14,6 +14,20 @@ The current delivery is a **local recommendation demo plus R01–R06 offline exp
 
 The linked detailed guides are currently in Chinese; this page provides the English overview and first-run instructions.
 
+## Demo screens
+
+These screens use the local **synthetic catalog content baseline** (24 initial items, 26 after the sample import). They do not show frozen R06 model performance or a recommendation-quality evaluation.
+
+![Recommendation page with the synthetic-catalog baseline](assets/readme/catalog-recommendations.jpg)
+
+Recommendation page: sample user, results, and feedback controls.
+
+![Management controls with the synthetic-catalog baseline](assets/readme/catalog-management.jpg)
+
+Management page: import, build preview, and explicit publication controls.
+
+[Screenshot provenance and walkthrough checks](docs/validation/readme-walkthrough-20261015.json).
+
 ## Core capabilities
 
 - **Recommendation and feedback loop**: sample/new users, item details, favorites, hiding, undo, and session reset; subsequent recommendations use updated history and eligibility filters.
@@ -46,6 +60,12 @@ Background workers: catalog / comparison / evaluation
 ```
 
 `domain` defines rules, `application` orchestrates use cases, and `infrastructure` adapts the database and models. Offline research lives in `src/evorec/research/`. The [code walkthrough](docs/learning-guide.md) covers call chains, transaction boundaries, and table relationships.
+
+Three design tradeoffs (see the [code walkthrough](docs/learning-guide.md)):
+
+- **Request snapshots** bind session history, catalog eligibility, and model identity at admission so ranking and persistence use the same input; the page may have changed by the time a response arrives.
+- **Same-key idempotency** replays a completed result for unchanged input and rejects a changed input, avoiding a silent second computation after an uncertain response.
+- **Cancellation drain** waits for background ranking and writes to finish before releasing the execution lease and connection; client waiting can therefore exceed the 2-second API deadline.
 
 ## Verified results
 
@@ -88,6 +108,11 @@ Cold-target candidate coverage rose from **115/6,978** to **122/6,978**, while c
 
 ## Quick start
 
+| Mode | Requirements | What you can observe |
+| --- | --- | --- |
+| `catalog` | Local database and ordinary `.venv`; built-in synthetic items | Content-baseline recommendations, feedback, import → build → preview → publish; no quality measurement |
+| `r06` | Separately prepared approved frozen bundle and `.venv-accelerated` | Real frozen-model recommendations and feedback; arbitrary new items cannot enter the old model, and no catalog management worker starts |
+
 ### 1. Prepare the service environment
 
 Requires **Python 3.12** and a reachable local **PostgreSQL 16+** database whose account can create temporary schemas. Run these PowerShell commands from the repository root; skip creation and installation if the environment is already prepared.
@@ -111,11 +136,23 @@ Edit `EVOREC_DATABASE_URL` in `.env` to use your local database connection. Neve
 
 The first command performs read-only preflight checks. The second creates an isolated temporary schema, 24 synthetic items, and a catalog worker. After `status: ready`, open `/app` at the random local URL printed by the process. Upload fixtures and the temporary management token are in that run's output directory.
 
+For a first visit, use the page controls in this order:
+
+1. Select “示例用户” (sample user) and click “开始体验” (start). Inspect the automatic popular recommendation; select “受控稠密模型” (controlled dense model), click “获取推荐” (get recommendations), and check the actual strategy in the response. Favorite or hide a returned item and request recommendations again to observe the session version and results. Reload to check retained session and feedback state; a change in item order is not an acceptance criterion.
+2. Expand “管理操作（本地演示）” (local management), enter this run's temporary token, select `new-items.csv` in the output directory, and click “提交文件校验任务” (submit validation). After import, click “处理／重试当前构建” (build), inspect “查询状态与预览” (status and preview), then click “确认发布当前预览” (publish). Request recommendations again and inspect the active catalog and item eligibility. Import alone does not publish.
+
 Press **Ctrl+C** once and wait for shutdown, or create a `stop` file in the run's output directory. Normal shutdown deletes that run's temporary data. Check `worker_drained` and `owned_schema_removed` in `stopped.json`. Existing services on port 8000 are not touched.
 
 ### 3. Run frozen R06 or study the code
 
-Real R06 requires a separately prepared approved model bundle and `.venv-accelerated`; it does not download or train models automatically. Once configured, run `python -m scripts.demo r06 --env-file .env.demo`; see the [unified demo guide](ops/demo-quickstart.md) for setup. Raw data, models, and per-request traces are not distributed through Git.
+Real R06 requires a separately prepared approved model bundle and `.venv-accelerated`; it does not download or train models automatically. After configuring `.env.demo`, run preflight and launch with the same interpreter:
+
+```powershell
+.\.venv-accelerated\Scripts\python.exe -m scripts.demo r06 --env-file .env.demo --check
+.\.venv-accelerated\Scripts\python.exe -m scripts.demo r06 --env-file .env.demo
+```
+
+See the [unified demo guide](ops/demo-quickstart.md) for configuration fields and bundle checks. Raw data, models, and per-request traces are not distributed through Git.
 
 [Code walkthrough](docs/learning-guide.md) · [Ordinary service, migrations, and workers](ops/service-reference.md) · [Research setup and reproduction](research/README.md)
 

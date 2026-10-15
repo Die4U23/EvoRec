@@ -13,6 +13,8 @@
 
 第一条只读检查，不建目录/schema、不迁移、不启动服务。第二条检查通过后复用原入口：在 `artifacts/demo/catalog-<UUID>` 创建本轮目录、随机 schema、临时令牌和一个 catalog worker，输出 `status: ready` 后才打开其随机 URL 的 `/app`。合成 24 件初始目录；不是冻结 R06 或真实质量评估。只出现 `preflight_passed` 不等于服务 ready，更不是验收报告。
 
+首次运行若 `--check` 返回 `status: failed`，查看 JSON 的 `code`：`database_not_configured` 表示所选 `.env`/`.env.demo` 未提供 `EVOREC_DATABASE_URL`；`dependencies_missing` 表示当前解释器缺少列出的依赖；`evorec_source_mismatch` 表示可编辑安装仍指向其他 checkout。数据库预检还会明确报告 PostgreSQL 版本不足或缺少建 schema 权限。按上面的环境准备步骤修正后重新执行只读检查；只有 `preflight_passed` 才说明预检通过，随后仍须启动并看到 `status: ready`。
+
 页面操作及样例 CSV 见 [新品流程](../docs/product/demo-scope.md#独立新品内容基线入口)。管理令牌只从该轮输出的 `admin-token.txt` 获取，不输入业务令牌、不截图/提交令牌。导入不等于发布；构建/预览后须显式确认发布，下架/回滚不复活商品。
 
 ## 再演示真实冻结 R06

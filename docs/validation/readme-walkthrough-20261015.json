@@ -1,0 +1,39 @@
+{
+  "capture_date": "2026-10-15",
+  "runtime_source_commit": "84532b3baea22824bb904e902caf6950542bfa14",
+  "mode": "catalog synthetic content baseline; not R06",
+  "initial_items": 24,
+  "items_after_sample_import": 26,
+  "screenshots": [
+    {
+      "path": "assets/readme/catalog-recommendations.jpg",
+      "sha256": "20876a23852de6c0f5d1820ea0a4f9934710695676e45ce84077989fe3a5ff8f",
+      "state": "After publication, favorite, hide, reload and explicit dense recommendation; first four cards shown",
+      "treatment": "Cropped directly from the live browser; no fabricated or retouched UI"
+    },
+    {
+      "path": "assets/readme/catalog-management.jpg",
+      "sha256": "4e9553146635c6e0a1b7c19b9aef72f0ba1eeaabe905d1f7f641cb900cc5c089",
+      "state": "Imported two items and built 26; preview page 21-26 before explicit publication; credential input excluded",
+      "treatment": "Cropped directly from the live browser; no fabricated or retouched UI"
+    }
+  ],
+  "browser_observations": [
+    "sample session automatically returned popular recommendations",
+    "explicit dense selection returned content-baseline recommendations",
+    "new-items.csv imported two synthetic items; complete 26-item build previewed and explicitly published",
+    "new active bundle returned demo-new-coop before feedback",
+    "favorite advanced session version to 1; hide advanced it to 2",
+    "subsequent recommendations excluded the hidden item before and after reload; reload retained favorite and history version",
+    "undo-hide control was not retained across reload; no claim of persistent undo UI"
+  ],
+  "observed_failure_and_recovery": "Clearing the temporary admin input before an asynchronous preview-page query completed caused an invalid-token response. Restoring this run token and re-querying recovered. No application code changed.",
+  "cleanup": {
+    "process_exited": true,
+    "port_closed": true,
+    "schema_absent_independently_checked": true,
+    "worker_drained": true,
+    "temporary_token_removed": true
+  },
+  "scope": "README browser walkthrough and screenshots only; no new R06 load benchmark, clean-machine acceptance or SLA claim"
+}
