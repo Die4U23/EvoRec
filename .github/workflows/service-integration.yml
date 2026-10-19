@@ -61,7 +61,7 @@ jobs:
             tests/test_r06_serving.py \
             tests/test_r06_bundle.py \
             tests/test_r06_catalog_preparation.py \
-            tests/test_r06_async.py \
+            tests/test_r06_async.py tests/test_demo_rank_async.py \
             tests/test_r06_online.py \
             tests/test_r06_catalog_digest.py \
             tests/test_r06_capture_equivalence.py \
