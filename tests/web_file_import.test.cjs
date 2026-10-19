@@ -1370,3 +1370,76 @@ test('lost publish response is reconciled from durable status', async () => {
   assert.match(element('message').textContent, /状态已核实/);
   assert.equal(element('publish-catalog').disabled, true);
 });
+
+for (const outcome of ['success', 'failure']) {
+  test(`late reset A ${outcome} cannot replace created session B or mix its token`, async () => {
+    const storage = new Map(), posts = [];
+    let release, reject;
+    const nextSession = {...recommendationSession, session_id: 'session-B', access_token: 'token-B'};
+    const p = page([], null, [], null, (url, options) => {
+      if (url === '/api/v1/sessions/session-1/reset') {
+        assert.equal(options.headers['X-Session-Token'], 'token-1');
+        return new Promise((resolve, fail) => { release = resolve; reject = fail; });
+      }
+      assert.equal(url, '/api/v1/sessions');
+      return ok(nextSession);
+    }, storage, (url, options) => { posts.push(options); return recommendationOk; });
+    await p.ready; p.setSession({...recommendationSession});
+    p.element('count').value = '3'; p.element('strategy').value = 'popular';
+    const reset = p.element('reset-session').onclick(); await settle();
+    await p.element('new-session').onclick();
+    const saved = storage.get('evorec.comparison');
+    assert.equal(JSON.parse(saved).session.session_id, 'session-B');
+    if (outcome === 'success') {
+      const fresh = {...recommendationSession, epoch: 1, history_version: 3};
+      delete fresh.access_token;
+      release(ok(fresh));
+    } else reject(new Error('old reset failed'));
+    await reset;
+    assert.equal(storage.get('evorec.comparison'), saved);
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0].headers['X-Session-Token'], 'token-B');
+    assert.equal(JSON.parse(posts[0].body).session_id, 'session-B');
+    assert.equal(p.element('message').textContent, '');
+  });
+}
+
+test('two reset responses in reverse order cannot roll the session epoch backwards', async () => {
+  const storage = new Map(), releases = [], posts = [];
+  const p = page([], null, [], null, () => new Promise(resolve => releases.push(resolve)),
+    storage, (url, options) => { posts.push(options); return recommendationOk; });
+  await p.ready; p.setSession({...recommendationSession});
+  p.element('count').value = '3'; p.element('strategy').value = 'popular';
+  const first = p.element('reset-session').onclick(); await settle();
+  const second = p.element('reset-session').onclick(); await settle();
+  assert.equal(releases.length, 2);
+  const fresh = epoch => {
+    const value = {...recommendationSession, epoch, history_version: 2 + epoch};
+    delete value.access_token; return ok(value);
+  };
+  releases[1](fresh(2)); await second;
+  const saved = storage.get('evorec.comparison');
+  releases[0](fresh(1)); await first;
+  assert.equal(storage.get('evorec.comparison'), saved);
+  assert.equal(JSON.parse(saved).session.epoch, 2);
+  assert.equal(JSON.parse(saved).session.access_token, 'token-1');
+  assert.equal(posts.length, 1);
+  assert.equal(JSON.parse(posts[0].body).expected_history_version, 4);
+});
+
+test('two session creations in reverse order keep the newest selected session', async () => {
+  const storage = new Map(), releases = [], posts = [];
+  const p = page([], null, [], null, () => new Promise(resolve => releases.push(resolve)),
+    storage, (url, options) => { posts.push(options); return recommendationOk; });
+  await p.ready;
+  p.element('count').value = '3'; p.element('strategy').value = 'popular';
+  const first = p.element('new-session').onclick(); await settle();
+  const second = p.element('new-session').onclick(); await settle();
+  releases[1](ok({...recommendationSession, session_id: 'session-B', access_token: 'token-B'}));
+  await second;
+  const saved = storage.get('evorec.comparison');
+  releases[0](ok({...recommendationSession})); await first;
+  assert.equal(storage.get('evorec.comparison'), saved);
+  assert.equal(JSON.parse(saved).session.session_id, 'session-B');
+  assert.equal(posts.length, 1);
+});
