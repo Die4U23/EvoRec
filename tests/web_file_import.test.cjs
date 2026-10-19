@@ -1443,3 +1443,58 @@ test('two session creations in reverse order keep the newest selected session', 
   assert.equal(JSON.parse(saved).session.session_id, 'session-B');
   assert.equal(posts.length, 1);
 });
+
+const historyConflict = () => ({ok: false, status: 409, json: async () => ({error: {
+  code: 'history_conflict', message: 'stale history', retryable: false,
+}})});
+
+test('history conflict clears the rejected key, syncs history, and waits for another click', async () => {
+  const storage = new Map(), posts = [];
+  const p = page([], null, [], null, (url) => {
+    assert.equal(url, '/api/v1/sessions/session-1');
+    return ok({...recommendationSession, history_version: 3});
+  }, storage, (url, options) => {
+    posts.push(options); return posts.length === 1 ? historyConflict() : recommendationOk;
+  });
+  await p.ready; p.setSession({...recommendationSession});
+  p.element('count').value = '3'; p.element('strategy').value = 'popular';
+  await p.element('recommend').onclick();
+  assert.equal(posts.length, 1, 'must not automatically submit a new recommendation');
+  const saved = JSON.parse(storage.get('evorec.comparison'));
+  assert.equal(saved.pendingRecommendation, null);
+  assert.equal(saved.session.history_version, 3);
+  assert.match(p.element('message').textContent, /历史版本已更新.*再次点击/);
+  await p.element('recommend').onclick();
+  assert.equal(posts.length, 2);
+  assert.notEqual(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
+  assert.equal(JSON.parse(posts[1].body).expected_history_version, 3);
+});
+
+test('a rapid click during history recovery cannot submit another stale snapshot', async () => {
+  const storage = new Map(), posts = [];
+  let release;
+  const p = page([], null, [], null, () => new Promise(resolve => { release = resolve; }),
+    storage, (url, options) => { posts.push(options); return historyConflict(); });
+  await p.ready; p.setSession({...recommendationSession});
+  p.element('count').value = '3'; p.element('strategy').value = 'popular';
+  const first = p.element('recommend').onclick(); await settle();
+  await p.element('recommend').onclick();
+  assert.equal(posts.length, 1);
+  assert.match(p.element('message').textContent, /正在同步/);
+  release(ok({...recommendationSession, history_version: 3}));
+  await first;
+  assert.equal(JSON.parse(storage.get('evorec.comparison')).pendingRecommendation, null);
+  assert.equal(JSON.parse(storage.get('evorec.comparison')).session.history_version, 3);
+});
+
+test('failed history synchronization still removes the definitively rejected retry key', async () => {
+  const storage = new Map(), posts = [];
+  const p = page([], null, [], null, () => { throw new Error('history sync unavailable'); },
+    storage, (url, options) => { posts.push(options); return historyConflict(); });
+  await p.ready; p.setSession({...recommendationSession});
+  p.element('count').value = '3'; p.element('strategy').value = 'popular';
+  await p.element('recommend').onclick();
+  assert.equal(posts.length, 1);
+  assert.equal(JSON.parse(storage.get('evorec.comparison')).pendingRecommendation, null);
+  assert.match(p.element('message').textContent, /history sync unavailable/);
+});
