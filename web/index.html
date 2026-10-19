@@ -139,6 +139,7 @@
     let session = null, latest = null, catalog = new Map(), pendingRecommendation = null;
     let recommendationCards = [];
     let activeRecommendation = null;
+    let recommendationHistorySync = null;
     let sessionGeneration = 0;
     let pendingVersionOperation = null, switchingVersion = false, publishingCatalog = false;
     const bundleUUID = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
@@ -473,7 +474,7 @@
       el('comparison').replaceChildren();
     }
     function clearResults() {
-      latest = null; pendingRecommendation = null; pendingFeedback.clear(); hiddenUndo.clear();
+      latest = null; pendingRecommendation = null; recommendationHistorySync = null; pendingFeedback.clear(); hiddenUndo.clear();
       recommendationCards = [];
       el('recommendations').replaceChildren(); el('undo').replaceChildren(); el('detail').replaceChildren();
       el('comparison').replaceChildren();
@@ -587,6 +588,8 @@
     }
     async function recommend() {
       if (!session) throw new Error('请先开始体验');
+      if (recommendationHistorySync)
+        throw Object.assign(new Error('正在同步最新历史，请完成后再次点击推荐'), {retryable: false});
       if (!pendingRecommendation) {
         const k = Number(el('count').value);
         if (!Number.isInteger(k) || k < 1 || k > 50)
@@ -597,6 +600,7 @@
         };
       }
       const pending = pendingRecommendation, currentSession = session.session_id, currentEpoch = session.epoch;
+      const currentGeneration = sessionGeneration;
       // Start/reset can also request automatically. Coalesce only the exact
       // active attempt; failures still release it for same-key manual retry.
       if (activeRecommendation === pending) return;
@@ -630,6 +634,23 @@
       } catch (error) {
         if (session?.session_id !== currentSession || pendingRecommendation !== pending) return;
         list.replaceChildren();
+        if (error.code === 'history_conflict') {
+          // Admission was explicitly rejected: this is not an unknown outcome.
+          // Forget only this stale attempt and synchronize before a fresh click.
+          const recovery = {};
+          recommendationHistorySync = recovery;
+          pendingRecommendation = null; rememberComparison();
+          try {
+            await syncSession();
+          } catch (syncError) {
+            if (session?.session_id !== currentSession || sessionGeneration !== currentGeneration) return;
+            throw syncError;
+          } finally {
+            if (recommendationHistorySync === recovery) recommendationHistorySync = null;
+          }
+          if (session?.session_id !== currentSession || sessionGeneration !== currentGeneration) return;
+          throw Object.assign(new Error('历史版本已更新，本次请求未执行；请再次点击，用新编号发起推荐'), {retryable: false});
+        }
         if (['recommendation_interrupted', 'recommendation_idempotency_conflict'].includes(error.code)) {
           pendingRecommendation = null; rememberComparison();
           throw Object.assign(new Error('上次请求已终止或编号冲突；再次点击将用新编号发起新请求，不是旧结果重放'), {retryable: false});
