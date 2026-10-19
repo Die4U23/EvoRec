@@ -84,10 +84,16 @@ class PostgresDemoBackend:
         self.r06_content_backend = backend
         self.r06_ranker_backend = ranker_backend
         self.r06_queue = R06CPUQueue() if self.r06_enabled else None
+        # A separate bounded pool for the controlled demo path, with the same
+        # cross-loop admission and cancellation-drain semantics as R06.
+        self.demo_queue = R06CPUQueue()
 
     async def aclose(self):
-        if self.r06_queue is not None:
-            await self.r06_queue.aclose()
+        try:
+            await self.demo_queue.aclose()
+        finally:
+            if self.r06_queue is not None:
+                await self.r06_queue.aclose()
 
     def _capture_context(self, connection, request_id, session, control):
         bundle_id = control["active_bundle_id"]
@@ -724,8 +730,6 @@ class PostgresDemoBackend:
         )
 
     async def rank(self, context: RequestContext, command: RecommendationCommand) -> RankedBatch:
-        actual = command.strategy
-        fallback = None
         runtime = self.runtimes.get(str(context.catalog.bundle_id))
         if context.model is not None or isinstance(runtime, ManagedR06Runtime):
             if (not self.r06_enabled or self.r06_queue is None or not isinstance(runtime, ManagedR06Runtime)):
@@ -753,13 +757,29 @@ class PostgresDemoBackend:
                     None if command.strategy == Strategy.POPULAR else "strategy_not_loaded_in_r06",
                     runtime.bundle.model_version)
             return await self.r06_queue.run(baseline)
+        # Capture the immutable request/runtime before enqueueing; activation may
+        # replace self.runtimes while this admitted work is waiting for capacity.
+        try:
+            return await self.demo_queue.run(lambda: self._rank_demo(context, command, runtime))
+        except ManagementError as error:
+            if error.code in {"r06_queue_closed", "r06_queue_full", "r06_queue_unavailable"}:
+                raise ManagementError(
+                    error.code.replace("r06_queue", "demo_cpu_queue", 1),
+                    "controlled demo ranking capacity is unavailable", error.status_code,
+                ) from error
+            raise
+
+    @staticmethod
+    def _rank_demo(context, command, runtime):
+        actual = command.strategy
+        fallback = None
         if (runtime is not None and runtime.bundle_id == str(context.catalog.bundle_id)
                 and command.strategy == Strategy.DENSE):
             candidate_ids = tuple(sorted(context.catalog.eligible_items))[:runtime.ranking_budget]
             limited = len(context.catalog.eligible_items) > runtime.ranking_budget
             if candidate_ids:
                 history = tuple(item for item in context.session.history
-                                if item in runtime.item_ids)
+                                if item in runtime._item_indices)
                 scores = runtime.score(history, candidate_ids)
                 candidates = tuple(
                     ScoredCandidate(item_id, score, "controlled-cpu-dot-product")
