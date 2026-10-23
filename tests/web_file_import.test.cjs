@@ -84,7 +84,8 @@ function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFet
   vm.runInNewContext(script, context, {filename: 'web/index.html'});
   return {element, requests, tick: async () => { if (interval) await interval(); },
     ready: vm.runInNewContext('startup', context),
-    setSession: value => { context.__sessionForTest = value; vm.runInNewContext('session = __sessionForTest', context); },
+    setSession: value => { context.__sessionForTest = JSON.parse(JSON.stringify(value)); vm.runInNewContext('session = __sessionForTest', context); },
+    getSession: () => vm.runInNewContext('session', context),
     clearResults: () => vm.runInNewContext('clearResults()', context)};
 }
 
@@ -323,6 +324,145 @@ async function startMetadata(p) {
 }
 const cards = p => p.element('recommendations').children.filter(row => row.tagName === 'ARTICLE');
 const settle = () => new Promise(resolve => setImmediate(resolve));
+
+function feedbackPage(storage = new Map(), state = {...recommendationSession, hidden_items: [], favorite_items: []}) {
+  let request = 0;
+  const posts = [];
+  const p = page([], null, [], null, () => ok({...state}), storage,
+    () => ok({...recItems(++request === 1 ? ['hidden'] : ['other']), request_id: `source-${request}`}), true,
+    url => ok({item_id: url.split('/').at(-1), title: 'Fixture item'}),
+    (_url, options) => {
+      const payload = JSON.parse(options.body); posts.push(payload);
+      state.hidden_items = payload.desired_state ? [payload.item_id] : [];
+      state.history_version++;
+      return ok({history_version: state.history_version});
+    });
+  return Object.assign(p, {state, posts, storage});
+}
+
+test('undo survives another recommendation and sends feedback against the original source', async () => {
+  const p = feedbackPage(); await startMetadata(p);
+  await cards(p)[0].children[5].onclick();
+  await p.element('recommend').onclick();
+  assert.equal(p.element('undo').children.length, 1);
+  await p.element('undo').children[0].onclick();
+  assert.equal(p.posts.at(-1).request_id, 'source-1');
+  assert.deepEqual(cards(p).map(row => row.children[2].textContent.split(' · ').at(-1)), ['other']);
+  assert.equal(p.element('undo').children.length, 0);
+});
+
+test('reload restores undo without replaying feedback or fabricating a recommendation', async () => {
+  const p = feedbackPage(); await startMetadata(p);
+  await cards(p)[0].children[5].onclick();
+  const reloaded = feedbackPage(p.storage, p.state); await reloaded.ready;
+  assert.equal(reloaded.posts.length, 0);
+  assert.equal(reloaded.element('undo').children.length, 1);
+  assert.match(reloaded.element('undo').children[0].textContent, /Fixture item/);
+  await reloaded.element('undo').children[0].onclick();
+  assert.equal(reloaded.posts[0].request_id, 'source-1');
+  assert.equal(reloaded.posts[0].desired_state, false);
+  assert.equal(cards(reloaded).length, 0);
+});
+
+for (const change of ['session', 'epoch']) {
+  test(`late feedback after ${change} cannot mutate session state or display old undo`, async () => {
+    let complete;
+    const p = metadataPage(['hidden'], () => ok({item_id: 'hidden'}), [],
+      () => ok(recommendationSession), null, () => new Promise(resolve => { complete = resolve; }));
+    await startMetadata(p);
+    const pending = cards(p)[0].children[5].onclick(); await settle();
+    const newer = {...recommendationSession, session_id: change === 'session' ? 'new-session' : 'session-1',
+      epoch: change === 'epoch' ? 1 : 0, history_version: 99};
+    p.setSession(newer); p.clearResults(); p.element('message').textContent = 'new page';
+    complete(ok({history_version: 3})); await pending;
+    assert.equal(p.getSession().history_version, 99);
+    assert.equal(p.element('undo').children.length, 0);
+    assert.equal(p.element('message').textContent, 'new page');
+    assert.equal(p.requests.filter(r => r.url.startsWith('/api/v1/sessions/')).length, 0);
+  });
+}
+
+test('detail lookup superseded by another recommendation never sends feedback using its ID', async () => {
+  let complete, lookups = 0, recommendations = 0;
+  const p = metadataPage(['old'], () => ++lookups === 1 ? ok({item_id: 'old'}) :
+    new Promise(resolve => { complete = resolve; }), [], () => ok(recommendationSession),
+    () => ok({...recItems(++recommendations === 1 ? ['old'] : []), request_id: `source-${recommendations}`}),
+    () => ok({history_version: 3}));
+  await startMetadata(p);
+  const pending = cards(p)[0].children[3].onclick(); await settle();
+  await p.element('recommend').onclick();
+  complete(ok({item_id: 'old', title: 'Old detail'})); await pending;
+  assert.equal(p.requests.filter(r => r.url === '/api/v1/feedback').length, 0);
+  assert.equal(p.element('detail').children.length, 0);
+});
+
+for (const change of ['reset', 'unhidden', 'other-session', 'malformed']) {
+  test(`reload discards undo when ${change} invalidates the saved entry`, async () => {
+    const p = feedbackPage(); await startMetadata(p);
+    await cards(p)[0].children[5].onclick();
+    if (change === 'reset') { p.state.epoch++; p.state.hidden_items = []; }
+    if (change === 'unhidden') p.state.hidden_items = [];
+    if (change === 'other-session' || change === 'malformed') {
+      const saved = JSON.parse(p.storage.get('evorec.comparison'));
+      if (change === 'other-session') saved.hiddenUndo[0].source.session_id = 'other-session';
+      else saved.hiddenUndo = [null, {}, {source: null}, {source: {request_id: 3}, item: {item_id: false}}];
+      p.storage.set('evorec.comparison', JSON.stringify(saved));
+    }
+    const reloaded = feedbackPage(p.storage, p.state); await reloaded.ready;
+    assert.equal(reloaded.element('undo').children.length, 0);
+    assert.equal(reloaded.posts.length, 0);
+    assert.deepEqual(JSON.parse(p.storage.get('evorec.comparison')).hiddenUndo, []);
+  });
+}
+
+test('feedback retry after state-refresh failure retains the same event and original source', async () => {
+  let reads = 0;
+  const p = metadataPage(['item'], () => ok({item_id: 'item'}), [], () => {
+    if (++reads === 1) throw new Error('state read unavailable');
+    return ok({...recommendationSession, history_version: 3});
+  }, null, () => ok({history_version: 3}));
+  await startMetadata(p);
+  const detail = cards(p)[0].children[3];
+  await detail.onclick(); await detail.onclick();
+  const payloads = p.requests.filter(r => r.url === '/api/v1/feedback').map(r => r.options.body);
+  assert.equal(payloads.length, 2);
+  assert.equal(payloads[0], payloads[1]);
+});
+
+test('late session refresh cannot roll back a reset completed while feedback was waiting', async () => {
+  let complete;
+  const p = metadataPage(['item'], () => ok({item_id: 'item'}), [],
+    () => new Promise(resolve => { complete = resolve; }), null, () => ok({history_version: 3}));
+  await startMetadata(p);
+  const pending = cards(p)[0].children[5].onclick(); await settle();
+  p.setSession({...recommendationSession, epoch: 1, history_version: 40}); p.clearResults();
+  p.element('message').textContent = 'reset complete';
+  complete(ok({...recommendationSession, history_version: 3})); await pending;
+  assert.equal(p.getSession().epoch, 1);
+  assert.equal(p.getSession().history_version, 40);
+  assert.equal(p.element('undo').children.length, 0);
+  assert.equal(p.element('message').textContent, 'reset complete');
+});
+
+test('stale feedback error after another recommendation cannot replace its status', async () => {
+  let reject;
+  const p = metadataPage(['item'], () => ok({item_id: 'item'}), [],
+    () => ok(recommendationSession), null, () => new Promise((_resolve, fail) => { reject = fail; }));
+  await startMetadata(p);
+  const pending = cards(p)[0].children[4].onclick(); await settle();
+  await p.element('recommend').onclick(); p.element('message').textContent = 'new result';
+  reject(new Error('old error')); await pending;
+  assert.equal(p.element('message').textContent, 'new result');
+});
+
+test('rapid undo clicks send one feedback and restore at most one original card', async () => {
+  const p = feedbackPage(); await startMetadata(p);
+  await cards(p)[0].children[5].onclick();
+  const button = p.element('undo').children[0];
+  await Promise.all([button.onclick(), button.onclick()]);
+  assert.equal(p.posts.length, 2);
+  assert.equal(cards(p).length, 1);
+});
 
 function previewPage(mutation) {
   const state = {build_id: 'build-1', batch_id: 'batch-1', status: 'ready',
@@ -637,6 +777,127 @@ test('start and reset automatic requests coalesce with a rapid manual click', as
   }
   assert.equal(posts.length, 2);
   assert.notEqual(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
+});
+
+for (const first of ['new-session', 'reset-session']) {
+  for (const second of ['new-session', 'reset-session']) {
+    test(`session transition serializes ${first} then ${second} before the server replies`, async () => {
+      let complete;
+      const p = page([], null, [], null, () => new Promise(resolve => { complete = resolve; }),
+        new Map(), () => recommendationOk);
+      await p.ready; p.setSession(recommendationSession);
+      p.element('count').value = '10'; p.element('profile').value = 'new';
+      const pending = p.element(first).onclick(); await settle();
+      const duplicate = p.element(second).onclick();
+      await settle();
+      const writes = p.requests.filter(r => r.url.startsWith('/api/v1/sessions') && r.options.method === 'POST');
+      assert.equal(writes.length, 1);
+      for (const id of ['new-session', 'reset-session', 'recommend', 'profile']) assert.equal(p.element(id).disabled, true);
+      await p.element('recommend').onclick();
+      assert.equal(p.requests.filter(r => r.url === '/api/v1/recommendations').length, 0);
+      complete(ok({...recommendationSession, epoch: first === 'reset-session' ? 1 : 0, history_version: 3}));
+      await Promise.all([pending, duplicate]);
+      assert.equal(p.requests.filter(r => r.url === '/api/v1/recommendations').length, 1);
+      for (const id of ['new-session', 'reset-session', 'recommend', 'profile']) assert.equal(p.element(id).disabled, false);
+    });
+  }
+}
+
+for (const outcome of ['success', 'failure']) {
+  test(`old recommendation ${outcome} is ignored while a session transition awaits its response`, async () => {
+    let completeReset, completeOld, failOld;
+    const p = page([], null, [], null, () => new Promise(resolve => { completeReset = resolve; }), new Map(),
+      () => new Promise((resolve, reject) => { completeOld = resolve; failOld = reject; }));
+    await p.ready; p.setSession(recommendationSession); p.element('count').value = '10';
+    const old = p.element('recommend').onclick(); await settle();
+    const reset = p.element('reset-session').onclick(); await settle();
+    const before = p.element('recommendations').children.slice();
+    p.element('message').textContent = 'switch in progress';
+    if (outcome === 'success') completeOld(ok({...recItems([]), bundle_id: 'obsolete'}));
+    else failOld(new Error('obsolete request failure'));
+    await old;
+    assert.deepEqual(p.element('recommendations').children, before);
+    assert.equal(p.element('message').textContent, 'switch in progress');
+    completeReset({ok: false, status: 503, json: async () => ({error: {message: 'reset unavailable'}})});
+    await reset;
+    assert.equal(p.element('new-session').disabled, false);
+  });
+}
+
+test('session transition ignores an old feedback reply before the reset response arrives', async () => {
+  let completeReset, completeFeedback;
+  const p = metadataPage(['item'], () => ok({item_id: 'item'}), [],
+    () => new Promise(resolve => { completeReset = resolve; }), null,
+    () => new Promise(resolve => { completeFeedback = resolve; }));
+  await startMetadata(p);
+  const hidden = cards(p)[0].children[5].onclick(); await settle();
+  const reset = p.element('reset-session').onclick(); await settle();
+  completeFeedback(ok({history_version: 3}));
+  // An obsolete feedback result must not initiate a session GET during reset.
+  await settle();
+  assert.equal(p.requests.filter(r => r.url.startsWith('/api/v1/sessions/') && !r.options.method).length, 0);
+  await hidden;
+  assert.equal(p.getSession().history_version, 2);
+  assert.equal(p.element('undo').children.length, 0);
+  completeReset(ok({...recommendationSession, epoch: 1, history_version: 4})); await reset;
+});
+
+test('failed session transition unlocks controls and preserves the pending recommendation key', async () => {
+  let completeOld;
+  const posts = [], storage = new Map();
+  const p = page([], null, [], null, () => { throw new Error('reset reply lost'); }, storage,
+    (_url, options) => {
+      posts.push(options);
+      return posts.length === 1 ? new Promise(resolve => { completeOld = resolve; }) : recommendationOk;
+    });
+  await p.ready; p.setSession(recommendationSession); p.element('count').value = '10';
+  const old = p.element('recommend').onclick(); await settle();
+  await p.element('reset-session').onclick();
+  const failure = p.element('message').textContent;
+  assert.match(failure, /reset reply lost/);
+  for (const id of ['new-session', 'reset-session', 'profile', 'recommend']) assert.equal(p.element(id).disabled, false);
+  completeOld(ok({...recItems([]), bundle_id: 'obsolete'})); await old;
+  assert.equal(p.element('message').textContent, failure);
+  assert.equal(JSON.parse(storage.get('evorec.comparison')).pendingRecommendation.key, posts[0].headers['Idempotency-Key']);
+  await p.element('recommend').onclick();
+  assert.equal(posts.length, 2);
+  assert.equal(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
+  assert.equal(posts[0].body, posts[1].body);
+});
+
+test('failed session transition keeps a feedback event whose state read was superseded', async () => {
+  let completeRead, reads = 0;
+  const p = metadataPage(['item'], () => ok({item_id: 'item'}), [], (url, options) => {
+    if (options.method === 'POST') throw new Error('reset unavailable');
+    return ++reads === 1 ? new Promise(resolve => { completeRead = resolve; }) :
+      ok({...recommendationSession, history_version: 3});
+  }, null, () => ok({history_version: 3}));
+  await startMetadata(p);
+  const detail = cards(p)[0].children[3];
+  const pending = detail.onclick(); await settle();
+  await p.element('reset-session').onclick();
+  completeRead(ok({...recommendationSession, history_version: 3})); await pending;
+  assert.equal(p.element('detail').children.length, 0);
+  await detail.onclick();
+  const posts = p.requests.filter(r => r.url === '/api/v1/feedback');
+  assert.equal(posts.length, 2);
+  assert.equal(posts[0].options.body, posts[1].options.body);
+  assert.equal(p.element('detail').children.length, 2);
+});
+
+test('session transition blocks new card feedback until it finishes', async () => {
+  let completeReset;
+  const p = metadataPage(['item'], () => ok({item_id: 'item'}), [],
+    () => new Promise(resolve => { completeReset = resolve; }), null, () => ok({history_version: 3}));
+  await startMetadata(p);
+  const row = cards(p)[0];
+  const pending = p.element('reset-session').onclick(); await settle();
+  const requests = p.requests.length;
+  const actions = [row.children[3].onclick(), row.children[4].onclick(), row.children[5].onclick()];
+  await settle();
+  assert.equal(p.requests.length, requests);
+  completeReset(ok({...recommendationSession, epoch: 1, history_version: 3}));
+  await Promise.all([pending, ...actions]);
 });
 
 for (const outcome of ['success', 'failure']) {
@@ -1372,7 +1633,7 @@ test('lost publish response is reconciled from durable status', async () => {
 });
 
 for (const outcome of ['success', 'failure']) {
-  test(`late reset A ${outcome} cannot replace created session B or mix its token`, async () => {
+  test(`reset A ${outcome} releases the transition before creating B with its own token`, async () => {
     const storage = new Map(), posts = [];
     let release, reject;
     const nextSession = {...recommendationSession, session_id: 'session-B', access_token: 'token-B'};
@@ -1388,23 +1649,29 @@ for (const outcome of ['success', 'failure']) {
     p.element('count').value = '3'; p.element('strategy').value = 'popular';
     const reset = p.element('reset-session').onclick(); await settle();
     await p.element('new-session').onclick();
-    const saved = storage.get('evorec.comparison');
-    assert.equal(JSON.parse(saved).session.session_id, 'session-B');
+    assert.equal(p.getSession().session_id, 'session-1');
+    assert.equal(p.requests.filter(r => r.url === '/api/v1/sessions').length, 0);
     if (outcome === 'success') {
       const fresh = {...recommendationSession, epoch: 1, history_version: 3};
       delete fresh.access_token;
       release(ok(fresh));
     } else reject(new Error('old reset failed'));
     await reset;
-    assert.equal(storage.get('evorec.comparison'), saved);
-    assert.equal(posts.length, 1);
-    assert.equal(posts[0].headers['X-Session-Token'], 'token-B');
-    assert.equal(JSON.parse(posts[0].body).session_id, 'session-B');
+    assert.equal(p.getSession().access_token, 'token-1');
+    if (outcome === 'success') {
+      assert.equal(posts.length, 1);
+      assert.equal(posts[0].headers['X-Session-Token'], 'token-1');
+    } else assert.equal(posts.length, 0);
+    await p.element('new-session').onclick();
+    assert.equal(JSON.parse(storage.get('evorec.comparison')).session.session_id, 'session-B');
+    assert.equal(posts.length, outcome === 'success' ? 2 : 1);
+    assert.equal(posts.at(-1).headers['X-Session-Token'], 'token-B');
+    assert.equal(JSON.parse(posts.at(-1).body).session_id, 'session-B');
     assert.equal(p.element('message').textContent, '');
   });
 }
 
-test('two reset responses in reverse order cannot roll the session epoch backwards', async () => {
+test('overlapping reset is blocked and a later reset advances the epoch with the original token', async () => {
   const storage = new Map(), releases = [], posts = [];
   const p = page([], null, [], null, () => new Promise(resolve => releases.push(resolve)),
     storage, (url, options) => { posts.push(options); return recommendationOk; });
@@ -1412,22 +1679,25 @@ test('two reset responses in reverse order cannot roll the session epoch backwar
   p.element('count').value = '3'; p.element('strategy').value = 'popular';
   const first = p.element('reset-session').onclick(); await settle();
   const second = p.element('reset-session').onclick(); await settle();
-  assert.equal(releases.length, 2);
+  assert.equal(releases.length, 1);
   const fresh = epoch => {
     const value = {...recommendationSession, epoch, history_version: 2 + epoch};
     delete value.access_token; return ok(value);
   };
-  releases[1](fresh(2)); await second;
-  const saved = storage.get('evorec.comparison');
   releases[0](fresh(1)); await first;
-  assert.equal(storage.get('evorec.comparison'), saved);
+  await second;
+  assert.equal(JSON.parse(storage.get('evorec.comparison')).session.epoch, 1);
+  const later = p.element('reset-session').onclick(); await settle();
+  assert.equal(releases.length, 2);
+  releases[1](fresh(2)); await later;
+  const saved = storage.get('evorec.comparison');
   assert.equal(JSON.parse(saved).session.epoch, 2);
   assert.equal(JSON.parse(saved).session.access_token, 'token-1');
-  assert.equal(posts.length, 1);
-  assert.equal(JSON.parse(posts[0].body).expected_history_version, 4);
+  assert.equal(posts.length, 2);
+  assert.deepEqual(posts.map(post => JSON.parse(post.body).expected_history_version), [3, 4]);
 });
 
-test('two session creations in reverse order keep the newest selected session', async () => {
+test('overlapping creation is blocked and the next completed transition selects the new session', async () => {
   const storage = new Map(), releases = [], posts = [];
   const p = page([], null, [], null, () => new Promise(resolve => releases.push(resolve)),
     storage, (url, options) => { posts.push(options); return recommendationOk; });
@@ -1435,18 +1705,52 @@ test('two session creations in reverse order keep the newest selected session', 
   p.element('count').value = '3'; p.element('strategy').value = 'popular';
   const first = p.element('new-session').onclick(); await settle();
   const second = p.element('new-session').onclick(); await settle();
-  releases[1](ok({...recommendationSession, session_id: 'session-B', access_token: 'token-B'}));
-  await second;
-  const saved = storage.get('evorec.comparison');
+  assert.equal(releases.length, 1);
   releases[0](ok({...recommendationSession})); await first;
-  assert.equal(storage.get('evorec.comparison'), saved);
+  await second;
+  assert.equal(JSON.parse(storage.get('evorec.comparison')).session.session_id, 'session-1');
+  const later = p.element('new-session').onclick(); await settle();
+  assert.equal(releases.length, 2);
+  releases[1](ok({...recommendationSession, session_id: 'session-B', access_token: 'token-B'}));
+  await later;
+  const saved = storage.get('evorec.comparison');
   assert.equal(JSON.parse(saved).session.session_id, 'session-B');
-  assert.equal(posts.length, 1);
+  assert.equal(JSON.parse(saved).session.access_token, 'token-B');
+  assert.equal(posts.length, 2);
 });
 
 const historyConflict = () => ({ok: false, status: 409, json: async () => ({error: {
   code: 'history_conflict', message: 'stale history', retryable: false,
 }})});
+
+for (const outcome of ['success', 'failure']) {
+  test(`history recovery ${outcome} after reset cannot replace its new epoch or message`, async () => {
+    let release, reject;
+    const storage = new Map(), posts = [];
+    const resetSession = {...recommendationSession, epoch: 1, history_version: 4};
+    const p = page([], null, [], null, (_url, options) => {
+      if (options.method === 'POST') return ok(resetSession);
+      return new Promise((resolve, fail) => { release = resolve; reject = fail; });
+    }, storage, (_url, options) => {
+      posts.push(options); return posts.length === 1 ? historyConflict() : recommendationOk;
+    });
+    await p.ready; p.setSession({...recommendationSession});
+    p.element('count').value = '3'; p.element('strategy').value = 'popular';
+    const recovery = p.element('recommend').onclick(); await settle();
+    await p.element('reset-session').onclick();
+    const saved = storage.get('evorec.comparison');
+    p.element('message').textContent = 'current reset result';
+    if (outcome === 'success') release(ok({...recommendationSession, history_version: 3}));
+    else reject(new Error('obsolete history read failed'));
+    await recovery;
+    assert.equal(storage.get('evorec.comparison'), saved);
+    assert.equal(p.getSession().epoch, 1);
+    assert.equal(p.getSession().history_version, 4);
+    assert.equal(p.element('message').textContent, 'current reset result');
+    assert.equal(posts.length, 2);
+    assert.equal(JSON.parse(posts[1].body).expected_history_version, 4);
+  });
+}
 
 test('history conflict clears the rejected key, syncs history, and waits for another click', async () => {
   const storage = new Map(), posts = [];
