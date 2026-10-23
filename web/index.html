@@ -140,7 +140,7 @@
     let recommendationCards = [];
     let activeRecommendation = null;
     let recommendationHistorySync = null;
-    let sessionGeneration = 0;
+    let changingSession = false, sessionGeneration = 0;
     let pendingVersionOperation = null, switchingVersion = false, publishingCatalog = false;
     const bundleUUID = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
     let itemsOffset = 0;
@@ -153,7 +153,9 @@
     let currentBuild = null, buildPreviewOffset = 0, pendingBuildPublication = null, processingCatalog = false, buildPollTimer = null, importPollTimer = null;
     let buildPreviewGeneration = 0;
     const pendingFeedback = new Map();
+    const activeFeedback = new Set();
     const hiddenUndo = new Map();
+    const sessionMatches = source => session?.session_id === source.session_id && session.epoch === source.epoch;
     const message = value => { el('message').textContent = value; };
     function strategyExplanation(requested, actual, items) {
       const notes = [];
@@ -170,6 +172,7 @@
       try { sessionStorage.setItem('evorec.comparison', JSON.stringify({
         session, pending: pendingComparison, id: el('comparison-id').value,
         pendingJob: pendingComparisonJob, jobId: el('comparison-job-id').value, pendingRecommendation,
+        hiddenUndo: [...hiddenUndo.values()],
       })); } catch (_) { /* Comparison IDs remain available when browser storage is disabled. */ }
     }
     try {
@@ -182,6 +185,10 @@
         el('comparison-id').value = saved.id || '';
         pendingComparisonJob = saved.pendingJob || null;
         el('comparison-job-id').value = saved.jobId || '';
+        for (const entry of Array.isArray(saved.hiddenUndo) ? saved.hiddenUndo : []) {
+          if (entry?.source && sessionMatches(entry.source) && typeof entry.source.request_id === 'string' &&
+              typeof entry.item?.item_id === 'string') hiddenUndo.set(entry.item.item_id, entry);
+        }
       }
     } catch (_) { /* A new session can be created if the saved tab state is unavailable. */ }
     async function api(path, options = {}) {
@@ -467,10 +474,17 @@
       } else if (state.status === 'queued' || state.status === 'processing') startBuildPolling(buildId);
     }
     async function syncSession() {
-      const currentSession = session.session_id, generation = sessionGeneration, epoch = session.epoch;
-      const fresh = await api(`/api/v1/sessions/${currentSession}`, {headers: auth()});
-      if (generation !== sessionGeneration || session?.session_id !== currentSession || session.epoch !== epoch) return;
-      session = {...session, ...fresh}; showSession();
+      const generation = sessionGeneration;
+      const source = {session_id: session.session_id, epoch: session.epoch};
+      const fresh = await api(`/api/v1/sessions/${source.session_id}`, {headers: auth()});
+      if (generation !== sessionGeneration || !sessionMatches(source)) return;
+      if (fresh.epoch < session.epoch || (fresh.epoch === session.epoch && fresh.history_version < session.history_version)) return;
+      if (fresh.epoch !== session.epoch) clearResults();
+      session = {...session, ...fresh};
+      for (const [id, entry] of hiddenUndo) {
+        if (!sessionMatches(entry.source) || !session.hidden_items.includes(id)) hiddenUndo.delete(id);
+      }
+      showSession(); renderUndo();
       el('comparison').replaceChildren();
     }
     function clearResults() {
@@ -486,23 +500,46 @@
       el('comparison-history-page').textContent = '';
       el('comparison-previous').disabled = true; el('comparison-next').disabled = true;
     }
-    async function sendFeedback(itemId, kind, desiredState) {
-      const key = `${latest.request_id}:${itemId}:${kind}:${desiredState}`;
+    async function sendFeedback(source, itemId, kind, desiredState) {
+      if (changingSession || !sessionMatches(source)) return null;
+      const generation = sessionGeneration;
+      const isCurrent = () => generation === sessionGeneration && sessionMatches(source);
+      const key = `${source.session_id}:${source.epoch}:${source.request_id}:${itemId}:${kind}:${desiredState}`;
+      if (activeFeedback.has(key)) return null;
       let payload = pendingFeedback.get(key);
       if (!payload) {
         payload = {event_id: crypto.randomUUID(), session_id: session.session_id,
-          request_id: latest.request_id, item_id: itemId, kind,
+          request_id: source.request_id, item_id: itemId, kind,
           observed_at: new Date().toISOString()};
         if (desiredState !== undefined) payload.desired_state = desiredState;
         pendingFeedback.set(key, payload);
       }
-      const result = await api('/api/v1/feedback', {method: 'POST', headers: auth(), body: JSON.stringify(payload)});
-      pendingFeedback.delete(key);
-      session.history_version = result.history_version;
-      await syncSession();
-      return result;
+      activeFeedback.add(key);
+      try {
+        const result = await api('/api/v1/feedback', {method: 'POST', headers: auth(), body: JSON.stringify(payload)});
+        if (!isCurrent()) return null;
+        session.history_version = Math.max(session.history_version, result.history_version);
+        await syncSession();
+        if (!isCurrent()) return null;
+        pendingFeedback.delete(key);
+        return result;
+      } catch (error) {
+        if (!isCurrent()) return null;
+        throw error;
+      } finally { activeFeedback.delete(key); }
     }
     function card(item) {
+      const recommendation = latest;
+      const source = {request_id: recommendation.request_id, session_id: session.session_id, epoch: session.epoch};
+      const isCurrent = () => !changingSession && sessionMatches(source) && latest === recommendation && pendingRecommendation === null;
+      const runCard = action => {
+        if (!isCurrent()) return;
+        const generation = sessionGeneration;
+        const current = () => generation === sessionGeneration && isCurrent();
+        return run(async () => {
+          try { await action(current); } catch (error) { if (current()) throw error; }
+        });
+      };
       const row = document.createElement('article'); row.className = 'item';
       const picture = document.createElement('div');
       const title = document.createElement('strong');
@@ -518,9 +555,9 @@
       }
       showMetadata(catalog.get(item.item_id));
       const detail = document.createElement('button'); detail.textContent = '查看详情';
-      detail.onclick = () => run(async () => {
+      detail.onclick = () => runCard(async current => {
         const full = await api(`/api/v1/items/${encodeURIComponent(item.item_id)}`);
-        await sendFeedback(item.item_id, 'detail_view');
+        if (!current() || !await sendFeedback(source, item.item_id, 'detail_view') || !current()) return;
         const panel = el('detail'); panel.replaceChildren();
         const heading = document.createElement('h2'); heading.textContent = full.title;
         const description = document.createElement('p'); description.textContent = full.description || '暂无描述';
@@ -528,17 +565,20 @@
       });
       const favorite = document.createElement('button'); favorite.className = 'secondary';
       favorite.textContent = session.favorite_items.includes(item.item_id) ? '取消收藏' : '收藏';
-      favorite.onclick = () => run(async () => {
+      favorite.onclick = () => runCard(async current => {
         const desired = !session.favorite_items.includes(item.item_id);
-        await sendFeedback(item.item_id, 'favorite_set', desired);
+        if (!await sendFeedback(source, item.item_id, 'favorite_set', desired) || !current()) return;
         favorite.textContent = desired ? '取消收藏' : '收藏'; message(desired ? '已收藏' : '已取消收藏');
       });
       const hide = document.createElement('button'); hide.className = 'secondary'; hide.textContent = '隐藏';
-      hide.onclick = () => run(async () => {
-        await sendFeedback(item.item_id, 'hide_set', true);
+      hide.onclick = () => runCard(async current => {
+        if (!await sendFeedback(source, item.item_id, 'hide_set', true)) return;
+        hiddenUndo.set(item.item_id, {item, source, title: catalog.get(item.item_id)?.title || item.item_id});
+        rememberComparison(); renderUndo();
+        if (!current()) return;
         const index = recommendationCards.findIndex(view => view.row === row);
         if (index >= 0) recommendationCards.splice(index, 1);
-        row.remove(); hiddenUndo.set(item.item_id, item); renderUndo(); message('已隐藏，下一次推荐将排除此商品');
+        row.remove(); message('已隐藏，下一次推荐将排除此商品');
       });
       row.append(picture, title, meta, detail, favorite, hide);
       return {row, itemId: item.item_id, showMetadata};
@@ -576,17 +616,26 @@
     }
     function renderUndo() {
       const area = el('undo'); area.replaceChildren();
-      for (const [id, item] of hiddenUndo) {
-        const button = document.createElement('button'); button.textContent = `撤销隐藏 ${catalog.get(id)?.title || id}`;
-        button.onclick = () => run(async () => {
-          await sendFeedback(id, 'hide_set', false); hiddenUndo.delete(id);
-          const view = card(item); recommendationCards.push(view);
-          el('recommendations').append(view.row); renderUndo(); message('已撤销隐藏');
+      for (const [id, entry] of hiddenUndo) {
+        if (!sessionMatches(entry.source)) continue;
+        const title = catalog.get(id)?.title || (typeof entry.title === 'string' && entry.title) || id;
+        const button = document.createElement('button'); button.textContent = `撤销隐藏 ${title}`;
+        button.onclick = () => changingSession ? undefined : run(async () => {
+          if (hiddenUndo.get(id) !== entry) return;
+          if (!await sendFeedback(entry.source, id, 'hide_set', false)) return;
+          hiddenUndo.delete(id); rememberComparison(); renderUndo();
+          if (latest?.request_id === entry.source.request_id && pendingRecommendation === null &&
+              !recommendationCards.some(view => view.itemId === id)) {
+            const view = card(entry.item); recommendationCards.push(view);
+            el('recommendations').append(view.row);
+          }
+          message('已撤销隐藏；之后的推荐仍按当前历史和商品资格生成');
         });
         area.append(button);
       }
     }
     async function recommend() {
+      if (changingSession) return;
       if (!session) throw new Error('请先开始体验');
       if (recommendationHistorySync)
         throw Object.assign(new Error('正在同步最新历史，请完成后再次点击推荐'), {retryable: false});
@@ -600,7 +649,7 @@
         };
       }
       const pending = pendingRecommendation, currentSession = session.session_id, currentEpoch = session.epoch;
-      const currentGeneration = sessionGeneration;
+      const generation = sessionGeneration;
       // Start/reset can also request automatically. Coalesce only the exact
       // active attempt; failures still release it for same-key manual retry.
       if (activeRecommendation === pending) return;
@@ -612,9 +661,9 @@
         const result = await api('/api/v1/recommendations', {method: 'POST',
           headers: {...auth(), 'Idempotency-Key': pending.key},
           body: JSON.stringify(pending.payload)});
-        if (session?.session_id !== currentSession || pendingRecommendation !== pending) return;
+        if (generation !== sessionGeneration || session?.session_id !== currentSession || pendingRecommendation !== pending) return;
         latest = result;
-        pendingRecommendation = null; hiddenUndo.clear(); renderUndo();
+        pendingRecommendation = null; renderUndo();
         rememberComparison();
         list.replaceChildren();
         const note = document.createElement('p'); note.className = 'status';
@@ -629,10 +678,10 @@
           const metadataStatus = document.createElement('p'); metadataStatus.className = 'status';
           list.append(metadataStatus);
           await hydrateCards(views, () => session?.session_id === currentSession &&
-            session.epoch === currentEpoch && latest === result && pendingRecommendation === null, metadataStatus);
+            generation === sessionGeneration && session.epoch === currentEpoch && latest === result && pendingRecommendation === null, metadataStatus);
         }
       } catch (error) {
-        if (session?.session_id !== currentSession || pendingRecommendation !== pending) return;
+        if (generation !== sessionGeneration || session?.session_id !== currentSession || pendingRecommendation !== pending) return;
         list.replaceChildren();
         if (error.code === 'history_conflict') {
           // Admission was explicitly rejected: this is not an unknown outcome.
@@ -643,12 +692,12 @@
           try {
             await syncSession();
           } catch (syncError) {
-            if (session?.session_id !== currentSession || sessionGeneration !== currentGeneration) return;
+            if (session?.session_id !== currentSession || sessionGeneration !== generation) return;
             throw syncError;
           } finally {
             if (recommendationHistorySync === recovery) recommendationHistorySync = null;
           }
-          if (session?.session_id !== currentSession || sessionGeneration !== currentGeneration) return;
+          if (session?.session_id !== currentSession || sessionGeneration !== generation) return;
           throw Object.assign(new Error('历史版本已更新，本次请求未执行；请再次点击，用新编号发起推荐'), {retryable: false});
         }
         if (['recommendation_interrupted', 'recommendation_idempotency_conflict'].includes(error.code)) {
@@ -832,35 +881,35 @@
       el('comparison-job-status').textContent = '可提交一份新任务（原后台任务不会因此取消）。';
       el('cancel-comparison-job').disabled = true; rememberComparison();
     };
-    el('new-session').onclick = () => run(async () => {
-      const generation = ++sessionGeneration;
-      let fresh;
+    async function changeSession(reset) {
+      if (changingSession) return;
+      if (reset && !session) throw new Error('请先创建会话');
+      const previous = session;
+      const source = {session_id: previous?.session_id, epoch: previous?.epoch};
+      changingSession = true;
+      // Invalidate old work as soon as intent changes, before the server replies.
+      sessionGeneration++;
+      const controls = ['new-session', 'reset-session', 'profile', 'recommend'].map(el);
+      for (const control of controls) control.disabled = true;
+      message(reset ? '正在重置会话…' : '正在创建会话…');
       try {
-        fresh = await api('/api/v1/sessions', {method: 'POST', body: JSON.stringify({profile_id: el('profile').value})});
-      } catch (error) {
-        if (generation !== sessionGeneration) return;
-        throw error;
+        const fresh = reset
+          ? await api(`/api/v1/sessions/${source.session_id}/reset`, {method: 'POST', headers: {'X-Session-Token': previous.access_token}})
+          : await api('/api/v1/sessions', {method: 'POST', body: JSON.stringify({profile_id: el('profile').value})});
+        if (session?.session_id !== source.session_id || session?.epoch !== source.epoch) return;
+        session = reset ? {...previous, ...fresh} : fresh;
+        clearResults(); showSession();
+        if (!reset) await refreshItems();
+      } finally {
+        changingSession = false;
+        for (const control of controls) control.disabled = false;
       }
-      if (generation !== sessionGeneration) return;
-      session = fresh; clearResults(); showSession(); await refreshItems();
-      if (generation === sessionGeneration) await recommend();
-    });
-    el('reset-session').onclick = () => run(async () => {
-      if (!session) throw new Error('请先创建会话');
-      const original = session, generation = ++sessionGeneration;
-      let fresh;
-      try {
-        fresh = await api(`/api/v1/sessions/${original.session_id}/reset`, {
-          method: 'POST', headers: {'X-Session-Token': original.access_token},
-        });
-      } catch (error) {
-        if (generation !== sessionGeneration || session?.session_id !== original.session_id) return;
-        throw error;
-      }
-      if (generation !== sessionGeneration || session?.session_id !== original.session_id) return;
-      session = {...original, ...fresh}; clearResults(); showSession(); await recommend();
-    });
-    el('recommend').onclick = () => run(recommend);
+      message('');
+      await recommend();
+    }
+    el('new-session').onclick = () => changingSession ? undefined : run(() => changeSession(false));
+    el('reset-session').onclick = () => changingSession ? undefined : run(() => changeSession(true));
+    el('recommend').onclick = () => changingSession ? undefined : run(recommend);
     el('compare-strategies').onclick = () => run(compareStrategies);
     el('save-comparison').onclick = () => run(saveComparison);
     el('load-comparison').onclick = () => run(loadComparison);
