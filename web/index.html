@@ -147,6 +147,7 @@
     const itemsPageSize = 20;
     let pendingCatalogFile = null;
     let pendingComparison = null, savingComparison = false;
+    let comparisonGeneration = 0;
     let pendingComparisonJob = null, submittingComparisonJob = false, comparisonJobTimer = null;
     let comparisonHistoryOffset = 0;
     const comparisonHistoryPageSize = 10;
@@ -485,9 +486,11 @@
         if (!sessionMatches(entry.source) || !session.hidden_items.includes(id)) hiddenUndo.delete(id);
       }
       showSession(); renderUndo();
+      comparisonGeneration++;
       el('comparison').replaceChildren();
     }
     function clearResults() {
+      comparisonGeneration++;
       latest = null; pendingRecommendation = null; recommendationHistorySync = null; pendingFeedback.clear(); hiddenUndo.clear();
       recommendationCards = [];
       el('recommendations').replaceChildren(); el('undo').replaceChildren(); el('detail').replaceChildren();
@@ -711,9 +714,16 @@
         if (activeRecommendation === pending) activeRecommendation = null;
       }
     }
+    function beginComparisonView() {
+      const generation = ++comparisonGeneration, transition = sessionGeneration;
+      const source = {session_id: session.session_id, epoch: session.epoch};
+      return () => !changingSession && transition === sessionGeneration &&
+        generation === comparisonGeneration && sessionMatches(source);
+    }
     async function compareStrategies() {
+      if (changingSession) return;
       if (!session) throw new Error('请先开始体验');
-      const currentSession = session.session_id;
+      const isCurrent = beginComparisonView();
       const area = el('comparison'); area.replaceChildren();
       const loading = document.createElement('p'); loading.textContent = '正在以同一快照对比策略…';
       area.append(loading);
@@ -724,9 +734,9 @@
             strategies: ['popular', 'dense', 'adaptive'], k: Math.min(10, Math.max(1, Number(el('count').value) || 10)),
           }),
         });
-        if (session?.session_id === currentSession) renderComparison(result);
+        if (isCurrent()) renderComparison(result);
       } catch (error) {
-        if (session?.session_id !== currentSession) return;
+        if (!isCurrent()) return;
         area.replaceChildren(); throw error;
       }
     }
@@ -745,8 +755,10 @@
         }
     }
     async function saveComparison() {
+      if (changingSession) return;
       if (!session) throw new Error('请先开始体验');
       if (savingComparison) return;
+      const isCurrent = beginComparisonView();
       if (!pendingComparison) pendingComparison = {id: crypto.randomUUID(), payload: {
         session_id: session.session_id, expected_history_version: session.history_version,
         strategies: ['popular', 'dense', 'adaptive'],
@@ -759,22 +771,31 @@
           method: 'POST', headers: {...auth(), 'Idempotency-Key': pendingComparison.id},
           body: JSON.stringify(pendingComparison.payload),
         });
-        if (result.session_id === session?.session_id) {
+        if (isCurrent() && result.session_id === session?.session_id) {
           el('comparison-id').value = result.comparison_id; pendingComparison = null;
           rememberComparison(); renderComparison(result);
         }
+      } catch (error) {
+        if (isCurrent()) throw error;
       } finally {
         savingComparison = false; el('save-comparison').disabled = false; el('new-comparison').disabled = false;
       }
     }
     async function loadComparison() {
+      if (changingSession) return;
       if (!session) throw new Error('请先开始体验');
       const id = el('comparison-id').value.trim();
       if (!id) throw new Error('请填写对比编号');
       const currentSession = session.session_id;
-      const result = await api(`/api/v1/strategy-comparisons/${encodeURIComponent(id)}?session_id=${encodeURIComponent(currentSession)}`, {headers: auth()});
-      if (session?.session_id !== currentSession || el('comparison-id').value.trim() !== id) return;
-      pendingComparison = null; rememberComparison(); renderComparison(result);
+      const currentView = beginComparisonView();
+      const isCurrent = () => currentView() && el('comparison-id').value.trim() === id;
+      try {
+        const result = await api(`/api/v1/strategy-comparisons/${encodeURIComponent(id)}?session_id=${encodeURIComponent(currentSession)}`, {headers: auth()});
+        if (!isCurrent()) return;
+        pendingComparison = null; rememberComparison(); renderComparison(result);
+      } catch (error) {
+        if (isCurrent()) throw error;
+      }
     }
     async function refreshComparisonHistory({offset = 0} = {}) {
       if (!session) throw new Error('请先开始体验');
@@ -910,9 +931,9 @@
     el('new-session').onclick = () => changingSession ? undefined : run(() => changeSession(false));
     el('reset-session').onclick = () => changingSession ? undefined : run(() => changeSession(true));
     el('recommend').onclick = () => changingSession ? undefined : run(recommend);
-    el('compare-strategies').onclick = () => run(compareStrategies);
-    el('save-comparison').onclick = () => run(saveComparison);
-    el('load-comparison').onclick = () => run(loadComparison);
+    el('compare-strategies').onclick = () => changingSession ? undefined : run(compareStrategies);
+    el('save-comparison').onclick = () => changingSession ? undefined : run(saveComparison);
+    el('load-comparison').onclick = () => changingSession ? undefined : run(loadComparison);
     el('comparison-history').onclick = () => run(refreshComparisonHistory);
     el('comparison-previous').onclick = () => run(async () => {
       if (comparisonHistoryOffset > 0) await refreshComparisonHistory({offset: comparisonHistoryOffset - comparisonHistoryPageSize});
@@ -921,7 +942,8 @@
       if (!el('comparison-next').disabled) await refreshComparisonHistory({offset: comparisonHistoryOffset + comparisonHistoryPageSize});
     });
     el('new-comparison').onclick = () => {
-      if (savingComparison) return;
+      if (changingSession || savingComparison) return;
+      comparisonGeneration++;
       pendingComparison = null; el('comparison-id').value = '';
       el('comparison').replaceChildren(); rememberComparison(); message('可以按当前会话运行一份新对比');
     };

@@ -1069,6 +1069,154 @@ test('coalesced rapid success leaves no error and the next request gets a fresh 
   assert.notEqual(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
 });
 
+const comparisonResult = (id, persisted = false) => ({comparison_id: id, session_id: 'session-1',
+  history_version: 2, bundle_id: id, snapshot_at: '2026-10-23T00:00:00Z', persisted,
+  common_item_ids: [], strategies: []});
+
+for (const control of ['compare-strategies', 'save-comparison', 'load-comparison']) {
+  for (const outcome of ['success', 'failure']) {
+    test(`comparison isolation: ${control} ${outcome} during reset cannot alter the current view`, async () => {
+      let finish, fail, resetReply;
+      const storage = new Map();
+      const p = page([], null, [], null, (url) => url.endsWith('/reset')
+        ? new Promise(resolve => { resetReply = resolve; })
+        : new Promise((resolve, reject) => { finish = resolve; fail = reject; }), storage,
+      () => recommendationOk);
+      await p.ready; p.setSession(recommendationSession); p.element('count').value = '3';
+      p.element('comparison-id').value = 'old';
+      const old = p.element(control).onclick(); await settle();
+      const reset = p.element('reset-session').onclick(); await settle();
+      const view = p.element('comparison').children.slice();
+      const message = p.element('message').textContent;
+      const saved = storage.get('evorec.comparison');
+      if (outcome === 'success') finish(ok(comparisonResult('obsolete', true)));
+      else fail(new Error('obsolete comparison failure'));
+      await old;
+      assert.deepEqual(p.element('comparison').children, view);
+      assert.equal(p.element('message').textContent, message);
+      assert.equal(storage.get('evorec.comparison'), saved);
+      resetReply(ok({...recommendationSession, epoch: 1, history_version: 3})); await reset;
+    });
+  }
+}
+
+test('comparison isolation: a saved response after completed reset cannot restore its cleared ID', async () => {
+  let finish;
+  const storage = new Map();
+  const p = page([], null, [], null, url => url.endsWith('/reset')
+    ? ok({...recommendationSession, epoch: 1, history_version: 3})
+    : new Promise(resolve => { finish = resolve; }), storage, () => recommendationOk);
+  await p.ready; p.setSession(recommendationSession); p.element('count').value = '3';
+  const old = p.element('save-comparison').onclick(); await settle();
+  await p.element('reset-session').onclick();
+  const saved = storage.get('evorec.comparison');
+  finish(ok(comparisonResult('obsolete', true))); await old;
+  assert.equal(p.element('comparison-id').value, '');
+  assert.equal(p.element('comparison').children.length, 0);
+  assert.equal(storage.get('evorec.comparison'), saved);
+});
+
+test('comparison isolation: reverse preview replies keep the latest requested result', async () => {
+  const replies = [];
+  const p = page([], null, [], null, () => new Promise(resolve => replies.push(resolve)));
+  await p.ready; p.setSession(recommendationSession);
+  const first = p.element('compare-strategies').onclick(); await settle();
+  const second = p.element('compare-strategies').onclick(); await settle();
+  replies[1](ok(comparisonResult('newest'))); await second;
+  const view = p.element('comparison').children.slice();
+  replies[0](ok(comparisonResult('obsolete'))); await first;
+  assert.deepEqual(p.element('comparison').children, view);
+  assert.match(view[0].textContent, /newest/);
+});
+
+test('comparison isolation: starting a new comparison prevents late lookup errors', async () => {
+  let fail;
+  const p = page([], null, [], null, () => new Promise((_resolve, reject) => { fail = reject; }));
+  await p.ready; p.setSession(recommendationSession); p.element('comparison-id').value = 'old';
+  const old = p.element('load-comparison').onclick(); await settle();
+  p.element('new-comparison').onclick();
+  const message = p.element('message').textContent;
+  fail(new Error('obsolete lookup')); await old;
+  assert.equal(p.element('message').textContent, message);
+});
+
+test('comparison isolation: a save superseded by preview retains its retry identity without replacing the preview', async () => {
+  let finish;
+  const storage = new Map(), posts = [];
+  const p = page([], null, [], null, (url, options) => {
+    if (url.endsWith('/preview')) return ok(comparisonResult('preview'));
+    posts.push(options);
+    return posts.length === 1 ? new Promise(resolve => { finish = resolve; })
+      : ok(comparisonResult(options.headers['Idempotency-Key'], true));
+  }, storage);
+  await p.ready; p.setSession(recommendationSession);
+  const old = p.element('save-comparison').onclick(); await settle();
+  const saved = storage.get('evorec.comparison');
+  await p.element('compare-strategies').onclick();
+  const view = p.element('comparison').children.slice();
+  finish(ok(comparisonResult('saved', true))); await old;
+  assert.deepEqual(p.element('comparison').children, view);
+  assert.equal(storage.get('evorec.comparison'), saved);
+  assert.equal(p.element('save-comparison').disabled, false);
+  await p.element('save-comparison').onclick();
+  assert.equal(posts.length, 2);
+  assert.equal(posts[0].headers['Idempotency-Key'], posts[1].headers['Idempotency-Key']);
+  assert.equal(posts[0].body, posts[1].body);
+  assert.match(p.element('comparison').children[0].textContent, /已保存/);
+});
+
+test('comparison isolation: transition blocks comparison requests without clearing progress', async () => {
+  let finish;
+  const p = page([], null, [], null, () => new Promise(resolve => { finish = resolve; }), new Map(),
+    () => recommendationOk);
+  await p.ready; p.setSession(recommendationSession); p.element('count').value = '3';
+  p.element('comparison-id').value = 'old';
+  const reset = p.element('reset-session').onclick(); await settle();
+  const count = p.requests.length, message = p.element('message').textContent;
+  const actions = ['compare-strategies', 'save-comparison', 'load-comparison'].map(id => p.element(id).onclick());
+  await settle();
+  assert.equal(p.requests.length, count);
+  assert.equal(p.element('message').textContent, message);
+  finish(ok({...recommendationSession, epoch: 1, history_version: 3}));
+  await Promise.all([reset, ...actions]);
+});
+
+test('comparison isolation: accepted feedback invalidates an older preview', async () => {
+  let finish;
+  const p = metadataPage(['item'], () => ok({item_id: 'item'}), [], url =>
+    url.startsWith('/api/v1/sessions/') ? ok({...recommendationSession, history_version: 3})
+      : new Promise(resolve => { finish = resolve; }), null, () => ok({history_version: 3}));
+  await startMetadata(p);
+  const old = p.element('compare-strategies').onclick(); await settle();
+  await cards(p)[0].children[3].onclick();
+  assert.equal(p.getSession().history_version, 3);
+  finish(ok(comparisonResult('obsolete'))); await old;
+  assert.equal(p.element('comparison').children.length, 0);
+  assert.match(p.element('message').textContent, /已记录详情浏览/);
+});
+
+test('comparison isolation: an explicit historical lookup after reset remains available', async () => {
+  const p = page([], null, [], null, url => url.endsWith('/reset')
+    ? ok({...recommendationSession, epoch: 1, history_version: 3})
+    : ok(comparisonResult('historical', true)), new Map(), () => recommendationOk);
+  await p.ready; p.setSession(recommendationSession); p.element('count').value = '3';
+  await p.element('reset-session').onclick();
+  p.element('comparison-id').value = 'historical';
+  await p.element('load-comparison').onclick();
+  assert.match(p.element('comparison').children[0].textContent, /会话版本 2.*已保存：historical/);
+  assert.equal(p.getSession().epoch, 1);
+  assert.equal(p.getSession().history_version, 3);
+});
+
+for (const control of ['compare-strategies', 'load-comparison']) {
+  test(`comparison isolation: current ${control} failure remains visible`, async () => {
+    const p = page([], null, [], null, () => { throw new Error('current request failed'); });
+    await p.ready; p.setSession(recommendationSession); p.element('comparison-id').value = 'current';
+    await p.element(control).onclick();
+    assert.match(p.element('message').textContent, /current request failed/);
+  });
+}
+
 test('strategy comparison preview uses one session snapshot and labels fallback honestly', async () => {
   const reply = {comparison_id: 'comparison-1', history_version: 2, bundle_id: 'bundle-1',
     common_item_ids: ['item-a'], persisted: false, strategies: [
