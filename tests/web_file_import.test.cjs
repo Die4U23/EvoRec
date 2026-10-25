@@ -16,7 +16,7 @@ test('sample profile is fixed demo history, not a real user or a fabricated R06 
 
 function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFetch = null,
   comparisonFetch = null, tabStorage = new Map(), recommendationFetch = null, r06Serving = false,
-  itemFetch = null, feedbackFetch = null) {
+  itemFetch = null, feedbackFetch = null, itemsFetch = null) {
   const elements = new Map();
   const requests = [];
   let interval = null;
@@ -51,6 +51,7 @@ function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFet
         version: 'test', capabilities: {persistence: true, catalog_publication: true, r06_serving: r06Serving},
       })};
       if (url.startsWith('/api/v1/items?')) {
+        if (itemsFetch) return itemsFetch(url, options);
         const query = new URL(url, 'http://test').searchParams;
         const offset = Number(query.get('offset'));
         const limit = Number(query.get('limit'));
@@ -1806,6 +1807,116 @@ test('late job response cannot replace a different selected job or session', asy
     total_strategies: 3, completed_strategies: 0})});
   await pending; await state.tick();
   assert.equal(state.element('comparison-job-status').textContent, 'new task state');
+});
+
+function catalogListPage() {
+  const pending = [];
+  const p = page([], () => ok({}), [], null, null, new Map(), null, false, null, null,
+    url => new Promise((resolve, reject) => pending.push({
+      offset: Number(new URL(url, 'http://test').searchParams.get('offset')), resolve, reject,
+    })));
+  return {...p, pending};
+}
+const catalogPage = (offset = 0, active = true) => Array.from({length: 21}, (_, index) => ({
+  item_id: `item-${offset + index}`, title: `Item ${offset + index}`, category: 'test', is_active: active,
+}));
+async function firstCatalogPage(p) {
+  await p.ready;
+  const load = p.element('refresh-items').onclick();
+  p.pending.shift().resolve(ok(catalogPage())); await load;
+}
+
+for (const outcome of ['success', 'failure']) {
+  test(`catalog list ignores obsolete navigation ${outcome} after refresh`, async () => {
+    const p = catalogListPage(); await firstCatalogPage(p);
+    const old = p.element('items-next').onclick(), delayed = p.pending.shift();
+    const current = p.element('refresh-items').onclick();
+    p.pending.shift().resolve(ok(catalogPage())); await current;
+    p.element('message').textContent = 'current operation';
+    if (outcome === 'failure') delayed.reject(new Error('obsolete error'));
+    else delayed.resolve(ok(catalogPage(20)));
+    await old;
+    assert.match(p.element('items-page').textContent, /第 1–20/);
+    assert.equal(p.element('items').children[0].children[0].textContent, 'Item 0');
+    assert.equal(p.element('items-previous').disabled, true);
+    assert.equal(p.element('message').textContent, 'current operation');
+    const retry = p.element('items-next').onclick();
+    assert.equal(p.pending[0].offset, 20);
+    p.pending.shift().resolve(ok(catalogPage(20))); await retry;
+  });
+}
+
+test('catalog list coalesces repeated navigation to the same page', async () => {
+  const p = catalogListPage(); await firstCatalogPage(p);
+  const first = p.element('items-next').onclick();
+  const second = p.element('items-next').onclick();
+  const count = p.pending.length;
+  for (const request of p.pending.splice(0)) request.resolve(ok(catalogPage(20)));
+  await Promise.all([first, second]);
+  assert.equal(count, 1);
+  assert.match(p.element('items-page').textContent, /第 21–40/);
+});
+
+test('catalog list obsolete completion cannot release newer navigation guard', async () => {
+  const p = catalogListPage(); await firstCatalogPage(p);
+  const old = p.element('items-next').onclick(), delayed = p.pending.shift();
+  const refresh = p.element('refresh-items').onclick();
+  p.pending.shift().resolve(ok(catalogPage())); await refresh;
+  const current = p.element('items-next').onclick();
+  delayed.resolve(ok(catalogPage(20))); await old;
+  const duplicate = p.element('items-next').onclick();
+  const offsets = p.pending.map(request => request.offset);
+  for (const request of p.pending.splice(0)) request.resolve(ok(catalogPage(20)));
+  await Promise.all([current, duplicate]);
+  assert.deepEqual(offsets, [20]);
+});
+
+test('catalog list refresh after deactivation supersedes a same-page old read', async () => {
+  const p = catalogListPage(); await firstCatalogPage(p);
+  const old = p.element('refresh-items').onclick(), delayed = p.pending.shift();
+  p.element('item-id').value = 'item-0';
+  const deactivate = p.element('deactivate').onclick(); await settle();
+  assert.equal(p.pending.length, 1, 'mutation must issue a fresh read');
+  p.pending.shift().resolve(ok(catalogPage(0, false))); await deactivate;
+  delayed.resolve(ok(catalogPage())); await old;
+  assert.match(p.element('items').children[0].children[1].textContent, /已下架/);
+  assert.equal(p.element('message').textContent, '商品已下架');
+});
+
+test('catalog list refresh supersedes an old read even when the newer read fails', async () => {
+  const p = catalogListPage(); await firstCatalogPage(p);
+  const old = p.element('items-next').onclick(), delayed = p.pending.shift();
+  const refresh = p.element('refresh-items').onclick();
+  p.pending.shift().reject(new Error('current error')); await refresh;
+  delayed.resolve(ok(catalogPage(20))); await old;
+  assert.match(p.element('message').textContent, /current error/);
+  assert.match(p.element('items-page').textContent, /第 1–20/);
+});
+
+test('catalog list failed navigation preserves the page and retries the same offset', async () => {
+  const p = catalogListPage(); await firstCatalogPage(p);
+  const next = p.element('items-next').onclick();
+  p.pending.shift().reject(new Error('temporarily unavailable')); await next;
+  assert.match(p.element('message').textContent, /temporarily unavailable/);
+  assert.match(p.element('items-page').textContent, /第 1–20/);
+  assert.equal(p.element('items-next').disabled, false);
+  const retry = p.element('items-next').onclick();
+  assert.equal(p.pending[0].offset, 20);
+  p.pending.shift().resolve(ok(catalogPage(20))); await retry;
+  assert.match(p.element('items-page').textContent, /第 21–40/);
+});
+
+test('catalog list empty page permits back navigation and prevents another next request', async () => {
+  const p = catalogListPage(); await firstCatalogPage(p);
+  const next = p.element('items-next').onclick();
+  p.pending.shift().resolve(ok([])); await next;
+  assert.equal(p.element('items-next').disabled, true);
+  assert.equal(p.element('items-previous').disabled, false);
+  await p.element('items-next').onclick(); assert.equal(p.pending.length, 0);
+  const previous = p.element('items-previous').onclick();
+  assert.equal(p.pending[0].offset, 0);
+  p.pending.shift().resolve(ok(catalogPage())); await previous;
+  assert.equal(p.element('items-previous').disabled, true);
 });
 
 test('catalog workbench paginates beyond the first hundred items', async () => {

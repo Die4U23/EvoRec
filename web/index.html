@@ -144,6 +144,7 @@
     let pendingVersionOperation = null, switchingVersion = false, publishingCatalog = false;
     const bundleUUID = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
     let itemsOffset = 0;
+    let itemsGeneration = 0, activeItemsRequest = null;
     const itemsPageSize = 20;
     let pendingCatalogFile = null;
     let pendingComparison = null, savingComparison = false;
@@ -212,8 +213,21 @@
       el('session').textContent = session ? `${session.profile_id === 'sample' ? '示例用户' : '新用户'} · 已看过 ${[...new Set(session.history)].map(title).join('、') || '暂无'} · 收藏 ${session.favorite_items.map(title).join('、') || '暂无'} · 版本 ${session.history_version}` : '尚未创建会话。';
       rememberComparison();
     }
-    async function refreshItems({offset = 0} = {}) {
-      const page = await api(`/api/v1/items?offset=${offset}&limit=${itemsPageSize + 1}`);
+    async function refreshItems({offset = 0, navigation = false} = {}) {
+      if (navigation && activeItemsRequest?.offset === offset) return;
+      // Explicit refreshes (including after mutations) must read fresh state.
+      const request = {offset, generation: ++itemsGeneration};
+      activeItemsRequest = request;
+      let page;
+      try {
+        page = await api(`/api/v1/items?offset=${offset}&limit=${itemsPageSize + 1}`);
+      } catch (error) {
+        if (request.generation !== itemsGeneration) return;
+        throw error;
+      } finally {
+        if (activeItemsRequest === request) activeItemsRequest = null;
+      }
+      if (request.generation !== itemsGeneration) return;
       const items = page.slice(0, itemsPageSize);
       itemsOffset = offset;
       for (const item of items) catalog.set(item.item_id, item);
@@ -988,10 +1002,10 @@
     };
     el('refresh-items').onclick = () => run(refreshItems);
     el('items-previous').onclick = () => run(async () => {
-      if (itemsOffset > 0) await refreshItems({offset: itemsOffset - itemsPageSize});
+      if (itemsOffset > 0) await refreshItems({offset: itemsOffset - itemsPageSize, navigation: true});
     });
     el('items-next').onclick = () => run(async () => {
-      if (!el('items-next').disabled) await refreshItems({offset: itemsOffset + itemsPageSize});
+      if (!el('items-next').disabled) await refreshItems({offset: itemsOffset + itemsPageSize, navigation: true});
     });
     el('import-item').onclick = () => run(async () => {
       const item = {item_id: el('item-id').value, title: el('item-title').value, category: el('item-category').value};
