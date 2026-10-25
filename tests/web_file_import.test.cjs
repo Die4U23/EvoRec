@@ -567,6 +567,115 @@ test('changing the selected build discards a delayed preview', async () => {
   assert.equal(p.element('publish-catalog').disabled, true);
 });
 
+function paginatedPreviewPage() {
+  let fail = null, delay = null, queued = false;
+  const p = page([], (url, options) => {
+    if (url.endsWith('/build-jobs')) { queued = true; return ok({}); }
+    if (url.startsWith('/api/v1/admin/catalog/builds/')) {
+      const isItems = url.includes('/items?');
+      if (fail === (isItems ? 'items' : 'state')) { fail = null; throw new Error('preview unavailable'); }
+      if (isItems && delay) return delay(url);
+      const buildId = url.split('/builds/')[1].split('/')[0];
+      const total = buildId === 'build-1' ? 45 : 3;
+      if (!isItems) return ok({build_id: buildId, batch_id: 'batch-1', status: queued ? 'queued' : 'ready',
+        publication_status: 'ready', processed_count: total, total_count: total, failed_count: 0, attempts: 1});
+      const offset = Number(new URL(url, 'http://test').searchParams.get('offset'));
+      return ok({offset, total_count: total, items: Array.from({length: Math.max(0, Math.min(20, total-offset))},
+        (_, i) => ({item_id: `item-${offset+i}`, title: `Item ${offset+i}`, category: 'test',
+          is_active: true, currently_recommendable: false}))});
+    }
+    return ok({});
+  });
+  p.element('catalog-build').value = 'build-1';
+  return {...p, fail: phase => { fail = phase; }, delay: callback => { delay = callback; },
+    complete: () => { queued = false; }};
+}
+
+for (const direction of ['next', 'previous']) {
+  for (const phase of ['state', 'items']) {
+    test(`preview pagination ${direction} ${phase} failure preserves retry navigation and confirmed offset`, async () => {
+      const p = paginatedPreviewPage(); await p.ready; await p.element('refresh-build').onclick();
+      if (direction === 'previous') await p.element('preview-next').onclick();
+      p.fail(phase); await p.element(`preview-${direction}`).onclick();
+      assert.match(p.element('message').textContent, /preview unavailable/);
+      assert.equal(p.element('build-preview').children.length, 0, 'failed qualification reads are not displayed');
+      assert.equal(p.element('publish-catalog').disabled, true);
+      assert.equal(p.element(`preview-${direction}`).disabled, false, 'failed navigation can be retried');
+      await p.element(`preview-${direction}`).onclick();
+      assert.match(p.element('build-preview').children[0].textContent,
+        direction === 'next' ? /本页 21–40/ : /本页 1–20/);
+      assert.equal(p.element('publish-catalog').disabled, false);
+    });
+  }
+}
+
+test('preview pagination explicit refresh after failed next reads the last confirmed page', async () => {
+  const p = paginatedPreviewPage(); await p.ready; await p.element('refresh-build').onclick();
+  p.fail('items'); await p.element('preview-next').onclick();
+  await p.element('refresh-build').onclick();
+  assert.match(p.element('build-preview').children[0].textContent, /本页 1–20/);
+});
+
+test('preview pagination queued replacement build starts at its own first page', async () => {
+  const p = paginatedPreviewPage(); await p.ready; await p.element('refresh-build').onclick();
+  await p.element('preview-next').onclick(); await p.element('preview-next').onclick();
+  assert.match(p.element('build-preview').children[0].textContent, /本页 41–45/);
+  await p.element('new-catalog-build').onclick();
+  p.complete(); await p.tick();
+  assert.match(p.element('build-preview').children[0].textContent, /本页 1–3/);
+  assert.equal(p.element('preview-previous').disabled, true);
+  assert.equal(p.element('preview-next').disabled, true);
+});
+
+test('preview pagination ignores disabled controls during an in-flight navigation', async () => {
+  const p = paginatedPreviewPage(); await p.ready; await p.element('refresh-build').onclick();
+  const delayed = [];
+  p.delay(url => new Promise(resolve => delayed.push({url, resolve})));
+  const first = p.element('preview-next').onclick(); await settle();
+  assert.equal(p.element('preview-next').disabled, true);
+  const duplicate = p.element('preview-next').onclick(); await settle();
+  const count = delayed.length;
+  for (const {url, resolve} of delayed) resolve(ok({offset: Number(new URL(url, 'http://test').searchParams.get('offset')),
+    total_count: 45, items: [{item_id: 'item-20', title: 'Item 20', category: 'test', is_active: true}]}));
+  await Promise.all([first, duplicate]);
+  assert.equal(count, 1);
+  assert.match(p.element('build-preview').children[0].textContent, /本页 21–21/);
+});
+
+test('preview pagination failure after changing build cannot restore navigation or old offset', async () => {
+  const p = paginatedPreviewPage(); await p.ready; await p.element('refresh-build').onclick();
+  let reject; p.delay(() => new Promise((_, fail) => { reject = fail; }));
+  const old = p.element('preview-next').onclick(); await settle();
+  p.element('catalog-build').value = 'build-2'; p.element('catalog-build').oninput();
+  p.element('message').textContent = 'new selection'; reject(new Error('old error')); await old;
+  assert.equal(p.element('preview-next').disabled, true);
+  assert.equal(p.element('preview-previous').disabled, true);
+  assert.equal(p.element('message').textContent, 'new selection');
+  p.delay(null); await p.element('refresh-build').onclick();
+  assert.match(p.element('build-preview').children[0].textContent, /本页 1–3/);
+});
+
+test('preview pagination failure after mutation keeps publication and navigation invalidated', async () => {
+  const p = paginatedPreviewPage(); await p.ready; await p.element('refresh-build').onclick();
+  let reject; p.delay(() => new Promise((_, fail) => { reject = fail; }));
+  const old = p.element('preview-next').onclick(); await settle();
+  await p.element('deactivate').onclick(); reject(new Error('old error')); await old;
+  assert.equal(p.element('build-preview').children.length, 0);
+  for (const id of ['preview-next', 'preview-previous', 'publish-catalog']) assert.equal(p.element(id).disabled, true);
+  assert.equal(p.element('message').textContent, '商品已下架');
+});
+
+test('preview pagination stops at last page and returns to first with correct bounds', async () => {
+  const p = paginatedPreviewPage(); await p.ready; await p.element('refresh-build').onclick();
+  assert.equal(p.element('preview-previous').disabled, true);
+  await p.element('preview-next').onclick(); await p.element('preview-next').onclick();
+  assert.match(p.element('build-preview').children[0].textContent, /本页 41–45/);
+  assert.equal(p.element('preview-next').disabled, true);
+  await p.element('preview-previous').onclick(); await p.element('preview-previous').onclick();
+  assert.match(p.element('build-preview').children[0].textContent, /本页 1–20/);
+  assert.equal(p.element('preview-previous').disabled, true);
+});
+
 test('cards outside directory page hydrate real metadata without feedback or recomputation', async () => {
   const p = metadataPage(['outside/first-page'], url => {
     assert.equal(url, '/api/v1/items/outside%2Ffirst-page');

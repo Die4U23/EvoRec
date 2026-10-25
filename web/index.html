@@ -431,11 +431,12 @@
         } catch (_) { /* The build ID remains available for manual refresh. */ }
       }, 1000);
     }
-    async function previewBuild() {
+    async function previewBuild({offset = buildPreviewOffset, navigation = false} = {}) {
       if (switchingVersion)
         throw new Error('版本操作仍在执行，请等待完成再查询预览');
+      const previousDisabled = el('preview-previous').disabled, nextDisabled = el('preview-next').disabled;
       invalidateBuildPreview();
-      const generation = buildPreviewGeneration, id = el('catalog-build').value.trim(), offset = buildPreviewOffset;
+      const generation = buildPreviewGeneration, id = el('catalog-build').value.trim();
       try {
         const state = await refreshBuildStatus();
         if (generation !== buildPreviewGeneration || id !== el('catalog-build').value.trim()) return;
@@ -455,12 +456,18 @@
           status.textContent = `${item.item_id} · ${item.category} · ${!item.is_active ? '已下架，发布后仍不推荐' : item.currently_recommendable ? '当前可推荐' : '发布后可参与推荐'}`;
           row.append(title, status); el('build-preview').append(row);
         }
+        buildPreviewOffset = offset;
         el('preview-previous').disabled = offset === 0;
         el('preview-next').disabled = preview.offset + preview.items.length >= preview.total_count;
         el('publish-catalog').disabled = state.status !== 'ready' || state.publication_status !== 'ready';
       } catch (error) {
         if (generation !== buildPreviewGeneration || id !== el('catalog-build').value.trim()) return;
         invalidateBuildPreview();
+        // Retain navigation from the last successful page, never stale publication eligibility.
+        if (navigation) {
+          el('preview-previous').disabled = previousDisabled;
+          el('preview-next').disabled = nextDisabled;
+        }
         throw error;
       }
     }
@@ -1050,6 +1057,7 @@
       if (processingCatalog) return;
       stopBuildPolling();
       el('catalog-build').value = ''; currentBuild = null; pendingBuildPublication = null;
+      buildPreviewOffset = 0;
       invalidateBuildPreview();
       await processCatalog();
     });
@@ -1058,8 +1066,10 @@
       currentBuild = null; pendingBuildPublication = null; buildPreviewOffset = 0;
       invalidateBuildPreview();
     };
-    el('preview-previous').onclick = () => run(async () => { buildPreviewOffset = Math.max(0, buildPreviewOffset - 20); await previewBuild(); });
-    el('preview-next').onclick = () => run(async () => { buildPreviewOffset += 20; await previewBuild(); });
+    el('preview-previous').onclick = () => el('preview-previous').disabled ? undefined :
+      run(() => previewBuild({offset: Math.max(0, buildPreviewOffset - 20), navigation: true}));
+    el('preview-next').onclick = () => el('preview-next').disabled ? undefined :
+      run(() => previewBuild({offset: buildPreviewOffset + 20, navigation: true}));
     el('publish-catalog').onclick = () => run(async () => {
       if (publishingCatalog) return;
       if (switchingVersion || pendingVersionOperation) throw Object.assign(new Error('版本操作尚未确认，请先按原目标与操作核对'), {retryable: false});
