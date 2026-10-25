@@ -149,6 +149,7 @@
     let pendingComparison = null, savingComparison = false;
     let comparisonGeneration = 0;
     let pendingComparisonJob = null, submittingComparisonJob = false, comparisonJobTimer = null;
+    let comparisonJobGeneration = 0, activeComparisonJobRequest = null;
     let comparisonHistoryOffset = 0;
     const comparisonHistoryPageSize = 10;
     let currentBuild = null, buildPreviewOffset = 0, pendingBuildPublication = null, processingCatalog = false, buildPollTimer = null, importPollTimer = null;
@@ -491,6 +492,7 @@
     }
     function clearResults() {
       comparisonGeneration++;
+      comparisonJobGeneration++;
       latest = null; pendingRecommendation = null; recommendationHistorySync = null; pendingFeedback.clear(); hiddenUndo.clear();
       recommendationCards = [];
       el('recommendations').replaceChildren(); el('undo').replaceChildren(); el('detail').replaceChildren();
@@ -828,19 +830,36 @@
     }
     function startComparisonJobPolling(id, currentSession) {
       stopComparisonJobPolling();
-      comparisonJobTimer = setInterval(async () => {
+      const timer = setInterval(async () => {
+        if (comparisonJobTimer !== timer || changingSession) return;
         if (session?.session_id !== currentSession || el('comparison-job-id').value.trim() !== id) {
           stopComparisonJobPolling(); return;
         }
-        try { await loadComparisonJob(); }
-        catch (error) {
-          if (session?.session_id === currentSession && el('comparison-job-id').value.trim() === id)
-            el('comparison-job-status').textContent = `暂无法查询任务 ${id}：${error.message}。将继续重试，也可手动查询。`;
-        }
+        await loadComparisonJob({polling: true});
       }, 1000);
+      comparisonJobTimer = timer;
     }
-    async function showComparisonJob(state, currentSession) {
-      if (session?.session_id !== currentSession || el('comparison-job-id').value.trim() !== state.job_id) return;
+    async function requestComparisonJob(id, path, options = {}, {polling = false} = {}) {
+      const generation = ++comparisonJobGeneration, transition = sessionGeneration;
+      const source = {session_id: session.session_id, epoch: session.epoch};
+      const request = {kind: options.method || 'GET', isCurrent: () => !changingSession &&
+        generation === comparisonJobGeneration && transition === sessionGeneration &&
+        sessionMatches(source) && el('comparison-job-id').value.trim() === id};
+      activeComparisonJobRequest = request;
+      try {
+        const state = await api(path, options);
+        if (state.job_id === id && request.isCurrent()) await showComparisonJob(state, request.isCurrent);
+      } catch (error) {
+        if (!request.isCurrent()) return;
+        if (!polling) throw error;
+        startComparisonJobPolling(id, source.session_id);
+        el('comparison-job-status').textContent = `暂无法查询任务 ${id}：${error.message}。将继续重试，也可手动查询。`;
+      } finally {
+        if (activeComparisonJobRequest === request) activeComparisonJobRequest = null;
+      }
+    }
+    async function showComparisonJob(state, isCurrent) {
+      if (!isCurrent()) return;
       const phase = {queued: '排队中（请启动 comparison worker）', running: '运行中',
         cancelling: '取消中，等待当前排序结束', cancelled: '已取消，未保存结果',
         completed: '已完成并保存', failed: '失败，未保存结果；请新建任务'}[state.status];
@@ -848,7 +867,7 @@
       const active = ['queued', 'running', 'cancelling'].includes(state.status);
       el('cancel-comparison-job').disabled = !active || state.cancel_requested;
       if (active) {
-        startComparisonJobPolling(state.job_id, currentSession);
+        startComparisonJobPolling(state.job_id, session.session_id);
       } else {
         stopComparisonJobPolling();
         if (state.status === 'completed') {
@@ -856,9 +875,10 @@
           await loadComparison();
         }
       }
-      rememberComparison();
+      if (isCurrent()) rememberComparison();
     }
     async function submitComparisonJob() {
+      if (changingSession) return;
       if (!session) throw new Error('请先开始体验');
       if (submittingComparisonJob) return;
       const currentSession = session.session_id;
@@ -870,34 +890,34 @@
       el('comparison-job-id').value = pendingComparisonJob.id; rememberComparison();
       submittingComparisonJob = true; el('submit-comparison-job').disabled = true;
       try {
-        const state = await api('/api/v1/strategy-comparison-jobs', {
+        await requestComparisonJob(pendingComparisonJob.id, '/api/v1/strategy-comparison-jobs', {
           method: 'POST', headers: {...auth(), 'Idempotency-Key': pendingComparisonJob.id},
           body: JSON.stringify(pendingComparisonJob.payload),
         });
-        if (session?.session_id !== currentSession) return;
-        await showComparisonJob(state, currentSession);
       } finally {
         submittingComparisonJob = false; el('submit-comparison-job').disabled = false;
       }
     }
-    async function loadComparisonJob() {
+    async function loadComparisonJob({polling = false} = {}) {
+      if (changingSession) return;
       if (!session) throw new Error('请先开始体验');
       const id = el('comparison-job-id').value.trim(), currentSession = session.session_id;
       if (!id) throw new Error('请填写任务编号');
-      const state = await api(`/api/v1/strategy-comparison-jobs/${encodeURIComponent(id)}?session_id=${encodeURIComponent(currentSession)}`, {headers: auth()});
-      await showComparisonJob(state, currentSession);
+      if (activeComparisonJobRequest?.isCurrent()) return;
+      await requestComparisonJob(id, `/api/v1/strategy-comparison-jobs/${encodeURIComponent(id)}?session_id=${encodeURIComponent(currentSession)}`, {headers: auth()}, {polling});
     }
-    el('submit-comparison-job').onclick = () => run(submitComparisonJob);
-    el('load-comparison-job').onclick = () => run(loadComparisonJob);
-    el('cancel-comparison-job').onclick = () => run(async () => {
+    el('submit-comparison-job').onclick = () => changingSession ? undefined : run(submitComparisonJob);
+    el('load-comparison-job').onclick = () => changingSession ? undefined : run(loadComparisonJob);
+    el('cancel-comparison-job').onclick = () => changingSession ? undefined : run(async () => {
       if (!session) throw new Error('请先开始体验');
       const id = el('comparison-job-id').value.trim(), currentSession = session.session_id;
       if (!id) throw new Error('请填写任务编号');
-      const state = await api(`/api/v1/strategy-comparison-jobs/${encodeURIComponent(id)}/cancel?session_id=${encodeURIComponent(currentSession)}`, {method: 'POST', headers: auth()});
-      await showComparisonJob(state, currentSession);
+      if (activeComparisonJobRequest?.kind === 'POST' && activeComparisonJobRequest.isCurrent()) return;
+      await requestComparisonJob(id, `/api/v1/strategy-comparison-jobs/${encodeURIComponent(id)}/cancel?session_id=${encodeURIComponent(currentSession)}`, {method: 'POST', headers: auth()});
     });
     el('new-comparison-job').onclick = () => {
-      if (submittingComparisonJob) return;
+      if (changingSession || submittingComparisonJob) return;
+      comparisonJobGeneration++;
       stopComparisonJobPolling(); pendingComparisonJob = null; el('comparison-job-id').value = '';
       el('comparison-job-status').textContent = '可提交一份新任务（原后台任务不会因此取消）。';
       el('cancel-comparison-job').disabled = true; rememberComparison();

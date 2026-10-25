@@ -1389,6 +1389,167 @@ test('late saved result cannot overwrite a different record selected in the same
   assert.equal(state.element('comparison').children[0], newResult);
 });
 
+const jobState = (id, status = 'running') => ({job_id: id, session_id: 'session-1', status,
+  completed_strategies: 1, total_strategies: 3, attempts: 1,
+  cancel_requested: ['cancelling', 'cancelled'].includes(status), comparison_id: null, error_code: null});
+
+test('job isolation: slow polling and manual reads share one in-flight status request', async () => {
+  let reads = 0, finish;
+  const p = page([], null, [], null, () => ++reads === 1 ? ok(jobState('job'))
+    : new Promise(resolve => { finish = resolve; }));
+  await p.ready; p.setSession(recommendationSession); p.element('comparison-job-id').value = 'job';
+  await p.element('load-comparison-job').onclick();
+  const pending = p.tick(); await settle();
+  const extra = [p.tick(), p.tick(), p.element('load-comparison-job').onclick()]; await settle();
+  assert.equal(reads, 2);
+  finish(ok(jobState('job', 'cancelled'))); await Promise.all([pending, ...extra]);
+  await p.tick(); assert.equal(reads, 2);
+  assert.match(p.element('comparison-job-status').textContent, /已取消/);
+});
+
+test('job isolation: a pre-cancel read cannot roll cancellation back to running', async () => {
+  let finish;
+  const p = page([], null, [], null, url => url.includes('/cancel?')
+    ? ok(jobState('job', 'cancelling')) : new Promise(resolve => { finish = resolve; }));
+  await p.ready; p.setSession(recommendationSession); p.element('comparison-job-id').value = 'job';
+  const read = p.element('load-comparison-job').onclick(); await settle();
+  await p.element('cancel-comparison-job').onclick();
+  finish(ok(jobState('job'))); await read;
+  assert.match(p.element('comparison-job-status').textContent, /取消中/);
+  assert.equal(p.element('cancel-comparison-job').disabled, true);
+});
+
+test('job isolation: old lookup errors do not overwrite a newly selected task', async () => {
+  let fail;
+  const p = page([], null, [], null, url => url.includes('/old?')
+    ? new Promise((_resolve, reject) => { fail = reject; }) : ok(jobState('new')));
+  await p.ready; p.setSession(recommendationSession); p.element('comparison-job-id').value = 'old';
+  const read = p.element('load-comparison-job').onclick(); await settle();
+  p.element('new-comparison-job').onclick(); p.element('comparison-job-id').value = 'new';
+  await p.element('load-comparison-job').onclick();
+  const message = p.element('message').textContent;
+  fail(new Error('obsolete lookup')); await read;
+  assert.equal(p.element('message').textContent, message);
+});
+
+for (const control of ['submit-comparison-job', 'load-comparison-job', 'cancel-comparison-job']) {
+  for (const outcome of ['success', 'failure']) {
+    test(`job isolation: ${control} ${outcome} during reset cannot update status or progress`, async () => {
+      let finish, fail, resetReply;
+      const storage = new Map();
+      const p = page([], null, [], null, url => url.endsWith('/reset')
+        ? new Promise(resolve => { resetReply = resolve; })
+        : new Promise((resolve, reject) => { finish = resolve; fail = reject; }), storage,
+      () => recommendationOk);
+      await p.ready; p.setSession(recommendationSession); p.element('count').value = '3';
+      p.element('comparison-job-id').value = 'job';
+      const old = p.element(control).onclick(); await settle();
+      const id = p.element('comparison-job-id').value;
+      const reset = p.element('reset-session').onclick(); await settle();
+      const status = p.element('comparison-job-status').textContent;
+      const message = p.element('message').textContent, saved = storage.get('evorec.comparison');
+      if (outcome === 'success') finish(ok(jobState(id)));
+      else fail(new Error('obsolete job failure'));
+      await old;
+      assert.equal(p.element('comparison-job-status').textContent, status);
+      assert.equal(p.element('message').textContent, message);
+      assert.equal(storage.get('evorec.comparison'), saved);
+      resetReply(ok({...recommendationSession, epoch: 1, history_version: 3})); await reset;
+    });
+  }
+}
+
+test('job isolation: switching session prevents job requests and preserves progress', async () => {
+  let finish;
+  const p = page([], null, [], null, () => new Promise(resolve => { finish = resolve; }), new Map(),
+    () => recommendationOk);
+  await p.ready; p.setSession(recommendationSession); p.element('count').value = '3';
+  p.element('comparison-job-id').value = 'job';
+  const reset = p.element('reset-session').onclick(); await settle();
+  const count = p.requests.length, message = p.element('message').textContent;
+  const actions = ['submit-comparison-job', 'load-comparison-job', 'cancel-comparison-job'].map(id => p.element(id).onclick());
+  await settle();
+  assert.equal(p.requests.length, count);
+  assert.equal(p.element('message').textContent, message);
+  finish(ok({...recommendationSession, epoch: 1, history_version: 3}));
+  await Promise.all([reset, ...actions]);
+});
+
+test('job isolation: a polling failure releases the request and retries the same job', async () => {
+  let reads = 0;
+  const p = page([], null, [], null, () => {
+    if (++reads === 2) throw new Error('temporary status failure');
+    return ok(jobState('job', reads === 3 ? 'cancelled' : 'running'));
+  });
+  await p.ready; p.setSession(recommendationSession); p.element('comparison-job-id').value = 'job';
+  await p.element('load-comparison-job').onclick(); await p.tick();
+  assert.match(p.element('comparison-job-status').textContent, /temporary status failure.*继续重试/);
+  await p.tick(); assert.equal(reads, 3);
+  assert.match(p.element('comparison-job-status').textContent, /已取消/);
+});
+
+test('job isolation: a superseded read cannot release the next task in-flight guard', async () => {
+  const replies = new Map(), reads = [];
+  const p = page([], null, [], null, url => {
+    const id = url.split('/').pop().split('?')[0]; reads.push(id);
+    return new Promise(resolve => replies.set(id, resolve));
+  });
+  await p.ready; p.setSession(recommendationSession); p.element('comparison-job-id').value = 'old';
+  const old = p.element('load-comparison-job').onclick(); await settle();
+  p.element('comparison-job-id').value = 'new';
+  const current = p.element('load-comparison-job').onclick(); await settle();
+  replies.get('old')(ok(jobState('old'))); await old;
+  const duplicate = p.element('load-comparison-job').onclick(); await settle();
+  assert.deepEqual(reads, ['old', 'new']);
+  replies.get('new')(ok(jobState('new'))); await Promise.all([current, duplicate]);
+  assert.match(p.element('comparison-job-status').textContent, /运行中/);
+});
+
+test('job isolation: pending cancellation blocks duplicate cancels and polling reads', async () => {
+  let finish;
+  const p = page([], null, [], null, url => url.includes('/cancel?')
+    ? new Promise(resolve => { finish = resolve; }) : ok(jobState('job')));
+  await p.ready; p.setSession(recommendationSession); p.element('comparison-job-id').value = 'job';
+  await p.element('load-comparison-job').onclick();
+  const cancel = p.element('cancel-comparison-job').onclick(); await settle();
+  const count = p.requests.length;
+  const duplicates = [p.tick(), p.element('cancel-comparison-job').onclick()]; await settle();
+  assert.equal(p.requests.length, count);
+  finish(ok(jobState('job', 'cancelling'))); await Promise.all([cancel, ...duplicates]);
+});
+
+test('job isolation: polling resumes after a failed session reset', async () => {
+  let failReset, reads = 0;
+  const p = page([], null, [], null, url => url.endsWith('/reset')
+    ? new Promise((_resolve, reject) => { failReset = reject; })
+    : (++reads, ok(jobState('job'))));
+  await p.ready; p.setSession(recommendationSession); p.element('comparison-job-id').value = 'job';
+  await p.element('load-comparison-job').onclick();
+  const reset = p.element('reset-session').onclick(); await settle();
+  await p.tick(); assert.equal(reads, 1);
+  failReset(new Error('reset unavailable')); await reset;
+  await p.tick(); assert.equal(reads, 2);
+  assert.match(p.element('comparison-job-status').textContent, /运行中/);
+});
+
+test('job isolation: a completed task with a transient result-read failure remains retryable by polling', async () => {
+  let statusReads = 0, resultReads = 0;
+  const p = page([], null, [], null, url => {
+    if (url.startsWith('/api/v1/strategy-comparisons/')) {
+      if (++resultReads === 1) throw new Error('result temporarily unavailable');
+      return ok(comparisonResult('saved', true));
+    }
+    return ok(++statusReads === 1 ? jobState('job')
+      : {...jobState('job', 'completed'), comparison_id: 'saved'});
+  });
+  await p.ready; p.setSession(recommendationSession); p.element('comparison-job-id').value = 'job';
+  await p.element('load-comparison-job').onclick(); await p.tick();
+  assert.match(p.element('comparison-job-status').textContent, /result temporarily unavailable.*继续重试/);
+  await p.tick(); assert.equal(resultReads, 2);
+  assert.match(p.element('comparison').children[0].textContent, /已保存：saved/);
+  await p.tick(); assert.equal(statusReads, 3);
+});
+
 test('running cancellation is displayed as pending until worker acknowledgement', async () => {
   let status = 'running';
   const state = page([], null, [], null, (url, options) => {
