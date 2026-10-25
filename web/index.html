@@ -151,6 +151,7 @@
     let pendingComparisonJob = null, submittingComparisonJob = false, comparisonJobTimer = null;
     let comparisonJobGeneration = 0, activeComparisonJobRequest = null;
     let comparisonHistoryOffset = 0;
+    let comparisonHistoryGeneration = 0, activeComparisonHistoryRequest = null, comparisonHistoryView = null;
     const comparisonHistoryPageSize = 10;
     let currentBuild = null, buildPreviewOffset = 0, pendingBuildPublication = null, processingCatalog = false, buildPollTimer = null, importPollTimer = null;
     let buildPreviewGeneration = 0;
@@ -493,6 +494,7 @@
     function clearResults() {
       comparisonGeneration++;
       comparisonJobGeneration++;
+      comparisonHistoryGeneration++; comparisonHistoryView = null;
       latest = null; pendingRecommendation = null; recommendationHistorySync = null; pendingFeedback.clear(); hiddenUndo.clear();
       recommendationCards = [];
       el('recommendations').replaceChildren(); el('undo').replaceChildren(); el('detail').replaceChildren();
@@ -800,10 +802,28 @@
       }
     }
     async function refreshComparisonHistory({offset = 0} = {}) {
+      if (changingSession) return;
       if (!session) throw new Error('请先开始体验');
-      const currentSession = session.session_id;
-      const page = await api(`/api/v1/strategy-comparisons?session_id=${encodeURIComponent(currentSession)}&offset=${offset}&limit=${comparisonHistoryPageSize}`, {headers: auth()});
-      if (session?.session_id !== currentSession) return;
+      if (activeComparisonHistoryRequest?.offset === offset && activeComparisonHistoryRequest.isCurrent()) return;
+      const generation = ++comparisonHistoryGeneration, transition = sessionGeneration;
+      const source = {session_id: session.session_id, epoch: session.epoch};
+      const request = {offset, isCurrent: () => !changingSession && transition === sessionGeneration &&
+        generation === comparisonHistoryGeneration && sessionMatches(source)};
+      activeComparisonHistoryRequest = request;
+      let page;
+      try {
+        page = await api(`/api/v1/strategy-comparisons?session_id=${encodeURIComponent(source.session_id)}&offset=${offset}&limit=${comparisonHistoryPageSize}`, {headers: auth()});
+      } catch (error) {
+        if (request.isCurrent()) throw error;
+        return;
+      } finally {
+        if (activeComparisonHistoryRequest === request) activeComparisonHistoryRequest = null;
+      }
+      if (!request.isCurrent()) return;
+      // A failed request leaves the displayed page and its record actions usable.
+      const view = {};
+      comparisonHistoryView = view;
+      const isDisplayed = () => !changingSession && sessionMatches(source) && comparisonHistoryView === view;
       comparisonHistoryOffset = page.offset;
       const list = el('comparison-history-list'); list.replaceChildren();
       for (const record of page.items) {
@@ -812,8 +832,7 @@
         const detail = document.createElement('small');
         detail.textContent = `Top ${record.requested_k} · ${record.requested_strategies.map((strategy, index) => `${strategy} → ${record.actual_strategies[index]}`).join('；')}`;
         const open = document.createElement('button'); open.className = 'secondary'; open.textContent = '打开此对比';
-        open.onclick = () => run(async () => {
-          if (session?.session_id !== currentSession) return;
+        open.onclick = () => !isDisplayed() ? undefined : run(async () => {
           el('comparison-id').value = record.comparison_id; await loadComparison();
         });
         row.append(title, detail, open); list.append(row);
@@ -954,11 +973,11 @@
     el('compare-strategies').onclick = () => changingSession ? undefined : run(compareStrategies);
     el('save-comparison').onclick = () => changingSession ? undefined : run(saveComparison);
     el('load-comparison').onclick = () => changingSession ? undefined : run(loadComparison);
-    el('comparison-history').onclick = () => run(refreshComparisonHistory);
-    el('comparison-previous').onclick = () => run(async () => {
+    el('comparison-history').onclick = () => changingSession ? undefined : run(refreshComparisonHistory);
+    el('comparison-previous').onclick = () => changingSession ? undefined : run(async () => {
       if (comparisonHistoryOffset > 0) await refreshComparisonHistory({offset: comparisonHistoryOffset - comparisonHistoryPageSize});
     });
-    el('comparison-next').onclick = () => run(async () => {
+    el('comparison-next').onclick = () => changingSession ? undefined : run(async () => {
       if (!el('comparison-next').disabled) await refreshComparisonHistory({offset: comparisonHistoryOffset + comparisonHistoryPageSize});
     });
     el('new-comparison').onclick = () => {

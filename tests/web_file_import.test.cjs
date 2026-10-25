@@ -1282,6 +1282,194 @@ test('saved comparison retries the same input and recovers after page reload', a
   assert.equal(request.options.headers['X-Session-Token'], 'token-1');
 });
 
+const historyPage = (offset, total = 23) => ({offset, limit: 10, has_more: offset + 10 < total,
+  items: Array.from({length: Math.max(0, Math.min(10, total - offset))}, (_, i) => ({
+    comparison_id: `history-${offset + i}`, history_version: offset + i, snapshot_at: '2026-10-25T00:00:00Z',
+    requested_k: 3, requested_strategies: ['popular'], actual_strategies: ['popular'],
+  }))});
+
+for (const outcome of ['success', 'failure']) {
+  test(`history isolation: an older page ${outcome} cannot overwrite newer navigation`, async () => {
+    let finish, fail;
+    const p = page([], null, [], null, url => {
+      const offset = Number(new URL(url, 'http://test').searchParams.get('offset'));
+      return offset === 20 ? new Promise((resolve, reject) => { finish = resolve; fail = reject; })
+        : ok(historyPage(offset));
+    });
+    await p.ready; p.setSession(recommendationSession);
+    await p.element('comparison-history').onclick(); await p.element('comparison-next').onclick();
+    const old = p.element('comparison-next').onclick(); await settle();
+    await p.element('comparison-previous').onclick();
+    const view = p.element('comparison-history-list').children.slice();
+    if (outcome === 'success') finish(ok(historyPage(20)));
+    else fail(new Error('obsolete page failed'));
+    await old;
+    assert.deepEqual(p.element('comparison-history-list').children, view);
+    assert.match(p.element('comparison-history-page').textContent, /1–10/);
+    assert.equal(p.element('comparison-previous').disabled, true);
+    assert.equal(p.element('comparison-next').disabled, false);
+    assert.equal(p.element('message').textContent, '');
+  });
+}
+
+test('history isolation: rapid repeated next clicks send only one request for the target page', async () => {
+  let finish;
+  const offsets = [];
+  const p = page([], null, [], null, url => {
+    const offset = Number(new URL(url, 'http://test').searchParams.get('offset')); offsets.push(offset);
+    return offset ? new Promise(resolve => { finish = resolve; }) : ok(historyPage(0));
+  });
+  await p.ready; p.setSession(recommendationSession); await p.element('comparison-history').onclick();
+  const first = p.element('comparison-next').onclick(); await settle();
+  const second = p.element('comparison-next').onclick(); await settle();
+  assert.deepEqual(offsets, [0, 10]);
+  finish(ok(historyPage(10))); await Promise.all([first, second]);
+  assert.match(p.element('comparison-history-page').textContent, /11–20/);
+});
+
+for (const phase of ['pending', 'completed']) {
+  for (const outcome of ['success', 'failure']) {
+    test(`history isolation: late ${outcome} with reset ${phase} cannot restore the old list`, async () => {
+      let finish, fail, resetReply;
+      const p = page([], null, [], null, url => url.endsWith('/reset')
+        ? new Promise(resolve => { resetReply = resolve; })
+        : new Promise((resolve, reject) => { finish = resolve; fail = reject; }), new Map(), () => recommendationOk);
+      await p.ready; p.setSession(recommendationSession); p.element('count').value = '3';
+      const old = p.element('comparison-history').onclick(); await settle();
+      const reset = p.element('reset-session').onclick(); await settle();
+      if (phase === 'completed') {
+        resetReply(ok({...recommendationSession, epoch: 1, history_version: 3})); await reset;
+      }
+      const view = p.element('comparison-history-list').children.slice(), message = p.element('message').textContent;
+      const label = p.element('comparison-history-page').textContent;
+      if (outcome === 'success') finish(ok(historyPage(0)));
+      else fail(new Error('obsolete history failure'));
+      await old;
+      assert.deepEqual(p.element('comparison-history-list').children, view);
+      assert.equal(p.element('comparison-history-page').textContent, label);
+      assert.equal(p.element('message').textContent, message);
+      if (phase === 'pending') {
+        resetReply(ok({...recommendationSession, epoch: 1, history_version: 3})); await reset;
+      }
+    });
+  }
+}
+
+test('history isolation: a detached old page button cannot open a record after navigation', async () => {
+  const p = page([], null, [], null, url => url.startsWith('/api/v1/strategy-comparisons?')
+    ? ok(historyPage(Number(new URL(url, 'http://test').searchParams.get('offset'))))
+    : ok(comparisonResult('old-record', true)));
+  await p.ready; p.setSession(recommendationSession); await p.element('comparison-history').onclick();
+  const old = p.element('comparison-history-list').children[0].children[2];
+  await p.element('comparison-next').onclick();
+  const count = p.requests.length;
+  p.element('message').textContent = 'current page';
+  await old.onclick();
+  assert.equal(p.requests.length, count);
+  assert.equal(p.element('message').textContent, 'current page');
+});
+
+test('history isolation: session transition blocks pagination and record actions without clearing progress', async () => {
+  let finish;
+  const p = page([], null, [], null, url => url.endsWith('/reset')
+    ? new Promise(resolve => { finish = resolve; })
+    : ok(historyPage(Number(new URL(url, 'http://test').searchParams.get('offset')))), new Map(), () => recommendationOk);
+  await p.ready; p.setSession(recommendationSession); p.element('count').value = '3';
+  await p.element('comparison-history').onclick(); await p.element('comparison-next').onclick();
+  const record = p.element('comparison-history-list').children[0].children[2];
+  const reset = p.element('reset-session').onclick(); await settle();
+  const count = p.requests.length, message = p.element('message').textContent;
+  await p.element('comparison-history').onclick(); await p.element('comparison-previous').onclick();
+  await p.element('comparison-next').onclick(); await record.onclick();
+  assert.equal(p.requests.length, count);
+  assert.equal(p.element('message').textContent, message);
+  finish(ok({...recommendationSession, epoch: 1, history_version: 3})); await reset;
+});
+
+test('history isolation: failed navigation keeps the displayed page actionable and retries its target', async () => {
+  const offsets = [];
+  let failed = false;
+  const p = page([], null, [], null, url => {
+    if (!url.startsWith('/api/v1/strategy-comparisons?')) return ok(comparisonResult('history-0', true));
+    const offset = Number(new URL(url, 'http://test').searchParams.get('offset')); offsets.push(offset);
+    if (offset === 10 && !failed) { failed = true; throw new Error('page unavailable'); }
+    return ok(historyPage(offset));
+  });
+  await p.ready; p.setSession(recommendationSession); await p.element('comparison-history').onclick();
+  const view = p.element('comparison-history-list').children.slice();
+  await p.element('comparison-next').onclick();
+  assert.match(p.element('message').textContent, /page unavailable/);
+  assert.deepEqual(p.element('comparison-history-list').children, view);
+  assert.match(p.element('comparison-history-page').textContent, /1–10/);
+  assert.equal(p.element('comparison-previous').disabled, true);
+  assert.equal(p.element('comparison-next').disabled, false);
+  await view[0].children[2].onclick();
+  assert.match(p.element('comparison').children[0].textContent, /已保存：history-0/);
+  await p.element('comparison-next').onclick();
+  assert.deepEqual(offsets, [0, 10, 10]);
+  assert.match(p.element('comparison-history-page').textContent, /11–20/);
+});
+
+test('history isolation: displayed records remain usable after a failed reset', async () => {
+  const p = page([], null, [], null, url => {
+    if (url.endsWith('/reset')) throw new Error('reset unavailable');
+    return ok(url.startsWith('/api/v1/strategy-comparisons?') ? historyPage(0) : comparisonResult('history-0', true));
+  });
+  await p.ready; p.setSession(recommendationSession); await p.element('comparison-history').onclick();
+  const record = p.element('comparison-history-list').children[0].children[2];
+  await p.element('reset-session').onclick(); await record.onclick();
+  assert.match(p.element('comparison').children[0].textContent, /已保存：history-0/);
+});
+
+test('history isolation: an empty later page permits going back and an empty first page disables both directions', async () => {
+  let reads = 0;
+  const p = page([], null, [], null, url => ok(historyPage(
+    Number(new URL(url, 'http://test').searchParams.get('offset')), ++reads === 1 ? 23 : 0)));
+  await p.ready; p.setSession(recommendationSession); await p.element('comparison-history').onclick();
+  await p.element('comparison-next').onclick();
+  assert.equal(p.element('comparison-history-list').children.length, 0);
+  assert.equal(p.element('comparison-previous').disabled, false);
+  assert.equal(p.element('comparison-next').disabled, true);
+  assert.match(p.element('comparison-history-page').textContent, /这一页没有记录/);
+  await p.element('comparison-previous').onclick();
+  assert.equal(p.element('comparison-previous').disabled, true);
+  assert.equal(p.element('comparison-next').disabled, true);
+  assert.match(p.element('comparison-history-page').textContent, /尚无已保存对比/);
+});
+
+test('history isolation: reset invalidates detached records while explicitly reloading history remains supported', async () => {
+  const p = page([], null, [], null, url => url.endsWith('/reset')
+    ? ok({...recommendationSession, epoch: 1, history_version: 3})
+    : ok(url.startsWith('/api/v1/strategy-comparisons?') ? historyPage(0) : comparisonResult('history-0', true)),
+  new Map(), () => recommendationOk);
+  await p.ready; p.setSession(recommendationSession); p.element('count').value = '3';
+  await p.element('comparison-history').onclick();
+  const old = p.element('comparison-history-list').children[0].children[2];
+  await p.element('reset-session').onclick(); const count = p.requests.length;
+  await old.onclick(); assert.equal(p.requests.length, count);
+  await p.element('comparison-history').onclick();
+  await p.element('comparison-history-list').children[0].children[2].onclick();
+  assert.match(p.element('comparison').children[0].textContent, /已保存：history-0/);
+  assert.equal(p.getSession().epoch, 1);
+});
+
+test('history isolation: an obsolete completion cannot release the newer page request guard', async () => {
+  let reads = 0;
+  const replies = new Map();
+  const p = page([], null, [], null, url => {
+    const offset = Number(new URL(url, 'http://test').searchParams.get('offset'));
+    return ++reads === 1 ? ok(historyPage(0)) : new Promise(resolve => replies.set(offset, resolve));
+  });
+  await p.ready; p.setSession(recommendationSession); await p.element('comparison-history').onclick();
+  const old = p.element('comparison-next').onclick(); await settle();
+  const current = p.element('comparison-history').onclick(); await settle();
+  replies.get(10)(ok(historyPage(10))); await old;
+  const duplicate = p.element('comparison-history').onclick(); await settle();
+  assert.equal(reads, 3);
+  replies.get(0)(ok(historyPage(0))); await Promise.all([current, duplicate]);
+  assert.match(p.element('comparison-history-page').textContent, /1–10/);
+});
+
 test('comparison history paginates and opens the selected durable record', async () => {
   const records = Array.from({length: 23}, (_, index) => ({
     comparison_id: `comparison-${index}`, history_version: index,
