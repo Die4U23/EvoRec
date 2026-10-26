@@ -62,7 +62,17 @@ if (typeof document !== 'undefined') {
   } catch (_) { say('标签页存储不可用，请勿刷新未确认操作。'); }
   function showSession() { el('session').textContent = session ? `会话 ${session.session_id}；历史版本 ${session.history_version}` : '未连接会话'; }
   function clearReport() { reportValue=null; el('metrics').replaceChildren(); el('report-view').textContent='暂无当前任务报告'; }
-  showSession();
+  function showSelected(job=null) {
+    stopProgressPolling();clearReport();
+    el('selected-job').textContent=selected ? `当前任务：${selected}` : '尚未选择任务';
+    el('job-status').textContent=job ? JSON.stringify(job,null,2)
+      : selected ? '尚未读取该任务状态，请点击查询进度。' : '尚未选择';
+    el('job-progress-note').textContent='';
+  }
+  function selectJob(id,job=null) {
+    selected=id;showSelected(job);
+  }
+  showSession();showSelected();
   async function api(path, options = {}) {
     const response = await fetch(path,{...options,headers:{'Content-Type':'application/json',
       'X-Session-Token':session?.access_token || '',...options.headers},cache:'no-store'});
@@ -88,7 +98,7 @@ if (typeof document !== 'undefined') {
     const page = await api(`/api/v1/evaluation-jobs?session_id=${session.session_id}&offset=${targetOffset}&limit=20`);
     table('job-list',['任务','数据集／来源','状态','进度','尝试'],page.items.map(job => {
       const button=document.createElement('button'); button.textContent=job.job_id;
-      button.onclick=() => guarded(async () => { selected=job.job_id; clearReport(); remember(); await progress(); });
+      button.onclick=() => guarded(async () => { selectJob(job.job_id);remember();await progress(); });
       return [button,`${job.dataset_name} / ${job.label_origin}`,job.status,`${job.completed_cases}/${job.total_cases}`,job.attempts];
     }));
     // Navigation commits only after the requested page is successfully displayed.
@@ -126,7 +136,7 @@ if (typeof document !== 'undefined') {
     } catch(error) {
       const retry=error.status===undefined || error.status===429 || error.status>=500;
       el('job-progress-note').textContent=retry
-        ? '进度暂时无法更新，保留上次状态并自动重试；也可手动查询。'
+        ? '进度暂时无法更新，保留当前任务的已知状态并自动重试；也可手动查询。'
         : '进度查询已停止，请检查错误后手动查询。';
       if(retry)scheduleProgress();
       if(!polling || !retry)throw error;
@@ -146,7 +156,7 @@ if (typeof document !== 'undefined') {
       throw error;
     }
     if (job.job_id!==operation.key || job.session_id!==session.session_id) throw new Error('返回任务身份不一致，保留原操作');
-    selected=job.job_id; pending=null; clearReport(); remember();
+    pending=null;selectJob(job.job_id,job);remember();
     say('任务已持久提交。'); await progress(); await taskList();
   }
   async function report() {
@@ -168,10 +178,9 @@ if (typeof document !== 'undefined') {
     'create-session': async () => {
       if (pending || pendingCapture) throw new Error('先确认或放弃本地未确认操作，再切换会话');
       session=await api('/api/v1/sessions',{method:'POST',body:JSON.stringify({profile_id:el('profile').value})});
-      stopProgressPolling();selected=null;offset=0;hasMore=false;
-      clearReport();el('job-list').replaceChildren();el('jobs-page').textContent='尚未加载任务列表。';
-      el('job-status').textContent='尚未选择';el('job-progress-note').textContent='';
-      el('comparison-list').textContent='尚未查询'; remember(); showSession(); say('创建成功，尚未保存比较快照。');
+      selectJob(null);offset=0;hasMore=false;
+      el('job-list').replaceChildren();el('jobs-page').textContent='尚未加载任务列表。';
+      el('comparison-list').textContent='尚未查询';remember();showSession();say('创建成功，尚未保存比较快照。');
     },
     capture: async () => {
       if (!session) throw new Error('请先连接会话');
