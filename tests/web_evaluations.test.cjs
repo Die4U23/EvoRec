@@ -35,6 +35,53 @@ const jobState=(id=original,status='running')=>({job_id:id,session_id:session.se
 const selectedStorage=()=>new Map([['evorec.evaluation',JSON.stringify({session,selected:original})]]);
 const listButtons=p=>p.element('job-list').children[0].children.slice(1).map(row=>row.children[0].children[0]);
 
+test('selecting another task clears the previous status before a slow or failed query',async()=>{
+  const next='44444444-4444-4444-8444-444444444444';
+  const storage=selectedStorage();let rejectQuery;
+  const p=page(url=>{
+    if(url.includes('&offset='))return ok({items:[jobState(original,'completed'),jobState(next)],has_more:false});
+    if(url.includes(next))return new Promise((_resolve,reject)=>{rejectQuery=reject;});
+    return ok(jobState(original,'completed'));
+  },storage);
+  await p.element('poll').onclick();await p.element('jobs').onclick();
+  const loading=listButtons(p)[1].onclick();
+  const during=p.element('job-status').textContent;
+  rejectQuery(Error('next task unavailable'));await loading;
+  assert.equal(JSON.parse(storage.get('evorec.evaluation')).selected,next);
+  assert.doesNotMatch(during,new RegExp(original),'old status must disappear as soon as selection changes');
+  assert.doesNotMatch(p.element('job-status').textContent,new RegExp(original));
+  assert.match(p.element('selected-job').textContent,new RegExp(next));
+  assert.match(p.element('job-status').textContent,/尚未读取/);
+  assert.equal(p.element('metrics').children.length,0);
+});
+
+for(const kind of ['submit','replay']) {
+  test(`acknowledged ${kind} shows the new task when the subsequent progress read fails`,async()=>{
+    let created;
+    const p=page((url,options)=>{
+      if(options.method==='POST'){
+        created=jobState(options.headers['Idempotency-Key'],'queued');return ok(created);
+      }
+      if(created && url.includes(created.job_id))throw Error('progress unavailable');
+      return ok(jobState(original,'completed'));
+    },selectedStorage());
+    await p.element('poll').onclick();await p.element(kind).onclick();
+    assert.match(p.element('selected-job').textContent,new RegExp(created.job_id));
+    const displayed=JSON.parse(p.element('job-status').textContent);
+    assert.equal(displayed.job_id,created.job_id);
+    assert.equal(displayed.status,'queued');
+    assert.equal(p.hasTimer(),true);
+  });
+}
+
+test('restored selected task is visible without automatically requesting or replaying it',()=>{
+  const p=page(()=>{throw Error('no request expected');},selectedStorage());
+  assert.match(p.element('selected-job').textContent,new RegExp(original));
+  assert.match(p.element('job-status').textContent,/尚未读取/);
+  assert.equal(p.requests.length,0);
+  assert.equal(p.hasTimer(),false);
+});
+
 for(const direction of ['next','previous']) {
   test(`failed ${direction} page retains displayed jobs and retries the same offset`,async()=>{
     const offsets=[];let fail=false;
