@@ -4,136 +4,134 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>EvoRec · 本地演示</title>
-  <style>
-    :root { font-family: system-ui, sans-serif; color: #182631; background: #f3f6f4; }
-    body { max-width: 1100px; margin: auto; padding: 28px 20px 80px; }
-    header { border-bottom: 2px solid #145b48; padding-bottom: 16px; margin-bottom: 24px; }
-    h1 { margin: 0; font-size: 2rem; } h2 { margin-top: 0; font-size: 1.2rem; }
-    p, small { color: #53646c; line-height: 1.5; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 18px; }
-    section { background: white; border: 1px solid #dce5df; border-radius: 12px; padding: 20px; }
-    .recommend-section { grid-column: span 2; }
-    #recommendations { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
-    #recommendations > .status { grid-column: 1 / -1; overflow-wrap: anywhere; }
-    #recommendations > .item { margin: 0; }
-    #items { max-height: 670px; overflow: auto; }
-    label { display: block; font-weight: 600; margin: 12px 0 5px; }
-    input, select, button { box-sizing: border-box; font: inherit; }
-    input, select { width: 100%; padding: 9px; border: 1px solid #a9bcb2; border-radius: 6px; }
-    button { background: #145b48; color: white; border: 0; border-radius: 6px; padding: 9px 13px; margin: 9px 6px 0 0; cursor: pointer; }
-    button.secondary { background: #596a71; } button:disabled { opacity: .5; cursor: not-allowed; }
-    .item { padding: 14px; border: 1px solid #e2e9e4; border-radius: 9px; margin: 10px 0; }
-    .item strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .item small { display: block; }
-    .item img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 6px; }
-    .placeholder { display: grid; place-items: center; height: 110px; background: #edf3ee; color: #53646c; border-radius: 6px; }
-    .wide { grid-column: 1 / -1; }
-    .status { background: #edf3ee; padding: 10px; border-radius: 6px; }
-    .skeleton { min-height: 80px; background: #edf3ee; animation: pulse 1s ease-in-out infinite alternate; }
-    @keyframes pulse { to { opacity: .45; } }
-    #message { min-height: 24px; color: #9b3323; font-weight: 600; }
-    code { overflow-wrap: anywhere; }
-    @media (max-width: 760px) { .recommend-section, .wide { grid-column: auto; } }
-  </style>
+  <link rel="stylesheet" href="/app/workbench.css">
 </head>
-<body>
-  <header>
-    <h1>EvoRec</h1>
-    <p><a href="/app/results">查看真实离线实验结果与局限</a></p>
-    <p><a href="/app/evaluations">打开批量标注快照评估工作台</a></p>
-    <p>本地推荐与商品管理演示。内置商品为虚构数据；普通导入内容基线与冻结 R06 是不同路径，真实模型身份以实际响应为准。</p>
-    <div id="system">正在读取服务状态…</div>
-    <div id="message" role="status" aria-live="polite"></div>
+<body class="discovery-page">
+  <a class="skip-link" href="#content">跳到主要内容</a>
+  <header class="site-header">
+    <div class="nav-inner"><a class="brand" href="/app"><span class="brand-mark" aria-hidden="true">e</span>EvoRec<span class="brand-dot">.</span></a>
+    <nav aria-label="主导航"><a href="/app" class="active" aria-current="page">发现</a><a href="/app#catalog-panel">浏览全部</a><a href="/app#comparison-panel">策略对比</a><a href="/app/results">离线实验</a><a href="/app/evaluations">批量评估</a></nav><span class="mode-badge">本地 Demo</span></div>
   </header>
-  <main class="grid">
-    <section class="recommend-section">
-      <h2>推荐体验</h2>
-      <label for="profile">体验身份</label>
-      <select id="profile"><option value="sample">示例用户（固定演示历史）</option><option value="new">新用户（无历史，从热门开始）</option></select>
-      <button id="new-session">开始体验</button>
-      <button id="reset-session" class="secondary">重置会话</button>
-      <p id="session">尚未创建会话。</p>
-      <p>示例用户使用当前活动库的固定演示历史：普通库为 Co-op Demo，R06 为批准包中的固定训练商品，并非真实用户画像。重置恢复此历史；固定商品下架或表示变动时明确拒绝。新用户无初始历史，可选择热门或已加载的模型。</p>
-      <label for="strategy">策略</label>
-      <select id="strategy"><option value="popular">热门（口径见结果）</option><option value="dense">受控稠密模型</option><option value="adaptive">兼容入口（非学习路由）</option></select>
-      <p>dense 依赖当前活动模型包；R06 的 adaptive 固定执行 dense，其他演示路径可能回退热门。尚无生成式检索或学习型预算路由。</p>
-      <label for="count">推荐数量</label><input id="count" type="number" min="1" max="50" value="10">
-      <button id="recommend">获取推荐</button>
-      <div id="recommendations"></div>
-      <div id="undo" role="status" aria-live="polite"></div>
-      <div id="detail"></div>
-    </section>
-    <section class="wide">
-      <h2>策略对比</h2>
-      <p>固定当前会话与商品库，查看结果、共同商品、独有商品和耗时。adaptive 是兼容入口，不算第三种独立算法；保存后可重查当时的结果。</p>
-      <button id="compare-strategies">对比当前会话</button>
-      <button id="save-comparison">运行并保存对比</button>
-      <button id="new-comparison" class="secondary">开始新对比</button>
-      <label for="comparison-id">已保存的对比编号</label><input id="comparison-id" placeholder="保存后自动填写">
-      <button id="load-comparison" class="secondary">重查记录</button>
-      <button id="comparison-history">查看已保存对比</button>
-      <div id="comparison-history-list" role="region" aria-label="已保存对比列表"></div>
-      <p id="comparison-history-page" role="status"></p>
-      <button id="comparison-previous" class="secondary" disabled>更近记录</button>
-      <button id="comparison-next" class="secondary" disabled>更早记录</button>
-      <h3>后台对比任务</h3>
-      <p>提交时冻结输入，独立 comparison worker 执行。进度按完成的策略计数；取消需等待当前排序结束，不会中断普通推荐。</p>
-      <button id="submit-comparison-job">提交后台对比</button>
-      <button id="new-comparison-job" class="secondary">新建后台任务</button>
-      <label for="comparison-job-id">任务编号</label><input id="comparison-job-id" placeholder="提交后自动填写，可重开查询">
-      <button id="load-comparison-job" class="secondary">查询任务</button>
-      <button id="cancel-comparison-job" class="secondary" disabled>取消任务</button>
-      <p id="comparison-job-status" role="status" aria-live="polite">尚无后台任务。</p>
-      <div id="comparison" role="region" aria-label="策略对比结果" aria-live="polite"></div>
-    </section>
-    <section>
-      <h2>商品目录</h2>
-      <button id="refresh-items">刷新商品</button>
-      <div id="items" role="region" aria-label="商品目录列表" tabindex="0"></div>
-      <p id="items-page" role="status"></p>
-      <button id="items-previous" class="secondary" disabled>上一页</button>
-      <button id="items-next" class="secondary" disabled>下一页</button>
-    </section>
-    <section class="wide">
-      <details>
-      <summary>管理操作（本地演示）</summary>
-      <p>仅供本地单实例演示。管理员令牌只保存在当前页面内存中。</p>
-      <label for="admin-token">管理员令牌</label><input id="admin-token" type="password" autocomplete="off">
-      <label for="item-id">商品 ID</label><input id="item-id" placeholder="new-item">
-      <label for="item-title">标题</label><input id="item-title" placeholder="商品标题">
-      <label for="item-category">分类</label><input id="item-category" placeholder="demo">
-      <button id="import-item">导入商品</button>
-      <button id="deactivate" class="secondary">下架商品</button>
-      <label for="catalog-file">批量导入 CSV / JSON 文件</label>
-      <input id="catalog-file" type="file" accept=".csv,.json,text/csv,application/json">
-      <button id="import-file">提交文件校验任务</button>
-      <p id="import-status" role="status">文件导入后仅进入商品目录，尚未生成内容索引或发布。</p>
-      <ol id="import-errors" aria-label="文件导入错误"></ol>
-      <h3>处理与发布</h3>
-      <p>根据标题和类别构建内容匹配基线，支持当前商品库最多 5,000 件；内容相近不等于真实偏好预测。处理完成后可预览，再确认发布。</p>
-      <label for="catalog-batch">导入批次 ID</label><input id="catalog-batch" placeholder="导入成功后自动填入">
-      <button id="lookup-import" class="secondary">查询导入批次</button>
-      <label for="catalog-build">构建 ID（可保存以便恢复查询）</label><input id="catalog-build" placeholder="首次处理时自动生成">
-      <button id="process-catalog">处理／重试当前构建</button>
-      <button id="new-catalog-build" class="secondary">按最新商品库重新构建</button>
-      <button id="refresh-build" class="secondary">查询状态与预览</button>
-      <p id="build-status" role="status">尚未开始处理。</p>
-      <div id="build-preview" role="region" aria-label="待发布商品预览"></div>
-      <button id="preview-previous" class="secondary" disabled>上一页</button>
-      <button id="preview-next" class="secondary" disabled>下一页</button>
-      <button id="publish-catalog" disabled>确认发布当前预览</button>
-      <h3>高级版本操作</h3>
-      <label for="bundle-id">受管 bundle UUID</label><input id="bundle-id" placeholder="预先放入受管目录的 bundle ID">
-      <button id="register-bundle">校验并登记</button>
-      <p>发布目标须先受控校验；回滚目标须曾经发布且不同于活动版本。回滚不会恢复下架商品，也不改写旧推荐记录。不确定失败请按原目标与操作重试；刷新后重新输入令牌。</p>
-      <button id="publish-bundle">发布／重试</button>
-      <button id="rollback-bundle" class="secondary">回滚／重试</button>
-      <button id="recover" class="secondary">检查／恢复发布</button>
-      <p id="version-operation" role="status">尚无版本操作。</p>
-      <p id="publication">尚未读取发布状态。</p>
-      </details>
-    </section>
-  </main>
+  <div class="workspace">
+
+    <header class="hero discovery-hero">
+      <div class="hero-copy"><p class="eyebrow">LESS SEARCHING. MORE DISCOVERING.</p>
+        <h1>下一场冒险，<br>刚好对味。</h1>
+        <p class="hero-description">从熟悉的热爱出发，遇见一点意料之外。<br>让每一次探索，都更接近你的喜好。</p>
+        <button id="new-session" class="hero-button">开始体验 <span aria-hidden="true">↗</span></button>
+        <a class="hero-link" href="#catalog-panel">先逛逛全部商品 <span aria-hidden="true">→</span></a>
+        <p class="hero-disclaimer">虚构商品 · 本地推荐演示</p>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <svg viewBox="0 0 640 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="portal-sky" x1="290" y1="80" x2="490" y2="350" gradientUnits="userSpaceOnUse"><stop stop-color="#7D71B9"/><stop offset="1" stop-color="#E9A58E"/></linearGradient>
+            <linearGradient id="planet-light" x1="120" y1="30" x2="200" y2="155" gradientUnits="userSpaceOnUse"><stop stop-color="#FFC5A1"/><stop offset="1" stop-color="#C76B58"/></linearGradient>
+            <clipPath id="portal-clip"><path d="M289 102Q377 29 470 119L485 333 273 315Z"/></clipPath>
+          </defs>
+          <ellipse cx="362" cy="356" rx="217" ry="29" fill="#0E1022" opacity=".6"/>
+          <circle cx="155" cy="92" r="61" fill="url(#planet-light)"/>
+          <ellipse cx="156" cy="94" rx="94" ry="22" transform="rotate(-29 156 94)" stroke="#F8C5B5" stroke-width="9"/>
+          <path d="M278 327 293 101Q382 9 480 115L499 349Z" fill="#383651" stroke="#B6A5CA" stroke-width="2"/>
+          <path d="M289 102Q377 29 470 119L485 333 273 315Z" fill="url(#portal-sky)"/>
+          <g clip-path="url(#portal-clip)">
+            <circle cx="421" cy="150" r="36" fill="#FFE6BE"/>
+            <path d="M240 256 337 164 402 230 459 193 532 281V369H240Z" fill="#79719C"/>
+            <path d="M245 299 350 235 392 263 473 211 534 302V380H245Z" fill="#49476F"/>
+            <path d="M261 318 379 279 495 301V363H261Z" fill="#292E51"/>
+            <path d="M379 284 368 307 409 321 385 347" stroke="#F3C0AF" stroke-width="7"/>
+          </g>
+          <path d="M273 315 485 333 515 355 249 334Z" fill="#ACA0BF"/>
+          <path d="M249 334 515 355 515 367 249 347Z" fill="#625973"/>
+          <path d="M302 348 464 362 474 375 290 360Z" fill="#878099"/>
+          <path d="M290 360 474 375 474 383 290 369Z" fill="#4A465F"/>
+          <path d="M326 371 429 380 443 390 314 382Z" fill="#AAA0B5"/>
+          <path d="M177 281 221 258 252 278 210 304Z" fill="#D29D8F"/>
+          <path d="M177 281 210 304V344L177 321Z" fill="#A97079"/>
+          <path d="M210 304 252 278V319L210 344Z" fill="#624C70"/>
+          <path d="M492 70 522 53 547 70 518 89Z" fill="#A9A1C9"/>
+          <path d="M492 70 518 89V115L492 96Z" fill="#787094"/>
+          <path d="M518 89 547 70V96L518 115Z" fill="#514B72"/>
+          <circle cx="552" cy="254" r="25" fill="#C89D99"/>
+          <path d="M93 236H111M102 227V245M554 167H568M561 160V174M238 52H250M244 46V58" stroke="#EAE4FA" stroke-width="2"/>
+          <circle cx="227" cy="203" r="3" fill="#D5C5E8"/><circle cx="535" cy="326" r="2" fill="#D5C5E8"/>
+          <circle cx="359" cy="30" r="2" fill="#D5C5E8"/><circle cx="84" cy="165" r="2" fill="#D5C5E8"/>
+          <path d="M103 359C91 332 102 297 132 282" stroke="#535574" stroke-width="2" stroke-dasharray="4 7"/>
+        </svg>
+        <span class="art-caption">A LITTLE OUTSIDE THE ORDINARY</span>
+      </div>
+    </header>
+    <div id="message" role="status" aria-live="polite"></div>
+    <main id="content">
+      <section class="panel recommend-section" id="experience">
+        <div class="section-heading"><div><p class="eyebrow">PICKED FOR YOU</p><h2>发现你的下一份喜欢</h2><p>收藏心动的，隐藏不感兴趣的。每一次反馈，都让探索更进一步。</p></div><button id="recommend" class="secondary">获取推荐 <span aria-hidden="true">↻</span></button></div>
+        <details class="discovery-settings"><summary>调整推荐偏好 <span>体验身份 · 策略 · 数量</span></summary>
+          <div class="settings-grid"><div><label for="profile">体验身份</label><select id="profile"><option value="sample">示例用户（固定演示历史）</option><option value="new">新用户（无历史，从热门开始）</option></select></div><div><label for="strategy">推荐策略</label><select id="strategy"><option value="popular">热门（口径见结果）</option><option value="dense">受控稠密模型</option><option value="adaptive">兼容入口（非学习路由）</option></select></div><div><label for="count">推荐数量</label><input id="count" type="number" min="1" max="50" value="10"></div><button id="reset-session" class="secondary">重置会话</button></div>
+          <div class="two-columns"><details class="help"><summary>关于示例用户</summary><p>示例用户使用当前活动库的固定演示历史：普通库为 Co-op Demo，R06 为批准包中的固定训练商品，并非真实用户画像。重置恢复此历史；固定商品下架或表示变动时明确拒绝。新用户无初始历史，可选择热门或已加载的模型。</p></details><details class="help"><summary>策略与模型说明</summary><p>dense 依赖当前活动模型包；R06 的 adaptive 固定执行 dense，其他演示路径可能回退热门。尚无生成式检索或学习型预算路由。</p></details></div>
+        </details>
+        <p id="session">尚未创建会话。</p>
+        <div id="recommendations" aria-label="推荐结果"></div>
+        <div id="undo" role="status" aria-live="polite"></div><div id="detail"></div>
+      </section>
+      <section class="panel" id="catalog-panel">
+        <div class="section-heading"><div><p class="eyebrow">KEEP EXPLORING</p><h2>还有更多，等你发现</h2><p>浏览商品与上架状态。导入商品后，仍需构建并发布才能参与推荐。</p></div><button id="refresh-items" class="secondary">刷新商品 <span aria-hidden="true">↻</span></button></div>
+        <div id="items" role="region" aria-label="商品目录列表" tabindex="0"></div>
+        <div class="pagination"><p id="items-page" role="status"></p><button id="items-previous" class="secondary" disabled>上一页</button><button id="items-next" class="secondary" disabled>下一页</button></div>
+      </section>
+      <section class="panel" id="comparison-panel">
+        <div class="section-heading"><div><p class="eyebrow">BEHIND THE RECOMMENDATION</p><h2>让策略差异看得见</h2><p>固定当前会话与商品库，对比推荐结果、共同商品与耗时。</p></div><span class="pill">策略对比</span></div>
+        <div class="button-row"><button id="compare-strategies">对比当前会话</button><button id="save-comparison">运行并保存对比</button><button id="new-comparison" class="secondary">开始新对比</button></div>
+        <details class="help"><summary>如何理解对比结果</summary><p>adaptive 是兼容入口，不算第三种独立算法；保存后可重查当时的结果。</p></details>
+        <div class="two-columns">
+          <div class="inset"><h3>已保存的对比</h3>
+            <label for="comparison-id">对比编号</label><input id="comparison-id" placeholder="保存后自动填写">
+            <div class="button-row"><button id="load-comparison" class="secondary">重查记录</button><button id="comparison-history" class="secondary">查看已保存对比</button></div>
+            <div id="comparison-history-list" role="region" aria-label="已保存对比列表"></div>
+            <div class="pagination"><p id="comparison-history-page" role="status"></p><button id="comparison-previous" class="secondary" disabled>更近记录</button><button id="comparison-next" class="secondary" disabled>更早记录</button></div>
+          </div>
+          <div class="inset"><h3>后台对比任务</h3>
+            <label for="comparison-job-id">任务编号</label><input id="comparison-job-id" placeholder="提交后自动填写，可重开查询">
+            <div class="button-row"><button id="submit-comparison-job">提交后台对比</button><button id="new-comparison-job" class="secondary">新建后台任务</button><button id="load-comparison-job" class="secondary">查询任务</button><button id="cancel-comparison-job" class="secondary" disabled>取消任务</button></div>
+            <p id="comparison-job-status" role="status" aria-live="polite">尚无后台任务。</p>
+            <details class="help"><summary>执行与取消说明</summary><p>提交时冻结输入，独立 comparison worker 执行。进度按完成的策略计数；取消需等待当前排序结束，不会中断普通推荐。</p></details>
+          </div>
+        </div><div id="comparison" role="region" aria-label="策略对比结果" aria-live="polite"></div>
+      </section>
+      <section class="panel" id="management-panel">
+        <details class="management"><summary>管理操作（本地演示）</summary>
+          <p>从导入到发布，按步骤更新商品库。仅供本地单实例演示，管理员令牌只保存在当前页面内存中。</p>
+          <label for="admin-token">管理员令牌</label><input id="admin-token" type="password" autocomplete="off" placeholder="输入当前演示实例的管理令牌">
+          <div class="management-grid">
+            <div class="inset"><span class="step-label">STEP 01</span><h3>导入与维护</h3>
+              <label for="item-id">商品 ID</label><input id="item-id" placeholder="new-item">
+              <label for="item-title">标题</label><input id="item-title" placeholder="商品标题">
+              <label for="item-category">分类</label><input id="item-category" placeholder="demo">
+              <button id="import-item">导入商品</button><button id="deactivate" class="secondary">下架商品</button>
+              <label for="catalog-file">批量导入 CSV / JSON 文件</label><input id="catalog-file" type="file" accept=".csv,.json,text/csv,application/json">
+              <button id="import-file" class="secondary">提交文件校验任务</button>
+              <p id="import-status" role="status">文件导入后仅进入商品目录，尚未生成内容索引或发布。</p><ol id="import-errors" aria-label="文件导入错误"></ol>
+            </div>
+            <div class="inset"><span class="step-label">STEP 02</span><h3>处理与发布</h3>
+              <label for="catalog-batch">导入批次 ID</label><input id="catalog-batch" placeholder="导入成功后自动填入"><button id="lookup-import" class="secondary">查询导入批次</button>
+              <label for="catalog-build">构建 ID（可保存以便恢复查询）</label><input id="catalog-build" placeholder="首次处理时自动生成">
+              <button id="process-catalog">处理／重试当前构建</button><button id="new-catalog-build" class="secondary">按最新商品库重新构建</button><button id="refresh-build" class="secondary">查询状态与预览</button>
+              <p id="build-status" role="status">尚未开始处理。</p><div id="build-preview" role="region" aria-label="待发布商品预览"></div>
+              <div class="pagination"><button id="preview-previous" class="secondary" disabled>上一页</button><button id="preview-next" class="secondary" disabled>下一页</button></div><button id="publish-catalog" disabled>确认发布当前预览</button>
+              <details class="help"><summary>构建能力说明</summary><p>根据标题和类别构建内容匹配基线，支持当前商品库最多 5,000 件；内容相近不等于真实偏好预测。处理完成后可预览，再确认发布。</p></details>
+            </div>
+            <div class="inset"><span class="step-label">ADVANCED</span><h3>版本与恢复</h3>
+              <label for="bundle-id">受管 bundle UUID</label><input id="bundle-id" placeholder="预先放入受管目录的 bundle ID"><button id="register-bundle" class="secondary">校验并登记</button>
+              <p>发布目标须先受控校验；回滚目标须曾经发布且不同于活动版本。回滚不会恢复下架商品，也不改写旧推荐记录。不确定失败请按原目标与操作重试；刷新后重新输入令牌。</p>
+              <button id="publish-bundle">发布／重试</button><button id="rollback-bundle" class="secondary">回滚／重试</button><button id="recover" class="secondary">检查／恢复发布</button>
+              <p id="version-operation" role="status">尚无版本操作。</p><p id="publication">尚未读取发布状态。</p>
+            </div>
+          </div>
+        </details>
+      </section>
+    </main>
+    <details class="service-details"><summary>查看当前服务能力</summary><div id="system">正在读取服务状态…</div><p>内置商品为虚构数据；普通导入内容基线与冻结 R06 是不同路径，真实模型身份以实际响应为准。</p></details>
+    <footer class="page-footer"><span>EvoRec · Discover your next favorite</span><span>本地探索 · 结果可追溯</span></footer>
+  </div>
   <script>
     const el = id => document.getElementById(id);
     let session = null, latest = null, catalog = new Map(), pendingRecommendation = null;
