@@ -35,6 +35,117 @@ const jobState=(id=original,status='running')=>({job_id:id,session_id:session.se
 const selectedStorage=()=>new Map([['evorec.evaluation',JSON.stringify({session,selected:original})]]);
 const listButtons=p=>p.element('job-list').children[0].children.slice(1).map(row=>row.children[0].children[0]);
 
+function writeBlockedStorage() {
+  const storage=new Map([['evorec.comparison',JSON.stringify({session})]]);
+  const set=storage.set.bind(storage);
+  storage.set=(key,value)=>{
+    if(key==='evorec.evaluation')throw Error('storage quota exceeded');
+    return set(key,value);
+  };
+  return storage;
+}
+
+test('storage write failure does not block reading the selected task',async()=>{
+  const p=page(url=>ok(url.includes('&offset=')?{items:[jobState()],has_more:false}:jobState()),writeBlockedStorage());
+  await p.element('jobs').onclick();await listButtons(p)[0].onclick();
+  assert.match(p.element('job-status').textContent,/running/);
+  assert.match(p.element('storage-warning').textContent,/内存/);
+  assert.equal(p.requests.length,2);
+});
+
+test('successful session creation remains visible when tab storage cannot be written',async()=>{
+  const next='55555555-5555-4555-8555-555555555555';
+  const p=page(()=>ok({...session,session_id:next}),writeBlockedStorage());
+  await p.element('create-session').onclick();
+  assert.match(p.element('session').textContent,new RegExp(next));
+  assert.match(p.element('message').textContent,/创建成功/);
+  assert.match(p.element('storage-warning').textContent,/请勿刷新/);
+  assert.equal(p.requests.length,1);
+});
+
+test('submission keeps its in-memory key and input after storage failure and lost response',async()=>{
+  const posts=[];let job;
+  const p=page((url,options)=>{
+    if(options.method==='POST'){
+      posts.push(options);job=jobState(options.headers['Idempotency-Key'],'completed');
+      if(posts.length===1)throw Error('lost submission response');return ok(job);
+    }
+    return ok(url.includes('&offset=')?{items:[job],has_more:false}:job);
+  },writeBlockedStorage());
+  await p.element('submit').onclick();p.element('cases').value='invalid edited JSON';
+  await p.element('submit').onclick();
+  assert.equal(posts.length,2);
+  assert.equal(posts[0].headers['Idempotency-Key'],posts[1].headers['Idempotency-Key']);
+  assert.equal(posts[0].body,posts[1].body);
+  assert.match(p.element('job-status').textContent,/completed/);
+  assert.match(p.element('storage-warning').textContent,/内存/);
+});
+
+test('capture remains retryable in memory when storage is blocked',async()=>{
+  const posts=[];let sessionReads=0;
+  const p=page((_url,options)=>{
+    if(options.method!=='POST'){sessionReads++;return ok(session);}
+    posts.push(options);if(posts.length===1)throw Error('lost capture response');
+    return ok({comparison_id:options.headers['Idempotency-Key'],input_snapshot:{eligible_items:[],history:[]},strategies:[]});
+  },writeBlockedStorage());
+  await p.element('capture').onclick();await p.element('capture').onclick();
+  assert.equal(posts.length,2);
+  assert.equal(posts[0].headers['Idempotency-Key'],posts[1].headers['Idempotency-Key']);
+  assert.equal(posts[0].body,posts[1].body);
+  assert.equal(sessionReads,1);
+  assert.match(p.element('message').textContent,/快照已保存/);
+});
+
+test('malformed evaluation state does not hide a valid recommendation session',()=>{
+  const storage=new Map([['evorec.evaluation','{broken'],['evorec.comparison',JSON.stringify({session})]]);
+  const p=page(()=>{throw Error('must not auto request');},storage);
+  assert.match(p.element('session').textContent,new RegExp(session.session_id));
+  assert.match(p.element('storage-warning').textContent,/恢复记录/);
+  assert.equal(p.requests.length,0);
+});
+
+test('valid saved evaluation is restored even if unrelated recommendation state is malformed',()=>{
+  const storage=selectedStorage();storage.set('evorec.comparison','{broken');
+  const p=page(()=>{throw Error('must not auto request');},storage);
+  assert.match(p.element('session').textContent,new RegExp(session.session_id));
+  assert.match(p.element('selected-job').textContent,new RegExp(original));
+  assert.equal(p.requests.length,0);
+});
+
+test('unreadable tab storage still allows an explicit new session with a persistent recovery warning',async()=>{
+  const storage=writeBlockedStorage();storage.get=()=>{throw Error('storage access denied');};
+  const p=page(()=>ok(session),storage);
+  assert.equal(p.requests.length,0);
+  assert.match(p.element('storage-warning').textContent,/恢复记录/);
+  await p.element('create-session').onclick();
+  assert.match(p.element('session').textContent,new RegExp(session.session_id));
+  assert.match(p.element('message').textContent,/创建成功/);
+  assert.match(p.element('storage-warning').textContent,/恢复记录.*内存/);
+  assert.equal(p.element('storage-warning').hidden,false);
+});
+
+test('a later successful write clears the memory-only warning and persists current state',async()=>{
+  const storage=writeBlockedStorage();
+  const p=page(url=>ok(url.includes('&offset=')?{items:[jobState()],has_more:false}:jobState()),storage);
+  await p.element('jobs').onclick();await listButtons(p)[0].onclick();
+  assert.equal(p.element('storage-warning').hidden,false);
+  storage.set=Map.prototype.set;
+  await listButtons(p)[0].onclick();
+  assert.equal(p.element('storage-warning').textContent,'');
+  assert.equal(p.element('storage-warning').hidden,true);
+  assert.equal(JSON.parse(storage.get('evorec.evaluation')).selected,original);
+});
+
+test('successful writes do not erase a warning about lost recovery records',async()=>{
+  const storage=new Map([['evorec.evaluation','{broken']]);
+  const p=page(()=>ok(session),storage);
+  await p.element('create-session').onclick();
+  assert.match(p.element('message').textContent,/创建成功/);
+  assert.match(p.element('storage-warning').textContent,/恢复记录/);
+  assert.doesNotMatch(p.element('storage-warning').textContent,/内存/);
+  assert.equal(p.element('storage-warning').hidden,false);
+});
+
 test('selecting another task clears the previous status before a slow or failed query',async()=>{
   const next='44444444-4444-4444-8444-444444444444';
   const storage=selectedStorage();let rejectQuery;

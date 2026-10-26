@@ -48,18 +48,33 @@ if (typeof document !== 'undefined') {
   let reportValue = null, pendingCapture = null;
   const say = text => { el('message').textContent = text; };
   const terminal = status => ['completed','cancelled','failed'].includes(status);
-  function remember() {
-    sessionStorage.setItem('evorec.evaluation',JSON.stringify({session,pending,selected,pendingCapture}));
+  let restoreWarning = '';
+  function storageWarning(text) {
+    el('storage-warning').textContent=text;
+    el('storage-warning').hidden=!text;
   }
-  try {
-    const saved = JSON.parse(sessionStorage.getItem('evorec.evaluation'));
-    const previous = JSON.parse(sessionStorage.getItem('evorec.comparison'));
-    session = saved?.session || previous?.session || null;
-    pending = validPending(saved?.pending,session) ? saved.pending : null;
-    selected = typeof saved?.selected==='string' && /^[0-9a-f-]{36}$/i.test(saved.selected) ? saved.selected : null;
-    pendingCapture = saved?.pendingCapture?.body?.session_id===session?.session_id
-      && /^[0-9a-f-]{36}$/i.test(saved?.pendingCapture?.key || '') ? saved.pendingCapture : null;
-  } catch (_) { say('标签页存储不可用，请勿刷新未确认操作。'); }
+  function readSaved(key) {
+    try { return JSON.parse(sessionStorage.getItem(key)); }
+    catch (_) {
+      restoreWarning='部分标签页恢复记录无法读取；请先查询服务端记录，核对之前未确认的操作。';
+      storageWarning(restoreWarning);
+      return null;
+    }
+  }
+  function remember() {
+    try {
+      sessionStorage.setItem('evorec.evaluation',JSON.stringify({session,pending,selected,pendingCapture}));
+      storageWarning(restoreWarning);
+    } catch (_) {
+      storageWarning(restoreWarning+' 当前状态仅保存在本页内存中，请勿刷新或离开；网络失败时请在本页重试原操作。');
+    }
+  }
+  const saved = readSaved('evorec.evaluation');
+  session = saved?.session || readSaved('evorec.comparison')?.session || null;
+  pending = validPending(saved?.pending,session) ? saved.pending : null;
+  selected = typeof saved?.selected==='string' && /^[0-9a-f-]{36}$/i.test(saved.selected) ? saved.selected : null;
+  pendingCapture = saved?.pendingCapture?.body?.session_id===session?.session_id
+    && /^[0-9a-f-]{36}$/i.test(saved?.pendingCapture?.key || '') ? saved.pendingCapture : null;
   function showSession() { el('session').textContent = session ? `会话 ${session.session_id}；历史版本 ${session.history_version}` : '未连接会话'; }
   function clearReport() { reportValue=null; el('metrics').replaceChildren(); el('report-view').textContent='暂无当前任务报告'; }
   function showSelected(job=null) {
