@@ -23,6 +23,11 @@ function page(fileReplies, catalogFetch = null, catalogItems = [], fileStatusFet
   const element = id => {
     if (!elements.has(id)) elements.set(id, {
       textContent: '', value: '', files: [], children: [],
+      open: false,
+      isConnected: true,
+      focus() { this.focused = true; },
+      showModal() { this.open = true; },
+      close() { this.open = false; },
       replaceChildren(...children) {
         for (const child of this.children) child.parent = null;
         this.children = []; this.append(...children);
@@ -395,6 +400,81 @@ test('detail lookup superseded by another recommendation never sends feedback us
   complete(ok({item_id: 'old', title: 'Old detail'})); await pending;
   assert.equal(p.requests.filter(r => r.url === '/api/v1/feedback').length, 0);
   assert.equal(p.element('detail').children.length, 0);
+});
+
+test('detail opens a dismissible dialog and a new recommendation closes it', async () => {
+  const p = metadataPage(['item'], () => ok({item_id: 'item', title: 'Fixture detail'}), [],
+    () => ok(recommendationSession), null, () => ok({history_version: 3}));
+  await startMetadata(p);
+  await cards(p)[0].children[3].onclick();
+  assert.equal(p.element('detail-dialog').open, true);
+  assert.equal(p.element('detail').children[0].textContent, 'Fixture detail');
+  p.element('close-detail').onclick();
+  assert.equal(p.element('detail-dialog').open, false);
+  assert.equal(cards(p)[0].children[3].focused, true);
+  await cards(p)[0].children[3].onclick();
+  let prevented = false;
+  p.element('detail-dialog').oncancel({preventDefault() { prevented = true; }});
+  assert.equal(prevented, true);
+  assert.equal(p.element('detail-dialog').open, false);
+  await cards(p)[0].children[3].onclick();
+  await p.element('recommend').onclick();
+  assert.equal(p.element('detail-dialog').open, false);
+  assert.equal(p.element('detail').children.length, 0);
+});
+
+for (const lateFailure of [false, true]) {
+  test(`last selected detail wins over a delayed lookup; failure=${lateFailure}`, async () => {
+    let complete;
+    const p = metadataPage(['old', 'new'], url => url.endsWith('/old')
+      ? new Promise((resolve, reject) => { complete = lateFailure ? reject : resolve; })
+      : ok({item_id: 'new', title: 'New detail'}),
+      [{item_id: 'old'}, {item_id: 'new'}], () => ok(recommendationSession), null,
+      () => ok({history_version: 3}));
+    await p.ready;
+    await p.element('refresh-items').onclick();
+    await startMetadata(p);
+    const pending = cards(p)[0].children[3].onclick(); await settle();
+    await cards(p)[1].children[3].onclick();
+    complete(lateFailure ? new Error('old lookup failed') : ok({item_id: 'old', title: 'Old detail'}));
+    await pending;
+    assert.equal(p.element('detail').children[0].textContent, 'New detail');
+    assert.equal(p.element('detail-dialog').open, true);
+    assert.equal(p.requests.filter(r => r.url === '/api/v1/feedback').length, 1);
+    assert.doesNotMatch(p.element('message').textContent, /old lookup failed/);
+  });
+}
+
+test('late detail feedback cannot reopen a newer dialog after it is dismissed', async () => {
+  let completeFeedback;
+  const p = metadataPage(['old', 'new'], url => ok({title: url.split('/').at(-1)}),
+    [{item_id: 'old'}, {item_id: 'new'}], () => ok(recommendationSession), null,
+    (_url, options) => JSON.parse(options.body).item_id === 'old'
+      ? new Promise(resolve => { completeFeedback = resolve; }) : ok({history_version: 3}));
+  await startMetadata(p);
+  const pending = cards(p)[0].children[3].onclick(); await settle();
+  await cards(p)[1].children[3].onclick();
+  assert.equal(p.element('detail').children[0].textContent, 'new');
+  p.element('close-detail').onclick();
+  completeFeedback(ok({history_version: 3})); await pending;
+  assert.equal(p.element('detail-dialog').open, false);
+  assert.equal(p.element('detail').children.length, 0);
+});
+
+test('repeated detail clicks share the active lookup and release the control on failure', async () => {
+  let complete, attempts = 0;
+  const p = metadataPage(['item'], () => ++attempts === 1 ? ok({item_id: 'item'})
+    : new Promise((_resolve, reject) => { complete = reject; }));
+  await startMetadata(p);
+  const button = cards(p)[0].children[3];
+  const pending = button.onclick(); await settle();
+  await button.onclick();
+  assert.equal(attempts, 2, 'one hydration lookup and one explicit detail lookup');
+  assert.equal(button.disabled, true);
+  complete(new Error('detail unavailable')); await pending;
+  assert.equal(button.disabled, false);
+  assert.equal(button.textContent, '查看详情');
+  assert.match(p.element('message').textContent, /detail unavailable/);
 });
 
 for (const change of ['reset', 'unhidden', 'other-session', 'malformed']) {

@@ -61,7 +61,14 @@
         <span class="art-caption">A LITTLE OUTSIDE THE ORDINARY</span>
       </div>
     </header>
-    <div id="message" role="status" aria-live="polite"></div>
+    <div class="feedback-tray">
+      <div id="message" role="status" aria-live="polite"></div>
+      <div id="undo" role="status" aria-live="polite"></div>
+    </div>
+    <dialog id="detail-dialog" aria-labelledby="detail-title">
+      <button id="close-detail" class="secondary" autofocus>关闭详情</button>
+      <div id="detail"></div>
+    </dialog>
     <main id="content">
       <section class="panel recommend-section" id="experience">
         <div class="section-heading"><div><p class="eyebrow">PICKED FOR YOU</p><h2>发现你的下一份喜欢</h2><p>收藏心动的，隐藏不感兴趣的。每一次反馈，都让探索更进一步。</p></div><button id="recommend" class="secondary">获取推荐 <span aria-hidden="true">↻</span></button></div>
@@ -71,7 +78,6 @@
         </details>
         <p id="session">尚未创建会话。</p>
         <div id="recommendations" aria-label="推荐结果"></div>
-        <div id="undo" role="status" aria-live="polite"></div><div id="detail"></div>
       </section>
       <section class="panel" id="catalog-panel">
         <div class="section-heading"><div><p class="eyebrow">KEEP EXPLORING</p><h2>还有更多，等你发现</h2><p>浏览商品与上架状态。导入商品后，仍需构建并发布才能参与推荐。</p></div><button id="refresh-items" class="secondary">刷新商品 <span aria-hidden="true">↻</span></button></div>
@@ -136,6 +142,8 @@
     const el = id => document.getElementById(id);
     let session = null, latest = null, catalog = new Map(), pendingRecommendation = null;
     let recommendationCards = [];
+    let detailGeneration = 0;
+    let detailTrigger = null;
     let activeRecommendation = null;
     let recommendationHistorySync = null;
     let changingSession = false, sessionGeneration = 0;
@@ -510,13 +518,24 @@
       comparisonGeneration++;
       el('comparison').replaceChildren();
     }
+    function closeDetail() {
+      detailGeneration++;
+      if (el('detail-dialog').open) {
+        el('detail-dialog').close();
+        if (detailTrigger?.isConnected && !detailTrigger.disabled) detailTrigger.focus({preventScroll: true});
+      }
+      detailTrigger = null;
+      el('detail').replaceChildren();
+    }
+    el('close-detail').onclick = closeDetail;
+    el('detail-dialog').oncancel = event => { event.preventDefault(); closeDetail(); };
     function clearResults() {
       comparisonGeneration++;
       comparisonJobGeneration++;
       comparisonHistoryGeneration++; comparisonHistoryView = null;
       latest = null; pendingRecommendation = null; recommendationHistorySync = null; pendingFeedback.clear(); hiddenUndo.clear();
       recommendationCards = [];
-      el('recommendations').replaceChildren(); el('undo').replaceChildren(); el('detail').replaceChildren();
+      el('recommendations').replaceChildren(); el('undo').replaceChildren(); closeDetail();
       el('comparison').replaceChildren();
       pendingComparison = null; el('comparison-id').value = '';
       stopComparisonJobPolling(); pendingComparisonJob = null; el('comparison-job-id').value = '';
@@ -582,12 +601,25 @@
       showMetadata(catalog.get(item.item_id));
       const detail = document.createElement('button'); detail.textContent = '查看详情';
       detail.onclick = () => runCard(async current => {
-        const full = await api(`/api/v1/items/${encodeURIComponent(item.item_id)}`);
-        if (!current() || !await sendFeedback(source, item.item_id, 'detail_view') || !current()) return;
-        const panel = el('detail'); panel.replaceChildren();
-        const heading = document.createElement('h2'); heading.textContent = full.title;
-        const description = document.createElement('p'); description.textContent = full.description || '暂无描述';
-        panel.append(heading, description); message('已记录详情浏览');
+        if (detail.disabled) return;
+        closeDetail();
+        const generation = detailGeneration;
+        const isSelected = () => current() && generation === detailGeneration;
+        detail.disabled = true; detail.textContent = '读取中…';
+        try {
+          const full = await api(`/api/v1/items/${encodeURIComponent(item.item_id)}`);
+          if (!isSelected() || !await sendFeedback(source, item.item_id, 'detail_view') || !isSelected()) return;
+          const panel = el('detail'); panel.replaceChildren();
+          const heading = document.createElement('h2'); heading.id = 'detail-title'; heading.textContent = full.title;
+          const description = document.createElement('p'); description.textContent = full.description || '暂无描述';
+          panel.append(heading, description);
+          detailTrigger = detail;
+          el('detail-dialog').showModal(); message('已记录详情浏览');
+        } catch (error) {
+          if (isSelected()) throw error;
+        } finally {
+          detail.disabled = false; detail.textContent = '查看详情';
+        }
       });
       const favorite = document.createElement('button'); favorite.className = 'secondary';
       favorite.textContent = session.favorite_items.includes(item.item_id) ? '取消收藏' : '收藏';
@@ -680,6 +712,7 @@
       // active attempt; failures still release it for same-key manual retry.
       if (activeRecommendation === pending) return;
       activeRecommendation = pending;
+      closeDetail();
       rememberComparison();
       const list = el('recommendations'); list.replaceChildren();
       for (let i = 0; i < 3; i++) { const skeleton = document.createElement('div'); skeleton.className = 'item skeleton'; list.append(skeleton); }
