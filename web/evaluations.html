@@ -40,9 +40,11 @@
   </section>
   <section>
     <h2>3. 持久任务与报告</h2>
-    <button id="jobs">刷新任务列表</button><button id="previous">上一页</button><button id="next">下一页</button>
+    <button id="jobs">刷新任务列表</button><button id="previous" disabled>上一页</button><button id="next" disabled>下一页</button>
+    <p id="jobs-page" role="status">尚未加载任务列表。</p>
     <div id="job-list" class="scroll"></div>
     <h3>所选任务</h3><pre id="job-status">尚未选择</pre>
+    <p id="job-progress-note" role="status" aria-live="polite"></p>
     <button id="poll">查询进度</button><button id="cancel">请求取消</button><button id="replay">重放冻结配置／重试原重放</button>
     <button id="report">查看完整报告</button><button id="export">导出 JSON 报告</button>
     <p>后台需运行 <code>python -m scripts.evaluation_worker</code>。取消在当前 CPU 排序结束后确认，取消/失败不导出半份报告。重放使用原冻结输入，新耗时不要求逐字一致；用语义结果摘要比较排名与指标。</p>

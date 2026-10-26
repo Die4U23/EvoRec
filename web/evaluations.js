@@ -83,25 +83,54 @@ if (typeof document !== 'undefined') {
     }
     target.append(table);
   }
-  async function taskList() {
+  async function taskList(targetOffset=offset) {
     if (!session) throw new Error('请先连接会话');
-    const page = await api(`/api/v1/evaluation-jobs?session_id=${session.session_id}&offset=${offset}&limit=20`);
-    hasMore=page.has_more; el('previous').disabled=offset===0; el('next').disabled=!hasMore;
+    const page = await api(`/api/v1/evaluation-jobs?session_id=${session.session_id}&offset=${targetOffset}&limit=20`);
     table('job-list',['任务','数据集／来源','状态','进度','尝试'],page.items.map(job => {
       const button=document.createElement('button'); button.textContent=job.job_id;
       button.onclick=() => guarded(async () => { selected=job.job_id; clearReport(); remember(); await progress(); });
       return [button,`${job.dataset_name} / ${job.label_origin}`,job.status,`${job.completed_cases}/${job.total_cases}`,job.attempts];
     }));
+    // Navigation commits only after the requested page is successfully displayed.
+    offset=targetOffset;hasMore=page.has_more;
+    el('previous').disabled=offset===0;el('next').disabled=!hasMore;
+    el('jobs-page').textContent=page.items.length
+      ? `显示第 ${offset+1}–${offset+page.items.length} 条任务`
+      : offset ? '这一页没有任务，请返回上一页。' : '当前会话尚无任务。';
   }
   function queryPath(suffix='') {
     if (!session || !selected) throw new Error('请先选择任务');
     return `/api/v1/evaluation-jobs/${selected}${suffix}?session_id=${session.session_id}`;
   }
-  async function progress() {
-    clearTimeout(timer);
-    const job=await api(queryPath()); el('job-status').textContent=JSON.stringify(job,null,2);
-    if (!terminal(job.status)) timer=setTimeout(() => guarded(progress),1500);
-    return job;
+  function stopProgressPolling() { clearTimeout(timer);timer=null; }
+  function scheduleProgress() {
+    stopProgressPolling();
+    const sessionId=session.session_id,jobId=selected;
+    const scheduled=setTimeout(async()=>{
+      if(timer!==scheduled || session?.session_id!==sessionId || selected!==jobId)return;
+      timer=null;
+      // A one-shot timer must be renewed when another user action owns the page.
+      if(busy){scheduleProgress();return;}
+      await guarded(()=>progress({polling:true}));
+    },1500);
+    timer=scheduled;
+  }
+  async function progress({polling=false}={}) {
+    const path=queryPath();
+    stopProgressPolling();
+    try {
+      const job=await api(path);el('job-status').textContent=JSON.stringify(job,null,2);
+      el('job-progress-note').textContent='';
+      if (!terminal(job.status))scheduleProgress();
+      return job;
+    } catch(error) {
+      const retry=error.status===undefined || error.status===429 || error.status>=500;
+      el('job-progress-note').textContent=retry
+        ? '进度暂时无法更新，保留上次状态并自动重试；也可手动查询。'
+        : '进度查询已停止，请检查错误后手动查询。';
+      if(retry)scheduleProgress();
+      if(!polling || !retry)throw error;
+    }
   }
   async function submitOperation(kind, body) {
     if (pending && pending.kind !== kind) throw new Error('另一笔操作尚未确认，先重试原操作');
@@ -138,8 +167,10 @@ if (typeof document !== 'undefined') {
   const actions = {
     'create-session': async () => {
       if (pending || pendingCapture) throw new Error('先确认或放弃本地未确认操作，再切换会话');
-      clearTimeout(timer); session=await api('/api/v1/sessions',{method:'POST',body:JSON.stringify({profile_id:el('profile').value})});
-      selected=null; offset=0; clearReport(); el('job-list').replaceChildren(); el('job-status').textContent='尚未选择';
+      session=await api('/api/v1/sessions',{method:'POST',body:JSON.stringify({profile_id:el('profile').value})});
+      stopProgressPolling();selected=null;offset=0;hasMore=false;
+      clearReport();el('job-list').replaceChildren();el('jobs-page').textContent='尚未加载任务列表。';
+      el('job-status').textContent='尚未选择';el('job-progress-note').textContent='';
       el('comparison-list').textContent='尚未查询'; remember(); showSession(); say('创建成功，尚未保存比较快照。');
     },
     capture: async () => {
@@ -159,8 +190,8 @@ if (typeof document !== 'undefined') {
       name:el('dataset-name').value,k:el('evaluation-k').value,origin:el('label-origin').value,source:el('source-description').value})),
     abandon: async () => { if(!confirm('只放弃本地未确认记录，不会取消服务端任务。确定继续？')) return; pending=null; pendingCapture=null; remember(); say('本地记录已放弃；可查询任务列表核对服务端。'); },
     jobs:taskList,
-    previous:async () => {offset=Math.max(0,offset-20);await taskList();},
-    next:async () => {if(hasMore){offset+=20;await taskList();}},
+    previous:async () => {await taskList(Math.max(0,offset-20));},
+    next:async () => {if(hasMore)await taskList(offset+20);},
     poll:progress,
     cancel:async () => {await api(queryPath('/cancel'),{method:'POST'});await progress();},
     replay:async () => { if(!selected) throw new Error('请先选择原任务'); await submitOperation('replay',{original:selected}); },
@@ -170,6 +201,6 @@ if (typeof document !== 'undefined') {
       link.click();URL.revokeObjectURL(url);}
   };
   for (const [id,action] of Object.entries(actions)) el(id).onclick=() => guarded(action);
-  window.addEventListener('beforeunload',() => clearTimeout(timer));
+  window.addEventListener('beforeunload',stopProgressPolling);
   // Never submit, cancel or replay automatically after a refresh.
 }
