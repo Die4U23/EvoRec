@@ -515,6 +515,11 @@ def create_app(
     def evaluation_script():
         return FileResponse(project / WEB_PAGES['/app/evaluations.js'],headers={'Cache-Control':'no-cache'})
 
+    @app.get('/app/workbench.css', include_in_schema=False)
+    def workbench_styles():
+        return FileResponse(project / WEB_PAGES['/app/workbench.css'], media_type='text/css',
+                            headers={'Cache-Control': 'no-cache'})
+
     @app.get("/app/evidence/r06/{asset:path}", tags=["web"], include_in_schema=False)
     def experiment_evidence(asset: str):
         # Fixed public allowlist, not a filesystem mount or arbitrary path join.

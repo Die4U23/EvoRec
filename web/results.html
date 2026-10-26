@@ -4,26 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>EvoRec · 真实实验结果</title>
-  <style>
-    :root { font-family: system-ui, sans-serif; color: #182631; background: #f3f6f4; }
-    body { max-width: 1060px; margin: auto; padding: 28px 20px 60px; line-height: 1.65; }
-    a { color: #145b48; } h1 { margin-bottom: 8px; } h2 { font-size: 1.3rem; }
-    section { background: white; border: 1px solid #dce5df; border-radius: 12px; padding: 20px; margin: 18px 0; }
-    .notice { background: #edf3ee; padding: 14px; border-radius: 8px; }
-    .tables { overflow-x: auto; } table { border-collapse: collapse; width: 100%; }
-    th, td { text-align: left; padding: 10px; border-bottom: 1px solid #dce5df; white-space: nowrap; font-variant-numeric: tabular-nums; }
-    caption { text-align: left; margin: 8px 0; color: #53646c; }
-    code, #identity { overflow-wrap: anywhere; } button { font: inherit; padding: 8px 14px; cursor: pointer; }
-    button:disabled { cursor: wait; } [hidden] { display: none; }
-  </style>
+  <link rel="stylesheet" href="/app/workbench.css">
 </head>
-<body>
-  <nav><a href="/app">返回推荐 Demo</a></nav>
-  <h1>真实实验结果</h1>
+<body class="research-page">
+  <a class="skip-link" href="#content">跳到主要内容</a>
+  <header class="site-header">
+    <div class="nav-inner"><a class="brand" href="/app"><span class="brand-mark" aria-hidden="true">e</span>EvoRec<span class="brand-dot">.</span></a>
+    <nav aria-label="主导航"><a href="/app">发现</a><a href="/app#catalog-panel">浏览全部</a><a href="/app#comparison-panel">策略对比</a><a href="/app/results" class="active" aria-current="page">离线实验</a><a href="/app/evaluations">批量评估</a></nav><span class="mode-badge">本地 Demo</span></div>
+  </header>
+  <div class="workspace">
+<header class="hero"><div><p class="eyebrow">R06 / 同预算多兴趣召回与排序适配</p><h1>让结论，经得起检验。</h1></div></header>
+<div id="content" class="document-content">
   <p>R06：同预算多兴趣召回与排序适配。读取已归档的公开结果，不是新的实验，也不是当前服务的效果测量。</p>
   <p id="status" role="status" aria-live="polite">正在校验实验档案…</p>
   <button id="reload">重新读取档案</button>
-  <main id="evidence" hidden>
+  <main id="evidence" class="document-content" hidden>
     <section>
       <h2>先看结论</h2>
       <p id="conclusion" class="notice"></p>
@@ -150,5 +145,6 @@
     el('reload').onclick = loadEvidence;
     const startup = loadEvidence();
   </script>
+</div><footer class="page-footer"><span>EvoRec · Discover your next favorite</span><span>本地探索 · 结果可追溯</span></footer></div>
 </body>
 </html>

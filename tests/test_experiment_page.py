@@ -17,6 +17,17 @@ def test_results_entry_is_linked_and_served_without_model_or_database():
     assert "/app/results" not in request("GET", "/openapi.json").json()["paths"]
 
 
+def test_shared_workbench_styles_are_served_and_linked_without_database():
+    response = request("GET", "/app/workbench.css")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/css")
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.content == (ROOT / "web/workbench.css").read_bytes()
+    for route in ("/app", "/app/results", "/app/evaluations"):
+        assert 'href="/app/workbench.css"' in request("GET", route).text
+    assert "/app/workbench.css" not in request("GET", "/openapi.json").json()["paths"]
+
+
 @pytest.mark.parametrize("asset", ["results.json", "uncertainty.json", "report.md", "report.html",
     "figures/manifest.json", "figures/coverage-and-ranking.png", "figures/learning-curves.png",
     "figures/paired-intervals.png", "protocol.md"])
