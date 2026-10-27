@@ -3,30 +3,38 @@
 [简体中文](README.md) | **English**
 
 [![Service integration](https://github.com/Die4U23/EvoRec/actions/workflows/service-integration.yml/badge.svg)](https://github.com/Die4U23/EvoRec/actions/workflows/service-integration.yml)
-[![Learning demo](https://img.shields.io/badge/learning%20demo-2026.10.14-246e64)](https://github.com/Die4U23/EvoRec/tree/learning-demo-20261014)
+[![Learning demo](https://img.shields.io/badge/learning%20demo-2026.10.27-4355a1)](https://github.com/Die4U23/EvoRec/tree/learning-demo-20261027)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A recommendation learning project for cold-start items in a changing catalog, connecting offline retrieval and ranking experiments with a FastAPI service, PostgreSQL persistence, and real failure testing.
 
-The current delivery is a **local recommendation demo plus R01–R06 offline experiments**. The learning version is frozen at [`learning-demo-20261014`](https://github.com/Die4U23/EvoRec/tree/learning-demo-20261014) (`f6e2916`). This does not claim production readiness or completion of the full research PRD.
+The current delivery is a **local recommendation demo plus R01–R06 offline experiments**. The latest learning version is [`learning-demo-20261027`](https://github.com/Die4U23/EvoRec/tree/learning-demo-20261027) (`a4f8556`), including the redesigned discovery page and interaction recovery fixes. This does not claim production readiness or completion of the full research PRD.
 
-[Code walkthrough](docs/learning-guide.md) · [Architecture](docs/10-architecture-and-implementation.md) · [Demo setup](ops/demo-quickstart.md) · [R06 report](docs/experiments/r06-multi-interest/report.md)
+[Code walkthrough](docs/learning-guide.md) · [UI and interactions](web/README.md) · [Demo setup](ops/demo-quickstart.md) · [R06 report](docs/experiments/r06-multi-interest/report.md)
 
 The linked detailed guides are currently in Chinese; this page provides the English overview and first-run instructions.
 
 ## Demo screens
 
-These screens use the local **synthetic catalog content baseline** (24 initial items, 26 after the sample import). They do not show frozen R06 model performance or a recommendation-quality evaluation.
+These screens were captured from the latest learning version on **2026-10-27**, using the local **synthetic catalog content baseline** (24 initial items; no import in this run). They do not show frozen R06 model performance or a recommendation-quality evaluation.
 
-![Recommendation page with the synthetic-catalog baseline](assets/readme/catalog-recommendations.jpg)
+![Redesigned recommendation discovery page](assets/readme/catalog-discovery-20261027.jpg)
 
-Recommendation page: sample user, results, and feedback controls.
+Discovery page: top navigation, themed illustration, and expandable recommendation preferences. Items without original images retain placeholders.
 
-![Management controls with the synthetic-catalog baseline](assets/readme/catalog-management.jpg)
+![Item detail dialog with the synthetic-catalog baseline](assets/readme/catalog-details-20261027.jpg)
 
-Management page: import, build preview, and explicit publication controls.
+Item details open above the current recommendation cards and support both the close button and Escape.
 
-[Screenshot provenance and walkthrough checks](docs/validation/readme-walkthrough-20261015.json).
+[Screenshot provenance and walkthrough checks](docs/validation/readme-refresh-20261027.json).
+
+## 2026-10-27 update
+
+- **Redesigned discovery experience**: warm-white and coral styling, a card grid, and item detail dialogs; hidden-item undo controls can recover after a reload in the same tab.
+- **Lists and asynchronous interactions**: catalog, comparison history, build preview, and evaluation lists handle pagination failures, retries, and stale responses according to their respective rules. Session changes isolate old feedback and results.
+- **Evaluation recovery**: the selected task is explicit, switching tasks clears old reports, and retryable status failures resume polling. Tab-storage failures warn about recovery risks while retaining the original operation identity in page memory for retries.
+
+See the [Web README](web/README.md) for exact behavior and invalidation rules. This update does not retrain models or repeat full R06 load acceptance.
 
 ## Core capabilities
 
@@ -69,9 +77,13 @@ Three design tradeoffs (see the [code walkthrough](docs/learning-guide.md)):
 
 ## Verified results
 
-### Learning-demo acceptance
+### Current learning-version regression
 
-These measurements come from local acceptance on **2026-10-14 at `f6e2916`**, not a new benchmark performed for this README update.
+On **2026-10-27**, `a4f8556` passed 235 frontend script tests and 28 API/page tests; its main-branch [CI checks passed](https://github.com/Die4U23/EvoRec/actions/runs/40279540464). This README update also checks the live catalog page, strategy selection, and detail interactions; see the [update record](docs/validation/readme-refresh-20261027.json) for scope. These checks do not replace full-model performance acceptance.
+
+### Historical full-model acceptance: 2026-10-14
+
+These measurements come from local acceptance on **2026-10-14 at `f6e2916`** ([original frozen tag](https://github.com/Die4U23/EvoRec/tree/learning-demo-20261014)), not a benchmark rerun for the latest tag or this README update.
 
 | Scenario | Result | Evidence |
 | --- | --- | --- |
@@ -138,8 +150,9 @@ The first command performs read-only preflight checks. The second creates an iso
 
 For a first visit, use the page controls in this order:
 
-1. Select “示例用户” (sample user) and click “开始体验” (start). Inspect the automatic popular recommendation; select “受控稠密模型” (controlled dense model), click “获取推荐” (get recommendations), and check the actual strategy in the response. Favorite or hide a returned item and request recommendations again to observe the session version and results. Reload to check retained session and feedback state; a change in item order is not an acceptance criterion.
-2. Expand “管理操作（本地演示）” (local management), enter this run's temporary token, select `new-items.csv` in the output directory, and click “提交文件校验任务” (submit validation). After import, click “处理／重试当前构建” (build), inspect “查询状态与预览” (status and preview), then click “确认发布当前预览” (publish). Request recommendations again and inspect the active catalog and item eligibility. Import alone does not publish.
+1. Click “开始体验” (start) to receive a popular recommendation for the default sample identity. Expand “调整推荐偏好” (recommendation preferences), select “受控稠密模型” (controlled dense model), click “获取推荐” (get recommendations), and check the actual strategy; catalog mode still uses the content baseline. After changing “体验身份” (identity), click start again to create the corresponding session.
+2. Open “查看详情” (details) on a card and return with the close button or Escape. Favorite or hide a returned item, then request recommendations again to inspect session and result changes. Hidden-item undo controls persist separately. Reload restores the session and undo state; request recommendations again to display cards. A change in item order is not an acceptance criterion.
+3. Expand “管理操作（本地演示）” (local management), enter this run's temporary token, select `new-items.csv` in the output directory, and click “提交文件校验任务” (submit validation). After import, click “处理／重试当前构建” (build), inspect “查询状态与预览” (status and preview), then click “确认发布当前预览” (publish). Request recommendations again and inspect the active catalog and item eligibility. Import alone does not publish.
 
 Press **Ctrl+C** once and wait for shutdown, or create a `stop` file in the run's output directory. Normal shutdown deletes that run's temporary data. Check `worker_drained` and `owned_schema_removed` in `stopped.json`. Existing services on port 8000 are not touched.
 

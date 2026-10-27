@@ -3,26 +3,34 @@
 **简体中文** | [English](README_EN.md)
 
 [![Service integration](https://github.com/Die4U23/EvoRec/actions/workflows/service-integration.yml/badge.svg)](https://github.com/Die4U23/EvoRec/actions/workflows/service-integration.yml)
-[![Learning demo](https://img.shields.io/badge/learning%20demo-2026.10.14-246e64)](https://github.com/Die4U23/EvoRec/tree/learning-demo-20261014)
+[![Learning demo](https://img.shields.io/badge/learning%20demo-2026.10.27-4355a1)](https://github.com/Die4U23/EvoRec/tree/learning-demo-20261027)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 一个围绕动态商品库冷启动问题的推荐学习项目，把离线召回与排序实验、FastAPI 推荐服务、PostgreSQL 持久化和真实故障验证放进同一条请求链路。
 
-当前交付为 **本地推荐 Demo + R01–R06 离线实验**。学习版已冻结在 [`learning-demo-20261014`](https://github.com/Die4U23/EvoRec/tree/learning-demo-20261014)（`f6e2916`）；不是生产服务或完整研究 PRD 的完成声明。
+当前交付为 **本地推荐 Demo + R01–R06 离线实验**。最新学习版为 [`learning-demo-20261027`](https://github.com/Die4U23/EvoRec/tree/learning-demo-20261027)（`a4f8556`），包含新版发现页与交互恢复修复；不是生产服务或完整研究 PRD 的完成声明。
 
-[代码导读](docs/learning-guide.md) · [架构与实现](docs/10-architecture-and-implementation.md) · [启动指南](ops/demo-quickstart.md) · [R06 实验报告](docs/experiments/r06-multi-interest/report.md)
+[代码导读](docs/learning-guide.md) · [页面与交互](web/README.md) · [启动指南](ops/demo-quickstart.md) · [R06 实验报告](docs/experiments/r06-multi-interest/report.md)
 
 ## 演示界面
 
-以下画面使用本地 **合成商品内容基线**（初始 24 件，导入样例后 26 件），不是冻结 R06 的模型效果或质量评估。
+以下画面于 **2026-10-27** 从最新学习版实际页面截取，使用本地 **合成商品内容基线**（初始 24 件，本轮未导入商品），不是冻结 R06 的模型效果或质量评估。
 
-![合成商品目录基线的推荐体验页](assets/readme/catalog-recommendations.jpg)
+![新版推荐发现首页](assets/readme/catalog-discovery-20261027.jpg)
 
-推荐页：示例用户的内容基线结果与反馈入口。
+发现首页：顶部导航、主题插画与按需展开的推荐偏好；商品缺少原始图片时保留占位。
 
-![合成商品目录基线的管理操作页](assets/readme/catalog-management.jpg)
+![合成商品内容基线的详情弹窗](assets/readme/catalog-details-20261027.jpg)
 
-管理页：导入、构建预览和显式发布入口。[截图来源与本轮操作核对](docs/validation/readme-walkthrough-20261015.json)。
+商品详情：在当前推荐卡片上打开弹窗，支持关闭按钮与 Escape。[截图来源与本轮操作核对](docs/validation/readme-refresh-20261027.json)。
+
+## 2026-10-27 版本更新
+
+- **新版推荐体验**：暖白与珊瑚橙的发现页、卡片网格、详情弹窗；隐藏后的撤销入口在同一标签页刷新后可恢复。
+- **列表与异步交互**：商品目录、对比历史、构建预览和评估列表按各自规则处理翻页失败、重试与迟到响应；会话切换隔离旧反馈和旧结果。
+- **评估任务恢复**：明确显示当前任务，切换时清除旧报告；可重试的状态查询会继续轮询。标签页存储异常会提示恢复风险，并保留本页内存中的原操作编号供重试。
+
+具体交互和失效条件见 [Web README](web/README.md)。本轮更新没有重新训练模型，也没有重新验收完整 R06 负载。
 
 ## 核心能力
 
@@ -65,9 +73,13 @@
 
 ## 已验证结果
 
-### 学习版工程验收
+### 当前学习版回归
 
-以下为 **2026-10-14、提交 `f6e2916`** 的本机验收，不是本次 README 修改重新跑出的结果。
+`a4f8556` 于 **2026-10-27** 通过 235 项前端脚本测试与 28 项 API/页面测试；主线 [CI 检查通过](https://github.com/Die4U23/EvoRec/actions/runs/40279540464)。本轮 README 另核对了实际 catalog 页面、推荐策略切换与详情交互，范围见[更新记录](docs/validation/readme-refresh-20261027.json)。这些检查不替代完整模型性能验收。
+
+### 2026-10-14 历史完整模型验收
+
+以下为 **2026-10-14、提交 `f6e2916`**（[原冻结 tag](https://github.com/Die4U23/EvoRec/tree/learning-demo-20261014)）的本机验收，不是最新 tag 或本次 README 修改重新跑出的结果。
 
 | 场景 | 结果 | 证据 |
 | --- | --- | --- |
@@ -136,8 +148,9 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 
 首次体验可按页面控件顺序操作：
 
-1. 选择“示例用户”并点“开始体验”，查看自动返回的热门推荐；选择“受控稠密模型”并点“获取推荐”，核对响应中的实际策略。对返回的商品点“收藏”或“隐藏”，再获取推荐，观察会话版本与结果。刷新页面后核对保留的会话与反馈状态；商品是否换位不作为验收条件。
-2. 展开“管理操作（本地演示）”，填入本轮临时令牌，上传输出目录的 `new-items.csv`并点“提交文件校验任务”；导入完成后点“处理／重试当前构建”，用“查询状态与预览”核对，再点“确认发布当前预览”。发布后重新获取推荐，核对活动商品库与商品资格；导入本身不会发布。
+1. 点“开始体验”，用默认示例身份查看自动返回的热门推荐。展开“调整推荐偏好”，选择“受控稠密模型”并点“获取推荐”，核对响应中的实际策略；catalog 模式仍运行内容基线。切换“体验身份”后再点“开始体验”创建对应会话。
+2. 点卡片的“查看详情”，用关闭按钮或 Escape 返回；点“收藏”或“隐藏”后重新获取推荐，观察会话版本与结果。隐藏后的撤销入口独立保留；刷新后恢复会话与撤销状态，需要再次获取推荐才显示卡片。商品是否换位不作为验收条件。
+3. 展开“管理操作（本地演示）”，填入本轮临时令牌，上传输出目录的 `new-items.csv` 并点“提交文件校验任务”；导入完成后点“处理／重试当前构建”，用“查询状态与预览”核对，再点“确认发布当前预览”。发布后重新获取推荐，核对活动商品库与商品资格；导入本身不会发布。
 
 按一次 **Ctrl+C** 等待退出，或在本轮输出目录创建 `stop` 文件。正常停止会删除本轮临时数据；检查 `stopped.json` 的 `worker_drained` 与 `owned_schema_removed`。不操作既有 8000 服务。
 
