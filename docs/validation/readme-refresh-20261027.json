@@ -1,0 +1,95 @@
+{
+  "recorded_on": "2026-10-27",
+  "source_commit": "a4f8556ef832a97650d904c609aace0aa4f3dc7a",
+  "source_tag": "learning-demo-20261027",
+  "scope": "Bilingual README refresh and current UI screenshots; no application-code changes.",
+  "runtime": {
+    "mode": "catalog",
+    "model_kind": "content-baseline",
+    "model_id": "content-cosine-v1",
+    "content_encoder_id": "hash-text-title-category-v1",
+    "initial_items": 24,
+    "import_performed": false,
+    "r06_model_loaded": false,
+    "isolated_temporary_schema": true
+  },
+  "screenshots": [
+    {
+      "path": "assets/readme/catalog-details-20261027.jpg",
+      "sha256": "c1f9e16c0c4eb5ff9cd7a8834388e434f99762ca8275d31004542093cbc14da7",
+      "width": 1265,
+      "height": 712,
+      "bytes": 33566
+    },
+    {
+      "path": "assets/readme/catalog-discovery-20261027.jpg",
+      "sha256": "558365995c97a7c5589f2f834419a14f1089531fe60223463aabce3e81e8ce5f",
+      "width": 1265,
+      "height": 712,
+      "bytes": 56341
+    }
+  ],
+  "capture": {
+    "method": "Direct live-browser viewport screenshots; no image edits or injected page state.",
+    "viewport": "Default browser viewport, without override.",
+    "discovery_state": "Default sample session created; automatic popular recommendation returned 10/10; recommendation preferences collapsed.",
+    "detail_state": "Selected dense in expanded recommendation preferences; returned 10/10; opened demo-coop-space details above the recommendation grid. Missing item images remain placeholders."
+  },
+  "browser_checks": [
+    {
+      "action": "Start with default sample identity",
+      "observed": "Sample session version 0 and popular result with 10/10 items."
+    },
+    {
+      "action": "Expand recommendation preferences and select controlled dense, then request recommendations",
+      "observed": "Actual strategy dense, 10/10 items, with synthetic content baseline runtime."
+    },
+    {
+      "action": "Open first item details",
+      "observed": "Modal titled 星际协作 and its synthetic description; view feedback recorded."
+    },
+    {
+      "action": "Close with Escape; reopen and close with button",
+      "observed": "Both close paths returned to the current recommendation cards."
+    }
+  ],
+  "local_regression": {
+    "date": "2026-10-27",
+    "frontend": {
+      "command": "node --test --test-reporter=tap --test-timeout=10000 tests/web_file_import.test.cjs tests/web_results.test.cjs tests/web_evaluations.test.cjs",
+      "passed": 235,
+      "failed": 0,
+      "skipped": 0
+    },
+    "api_page": {
+      "command": "python -m pytest -o addopts= -q tests/test_api.py tests/test_experiment_page.py",
+      "passed": 28,
+      "failed": 0,
+      "skipped": 0
+    },
+    "hygiene_and_page": {
+      "files": [
+        "tests/test_repository_hygiene.py",
+        "tests/test_experiment_page.py"
+      ],
+      "passed": 35,
+      "overlaps_api_page": true
+    },
+    "source_main_ci": "https://github.com/Die4U23/EvoRec/actions/runs/40279540464"
+  },
+  "cleanup": {
+    "worker_drained": true,
+    "owned_schema_removed_marker": true,
+    "independent_schema_absent": true,
+    "owned_port_closed": true,
+    "temporary_token_removed": true,
+    "browser_tab_closed": true
+  },
+  "boundaries": [
+    "No new full R06 load benchmark, model training, or recommendation-quality evaluation.",
+    "Full-model concurrency and p95 figures in README remain historical evidence at f6e2916 / learning-demo-20261014.",
+    "This browser pass did not retest catalog import/publication, evaluation workers, or storage fault injection; their documented behavior is grounded in source and automated regression.",
+    "Screenshots show synthetic products; dense is a requested/actual strategy label, not proof of R06 model identity.",
+    "Source CI predates this documentation PR; the documentation PR checks are tracked on GitHub separately."
+  ]
+}
